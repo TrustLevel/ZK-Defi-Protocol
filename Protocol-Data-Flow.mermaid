@@ -1,0 +1,41 @@
+sequenceDiagram
+    participant User
+    participant UI as Frontend UI
+    participant PG as Proof Generator
+    participant ZK as ZK Service
+    participant CM as Collateral Manager
+    participant LM as Loan Manager
+    participant Chain as Blockchain
+    participant MT as Merkle Trees
+
+    Note over User,MT: Collateral Locking Flow
+    User->>UI: Connect Wallet
+    UI->>User: Request Collateral Info
+    User->>UI: Submit Collateral
+    UI->>PG: Generate Collateral Proof
+    PG->>ZK: Request ZK Proof
+    ZK-->>PG: Return Proof
+    PG->>CM: Submit Proof + Commitment
+    CM->>Chain: Verify & Lock Collateral
+    Chain->>MT: Update Collateral Tree
+    MT-->>UI: Confirm Lock Status
+
+    Note over User,MT: Loan Request Flow
+    User->>UI: Request Loan
+    UI->>PG: Generate Loan Request Proof
+    PG->>ZK: Create Loan Proof
+    ZK-->>PG: Return Loan Proof
+    PG->>LM: Submit Loan Request
+    LM->>Chain: Verify Proof & Issue Loan
+    Chain->>MT: Update Loan State
+    MT-->>UI: Confirm Loan Status
+
+    Note over User,MT: Repayment Flow
+    User->>UI: Submit Repayment
+    UI->>PG: Generate Repayment Proof
+    PG->>ZK: Create Payment Proof
+    ZK-->>PG: Return Payment Proof
+    PG->>LM: Submit Repayment
+    LM->>Chain: Process Repayment
+    Chain->>MT: Update Loan State
+    MT-->>UI: Confirm Payment
