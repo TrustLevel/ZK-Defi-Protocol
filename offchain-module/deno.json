@@ -1,0 +1,27 @@
+{
+    "tasks": {
+        "mint-beacon-tokens": "deno run --allow-net --allow-ffi --allow-env --env --allow-read cli/beacon-tokens-mint.ts",
+        "deploy-refscripts": "deno run --allow-net --allow-ffi --allow-env --env --allow-read --allow-write cli/refscripts-deploy.ts",
+        "undeploy-refscripts": "deno run --allow-net --allow-ffi --allow-env --env --allow-read --allow-write cli/refscripts-undeploy.ts",
+        "mint-loanable-tokens": "deno run --allow-net --allow-ffi --allow-env --env --allow-read --allow-write cli/loanable-tokens-mint.ts",
+        "mint-more-loanable-tokens": "deno run --allow-net --allow-ffi --allow-env --env --allow-read cli/loanable-tokens-additional-mint.ts",
+        "burn-loanable-tokens": "deno run --allow-net --allow-ffi --allow-env --env --allow-read --allow-write cli/loanable-tokens-burn.ts",
+        "deposit-loanable-asset": "deno run --allow-net --allow-ffi --allow-env --env --allow-read --allow-write cli/loanable-tokens-deposit.ts",
+        "deposit-collateral-asset": "deno run --allow-net --allow-ffi --allow-env --env --allow-read --allow-write cli/collateral-deposit.ts",
+        "borrow": "deno run --allow-net --allow-ffi --allow-env --env --allow-read --allow-write cli/loan-take.ts",
+        "repay": "deno run --allow-net --allow-ffi --allow-env --env --allow-read --allow-write cli/loan-repay.ts",
+        "reset-collateral": "deno run --allow-net --allow-ffi --allow-env --env --allow-read --allow-write cli/loan-request-reset.ts",
+        "withdraw-collateral": "deno run --allow-net --allow-ffi --allow-env --env --allow-read --allow-write cli/collateral-withdraw.ts",
+        "withdraw-loanable-asset": "deno run --allow-net --allow-ffi --allow-env --env --allow-read --allow-write cli/loanable-tokens-withdraw.ts"
+    },
+    "imports": {
+        "@lucid-evolution/lucid": "npm:@lucid-evolution/lucid@0.4.25",
+        "@std/assert": "jsr:@std/assert@1"
+    },
+    "nodeModulesDir": "auto",
+    "fmt": {
+        "lineWidth": 128,
+        "indentWidth": 4,
+        "semiColons": true
+    }
+}
