@@ -9,6 +9,10 @@ Project Status:
 ✅ Smart Contract Develoopmen (Milestone 2)  
 🔜 Next: ZK Circuit Implementation (Milestone 3)  
 
+M1 Report: https://docs.google.com/document/d/1cMg0dmwjoTUpP9SSy8Lryxb0cdgB0nyCJnw617k3eUA/edit?usp=sharing  
+M2 Report (including Flowcharts, Demo & Testcases): https://docs.google.com/document/d/11QrOcAajDYRgz7Zebqrjgg7A3fR1ZLhD4KZkRb99Q6U/edit?tab=t.0  
+
+
 # Repository Structure
 
 ZK-Defi-Protocol/  
@@ -33,5 +37,5 @@ The ZK DeFi Protocol enables:
 	• Anonymous Lending: Liquidity providers contribute funds to lending pools without revealing identity or position size.  
 	• Zero-Knowledge Proof Enforcement: Loan issuance, repayments, and interest payments are authorized via zk-SNARKs (PLONK), ensuring validity without  revealing data.  
 	• eUTXO-native Privacy    
-    
+
 All privacy features are designed to work natively with Cardano’s extended UTXO model.  
