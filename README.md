@@ -12,9 +12,9 @@ Project Status:
 # Repository Structure
 
 ZK-Defi-Protocol/  
-├── onchain-module/     → Aiken smart contracts  
-├── offchain-module/    → Off-chain logic  
-├── zk-module/          → ZK logic (TBD)  
+├── onchain-module/       → Aiken smart contracts  
+├── offchain-module/      → Off-chain logic  
+├── zk-module/            → ZK logic (TBD)  
 └── README.md             
 
 Each module has its own detailed README.md.   
@@ -33,4 +33,5 @@ The ZK DeFi Protocol enables:
 	• Anonymous Lending: Liquidity providers contribute funds to lending pools without revealing identity or position size.  
 	• Zero-Knowledge Proof Enforcement: Loan issuance, repayments, and interest payments are authorized via zk-SNARKs (PLONK), ensuring validity without  revealing data.  
 	• eUTXO-native Privacy    
+    
 All privacy features are designed to work natively with Cardano’s extended UTXO model.  
