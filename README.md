@@ -21,8 +21,12 @@ ZK-Defi-Protocol/
 
 Each module has its own detailed README.md. 
 This root readme provides high-level context for the full protocol.
-Start with the offchain-module to run a demo of the current status of the protocol.
 
+The onchain module includes the smart contricts, the offchain-module the logic for:
+    1. Collateral Management
+    2. Lending Pool (Issuance & Redemption) - incl. Interest Payment
+
+Start with the offchain module to run a demo of the current status of the protocol.
 ⸻
 
 # Protocol Overview

@@ -1,8 +1,6 @@
-# ZK Lending & Borrowing Onchain Components
+# Onchain Components
 
-    1. Collateral Management Logic
-    2. Lending Pool (Issuance & Redemption logic) - incl. Interest Payment
-
+To run and test the smart contracts, follow the instructions below:
 
 ## Building
 

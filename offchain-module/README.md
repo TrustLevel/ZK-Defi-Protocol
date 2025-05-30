@@ -1,9 +1,6 @@
-# ZK Lending & Borrowing Offchain Components
+# Offchain Components
 
-Contains logic and demonstration for the follwoing smart contracts:
-
-    1. Collateral Management Logic
-    2. Lending Pool (Issuance & Redemption logic) - incl. Interest payment
+For the demonstration of the onchain logic follow the instructions below:
 
 ## Prerequisites
 
