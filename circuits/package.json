@@ -1,0 +1,13 @@
+{
+  "name": "v3-zk-circuits",
+  "version": "1.0.0",
+  "description": "ZK circuits for V3 Privacy-Enhanced Lending Protocol",
+  "type": "module",
+  "scripts": {
+    "test": "node test_v3_circuit.mjs"
+  },
+  "dependencies": {
+    "circomlibjs": "^0.1.7",
+    "snarkjs": "^0.7.4"
+  }
+}
