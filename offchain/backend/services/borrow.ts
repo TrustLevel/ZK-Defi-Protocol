@@ -261,16 +261,9 @@ export async function handleBorrowRequest(
             throw new Error("LENDING_POOL_V3_ADDRESS or BEACON_POLICY_ID not set in config");
         }
 
-        // First get raw pool UTXOs
-        const poolUtxos = await lucid.utxosAt(LENDING_POOL_V3_ADDRESS);
         const beaconUnit = BEACON_POLICY_ID + "4c454e44494e47504f4f4c"; // "LENDINGPOOL"
-        const rawPoolUtxo = poolUtxos.find((utxo) => utxo.assets[beaconUnit] === 1n);
 
-        if (!rawPoolUtxo) {
-            throw new Error("Lending pool UTXO not found");
-        }
-
-        // Now get the parsed version
+        // Use findLendingPoolUtxo to get the correct pool UTXO (handles multiple UTXOs)
         const poolUtxo = await findLendingPoolUtxo(
             lucid,
             LENDING_POOL_V3_ADDRESS,
@@ -280,6 +273,19 @@ export async function handleBorrowRequest(
         if (!poolUtxo) {
             throw new Error("Lending pool UTXO not found");
         }
+
+        // Query raw UTXO by the exact reference returned by findLendingPoolUtxo
+        // This ensures rawPoolUtxo and poolUtxo are THE SAME UTXO
+        const rawPoolUtxos = await lucid.utxosByOutRef([{
+            txHash: poolUtxo.txHash,
+            outputIndex: poolUtxo.outputIndex
+        }]);
+
+        if (rawPoolUtxos.length === 0) {
+            throw new Error(`Failed to re-query pool UTXO: ${poolUtxo.txHash}#${poolUtxo.outputIndex}`);
+        }
+
+        const rawPoolUtxo = rawPoolUtxos[0];
 
         // Debug: Check pool datum structure (convert BigInt to string for logging)
         console.log(`   📋 Pool UTXO datum:`, JSON.stringify(poolUtxo.datum, bigIntReplacer, 2));
@@ -421,6 +427,7 @@ async function buildBorrowTransaction(
         console.log(`      last_updated: ${poolUtxo.datum.last_updated} -> ${Date.now()}`);
 
         // Build datum with fields in DECLARATION ORDER (matches Aiken & plutus.json)
+        // IMPORTANT: DO NOT wrap! Inline datums are automatically "Some" - Lucid unwraps them automatically
         const updatedPoolDatum = Data.to({
             total_deposited: BigInt(poolUtxo.datum.total_deposited),
             total_borrowed: newTotalBorrowed,
@@ -428,10 +435,10 @@ async function buildBorrowTransaction(
             last_updated: BigInt(Date.now()),
         } as any, V3LendingPoolDatumSchema);
 
-        // Debug: Log serialized CBOR
+        // Debug: Log serialized CBOR (with manual parsing)
         console.log("   🔍 Pool datum CBOR (hex):");
-        console.log(`      ${updatedPoolDatum}`);
-        console.log(`      Length: ${updatedPoolDatum.length} characters`);
+        console.log(`      FULL: ${updatedPoolDatum}`);
+        console.log(`      Length: ${updatedPoolDatum.length} chars (${updatedPoolDatum.length / 2} bytes)`);
 
         console.log("   ✅ Pool datum created");
 
@@ -446,12 +453,12 @@ async function buildBorrowTransaction(
         console.log(`      loanAmount: ${loanAmount}`);
 
         // Build redeemer: BorrowAnonymous with plain array (will be fixed manually)
-        // Alphabetically: collateral_ref, loan_amount, zk_proof_hash
+        // Declaration order (as in types.ak): collateral_ref, zk_proof_hash, loan_amount
         const poolRedeemerWrong = Data.to({
             BorrowAnonymous: [
-                [depositUtxo.txHash, BigInt(depositUtxo.outputIndex)], // Plain array (wrong!)
-                BigInt(loanAmount),
-                proofHash,
+                [depositUtxo.txHash, BigInt(depositUtxo.outputIndex)], // collateral_ref (plain array, will be fixed)
+                proofHash,           // zk_proof_hash (Position 2) ← CORRECTED ORDER!
+                BigInt(loanAmount),  // loan_amount (Position 3)
             ],
         } as any, V3LendingPoolRedeemerSchema);
 
@@ -460,11 +467,11 @@ async function buildBorrowTransaction(
         // Fixed:   d87a9f d8799f 5820...00 ff 1a... 5820... ff
         const poolRedeemer = poolRedeemerWrong.replace(/^(d87a9f)9f/, '$1d8799f');
 
-        // Debug: Log CBOR
+        // Debug: Log CBOR (FULL!)
         console.log("   🔍 Redeemer CBOR:");
-        console.log(`      Before fix: ${poolRedeemerWrong.substring(0, 60)}...`);
-        console.log(`      After fix:  ${poolRedeemer.substring(0, 60)}...`);
-        console.log(`      Fixed: Plain Array (9f) → Constructor 0 (d8799f)`);
+        console.log(`      Before fix (FULL): ${poolRedeemerWrong}`);
+        console.log(`      After fix (FULL):  ${poolRedeemer}`);
+        console.log(`      Length: ${poolRedeemer.length} chars (${poolRedeemer.length / 2} bytes)`);
 
         console.log("   ✅ Pool redeemer created (with manual CBOR fix)");
 

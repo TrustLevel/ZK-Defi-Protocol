@@ -27,7 +27,7 @@
         "ui": "cd ui && deno task start"
     },
     "imports": {
-        "@lucid-evolution/lucid": "npm:@lucid-evolution/lucid@0.4.25",
+        "@lucid-evolution/lucid": "npm:@lucid-evolution/lucid@0.4.29",
         "@std/assert": "jsr:@std/assert@1",
         "snarkjs": "npm:snarkjs@0.7.4",
         "circomlibjs": "npm:circomlibjs@0.1.7"

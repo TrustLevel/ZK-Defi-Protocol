@@ -24,23 +24,23 @@ export type V3LendingPoolDatum = Data.Static<typeof V3LendingPoolDatumSchema>;
 // ============================================================================
 
 // Redeemer schema: Simple Tuple-based (CBOR will be fixed manually in borrow.ts)
-// BorrowAnonymous fields (alphabetically sorted in Aiken):
-// collateral_ref, loan_amount, zk_proof_hash
+// BorrowAnonymous fields in DECLARATION ORDER (as defined in types.ak):
+// collateral_ref, zk_proof_hash, loan_amount (NOT alphabetical!)
 // Deposit = 0, BorrowAnonymous = 1, RepayAnonymous = 2
 export const V3LendingPoolRedeemerSchema = Data.Enum([
     Data.Object({ Deposit: Data.Tuple([]) }), // Constructor 0
     Data.Object({
         BorrowAnonymous: Data.Tuple([
             Data.Tuple([Data.Bytes(), Data.Integer()]), // collateral_ref (will be fixed to Constructor 0)
-            Data.Integer(),  // loan_amount
-            Data.Bytes(),    // zk_proof_hash
+            Data.Bytes(),    // zk_proof_hash (Position 2) ← CORRECTED ORDER!
+            Data.Integer(),  // loan_amount (Position 3)
         ]),
     }), // Constructor 1
     Data.Object({
         RepayAnonymous: Data.Tuple([
             Data.Tuple([Data.Bytes(), Data.Integer()]), // deposit_ref (will be fixed to Constructor 0)
-            Data.Integer(),  // repay_amount
-            Data.Bytes(),    // zk_proof_hash
+            Data.Bytes(),    // zk_proof_hash (Position 2) ← CORRECTED ORDER!
+            Data.Integer(),  // repay_amount (Position 3)
         ]),
     }), // Constructor 2
 ]);

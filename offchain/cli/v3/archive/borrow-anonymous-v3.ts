@@ -23,9 +23,9 @@
  *   loan-amount: Loan amount in ADA (e.g., 1200)
  */
 
-import { initProofSystem, generateCollateralProof, validateProofInput } from "../../lib/proof.ts";
-import { calculateMaxLoan, calculateInterest, calculateRepaymentAmount } from "../../lib/config.ts";
-import type { DepositReceipt } from "../../lib/types.ts";
+import { initProofSystem, generateCollateralProof, validateProofInput } from "../../../lib/proof.ts";
+import { calculateMaxLoan, calculateInterest, calculateRepaymentAmount } from "../../../lib/config.ts";
+import type { DepositReceipt } from "../../../lib/types.ts";
 
 // ============================================
 // CONFIGURATION

@@ -57,6 +57,7 @@ try {
 
     // Create initial pool datum
     // Fields in DECLARATION ORDER (matches Aiken definition)
+    // IMPORTANT: DO NOT wrap! Inline datums are automatically "Some" - Lucid unwraps them automatically
     console.log("1️⃣  Creating pool datum...");
     const poolDatum = Data.to({
         total_deposited: 0n,

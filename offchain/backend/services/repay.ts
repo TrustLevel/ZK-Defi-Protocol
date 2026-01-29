@@ -234,12 +234,14 @@ async function buildRepayTransaction(
     const newTotalBorrowed = Number(poolUtxo.datum.total_borrowed) - BigInt(loanAmount);
     const newPoolValue = poolUtxo.assets.lovelace + BigInt(repaymentAmount);
 
+    // Build datum with fields in DECLARATION ORDER (matches Aiken & plutus.json)
+    // IMPORTANT: DO NOT wrap! Inline datums are automatically "Some" - Lucid unwraps them automatically
     const updatedPoolDatum = Data.to({
-        total_deposited: poolUtxo.datum.total_deposited,
+        total_deposited: BigInt(poolUtxo.datum.total_deposited),
         total_borrowed: BigInt(Math.max(0, newTotalBorrowed)), // Ensure non-negative
-        admin: poolUtxo.datum.admin,
-        params: poolUtxo.datum.params,
-    }, V3LendingPoolDatumSchema);
+        interest_rate: BigInt(poolUtxo.datum.interest_rate),
+        last_updated: BigInt(Date.now()),
+    } as any, V3LendingPoolDatumSchema);
 
     // Build redeemer for pool (RepayAnonymous)
     const poolRedeemer = Data.to({

@@ -191,25 +191,50 @@ export async function findLendingPoolUtxo(
     // Query all UTXOs at pool address
     const utxos = await lucid.utxosAt(poolAddress);
 
-    // Find UTXO with beacon token
+    // Find ALL UTXOs with beacon token
     const unit = beaconPolicyId + beaconAssetName;
-    const poolUtxo = utxos.find((utxo) => utxo.assets[unit] === 1n);
+    const poolUtxos = utxos.filter((utxo) => utxo.assets[unit] === 1n);
 
-    if (!poolUtxo) {
+    if (poolUtxos.length === 0) {
         return null;
     }
 
-    // Parse datum
-    if (!poolUtxo.datum) {
-        throw new Error("Lending pool UTXO has no datum");
+    // Parse all valid UTXOs and collect them with their datums
+    const validUtxos: Array<{ utxo: UTxO; datum: V3LendingPoolDatum }> = [];
+
+    for (const utxo of poolUtxos) {
+        if (!utxo.datum) {
+            continue; // Skip UTXOs without datum
+        }
+
+        try {
+            // IMPORTANT: Inline datums are NOT wrapped - parse directly
+            const datum = Data.from(utxo.datum, V3LendingPoolDatumSchema);
+            validUtxos.push({ utxo, datum });
+        } catch (error) {
+            // Skip UTXOs with invalid datums (e.g., old schema from previous deployment)
+            console.warn(`Skipping pool UTXO ${utxo.txHash}#${utxo.outputIndex} (invalid datum)`);
+            continue;
+        }
     }
 
-    try {
-        const datum = Data.from(poolUtxo.datum, V3LendingPoolDatumSchema);
-        return { ...poolUtxo, datum };
-    } catch (error) {
-        throw new Error(`Failed to parse lending pool datum: ${error}`);
+    if (validUtxos.length === 0) {
+        throw new Error("No valid lending pool UTXO found (all datums failed to parse)");
     }
+
+    // If multiple valid UTXOs exist, choose the one with the HIGHEST last_updated timestamp
+    if (validUtxos.length > 1) {
+        console.log(`⚠️  Found ${validUtxos.length} pool UTXOs, selecting newest by last_updated`);
+        validUtxos.sort((a, b) => {
+            // Sort descending (newest first)
+            return Number(b.datum.last_updated - a.datum.last_updated);
+        });
+    }
+
+    // Return the newest (or only) UTXO
+    const selected = validUtxos[0];
+    console.log(`✅ Selected pool UTXO: ${selected.utxo.txHash}#${selected.utxo.outputIndex}`);
+    return { ...selected.utxo, datum: selected.datum };
 }
 
 // ============================================
