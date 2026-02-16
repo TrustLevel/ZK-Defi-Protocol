@@ -98,7 +98,7 @@ try {
     );
 
     const collateralScript: Script = {
-        type: "PlutusV2",
+        type: "PlutusV3",  // ← FIXED! Aiken v1.1.15 only compiles to V3
         script: parameterizedCollateralScript,
     };
 
@@ -125,7 +125,7 @@ try {
     );
 
     const poolScript: Script = {
-        type: "PlutusV2",
+        type: "PlutusV3",  // ← FIXED! Aiken v1.1.15 only compiles to V3
         script: parameterizedPoolScript,
     };
 

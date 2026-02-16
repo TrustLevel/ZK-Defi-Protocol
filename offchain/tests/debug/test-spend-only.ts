@@ -53,7 +53,7 @@ try {
     }
 
     const testScript: Script = {
-        type: "PlutusV2",
+        type: "PlutusV3",  // ← FIXED! Aiken v1.1.15 only supports V3
         script: validator.compiledCode,
     };
 

@@ -60,7 +60,7 @@ try {
     }
 
     const testScript: Script = {
-        type: "PlutusV2",
+        type: "PlutusV3",
         script: validator.compiledCode,
     };
 

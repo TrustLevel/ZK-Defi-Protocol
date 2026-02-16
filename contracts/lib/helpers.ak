@@ -20,15 +20,22 @@ pub fn has_valid_beacon(
 }
 
 /// Finds the input that matches the given output reference
-/// Returns None if the reference doesn't exist in the transaction inputs
+/// Searches both inputs and reference_inputs (for read-only UTXOs)
+/// Returns None if the reference doesn't exist
 pub fn find_input_by_ref(
   tx: Transaction,
   output_ref: OutputReference,
 ) -> Option<Input> {
-  list.find(
-    tx.inputs,
-    fn(input) { input.output_reference == output_ref },
-  )
+  // First try regular inputs (spent UTXOs)
+  when list.find(tx.inputs, fn(input) { input.output_reference == output_ref }) is {
+    Some(input) -> Some(input)
+    // If not found in inputs, try reference_inputs (read-only UTXOs)
+    None ->
+      list.find(
+        tx.reference_inputs,
+        fn(input) { input.output_reference == output_ref },
+      )
+  }
 }
 
 /// Gets the input being spent by the current script invocation

@@ -17,13 +17,14 @@ pub type SimpleRedeemer {
 /// Test validator WITHOUT Option<Datum>
 validator test_no_option {
   spend(
-    datum: SimpleDatum,  // ← KEIN Option<T>!
+    datum: Option<SimpleDatum>,  // ← Aiken requires Option<T>
     redeemer: SimpleRedeemer,
     _output_ref: OutputReference,
     _ctx: Transaction,
   ) {
-    // Direkt auf datum zugreifen, kein expect Some() needed!
-    datum.value_a >= 0 && datum.value_b >= 0
+    // Extract datum from Option
+    expect Some(d) = datum
+    d.value_a >= 0 && d.value_b >= 0
   }
 
   else(_ctx) {

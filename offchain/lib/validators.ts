@@ -68,7 +68,7 @@ export async function getLendingPoolV3Validator(
         );
 
         lendingPoolV3Validator = {
-            type: "PlutusV2",
+            type: "PlutusV3",  // ← FIXED! Aiken v1.1.15 only compiles to V3
             script: parameterizedPoolScript,
         };
 

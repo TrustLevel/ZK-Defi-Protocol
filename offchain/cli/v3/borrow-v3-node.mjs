@@ -33,8 +33,8 @@ import { readFile } from "fs/promises";
 // CONFIGURATION
 // ============================================
 
-const CIRCUIT_WASM = "../circuits/collateral_proof_js/collateral_proof.wasm";
-const PROVING_KEY = "../circuits/keys/collateral_proof_0000.zkey";
+const CIRCUIT_WASM = "../../../circuits/collateral_proof_js/collateral_proof.wasm";
+const PROVING_KEY = "../../../circuits/keys/collateral_proof_0000.zkey";
 
 const BACKEND_API_URL = process.env.BACKEND_API_URL || "http://localhost:3000";
 const MAX_LTV_RATIO = 80; // 80% LTV = 125% collateral ratio

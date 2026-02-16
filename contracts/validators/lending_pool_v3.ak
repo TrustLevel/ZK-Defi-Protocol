@@ -94,8 +94,9 @@ validator lending_pool_v3(params: DepositContractParams) {
         let loan_within_ltv = loan_amount <= max_loan_amount
 
         // Verify pool has sufficient liquidity
-        let available_liquidity =
-          pool_datum.total_deposited - pool_datum.total_borrowed
+        // Use actual pool balance (includes initial liquidity + user deposits)
+        let pool_balance = lovelace_of(pool_input.output.value)
+        let available_liquidity = pool_balance - pool_datum.total_borrowed
         let sufficient_liquidity = loan_amount <= available_liquidity
 
         // Find continuing pool output
