@@ -11,6 +11,8 @@
 .env.development.local
 .env.test.local
 .env.production.local
+# ...but keep the sanitized template
+!.env.example
 
 # Admin wallet credentials
 admin-wallet.json
@@ -101,6 +103,7 @@ contracts/docs/
 # IDE & System Files
 # ==============================================================================
 .DS_Store
+.claude/
 .vscode/
 .idea/
 *.swp
@@ -124,6 +127,7 @@ logs/
 !/docs/MILESTONE3.md
 !/docs/MILESTONE3-TEST-RESULTS.md
 !/docs/MILESTONE3-EVIDENCE.md
+!/docs/MILESTONE3-TESTER-FEEDBACK-TEMPLATE.md
 
 # Circomlib (install via npm or git clone)
 circuits/circomlib/

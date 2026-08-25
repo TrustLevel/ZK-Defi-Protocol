@@ -1,6 +1,7 @@
 # ZK Circuits - Collateral Proof
 
-Zero-Knowledge circuits for anonymous borrowing in the V3 Privacy-Enhanced Lending Protocol.
+Zero-Knowledge circuit (Groth16 over BLS12-381) for private borrowing in the ZK
+Private-Lending Protocol. The proof is verified on-chain by the Aiken v5 validators.
 
 ## Overview
 
@@ -96,18 +97,22 @@ npx snarkjs zkey export verificationkey \
 
 ### Run Tests
 
+The end-to-end gate test proves a valid case, checks the on-chain vkey/public
+signals, and confirms that an under-collateralized proof is rejected:
+
 ```bash
-npm test
+node tests/gate-bls12381.cjs
 ```
 
 Expected output:
 ```
-✅ Test 1: Valid collateral (150% ratio) - PASS
-✅ Test 2: Exact collateral (100% ratio) - PASS
-❌ Test 3: Insufficient collateral (50% ratio) - FAIL (expected)
-✅ Test 4: High collateral (300% ratio) - PASS
+GATE RESULT: 9 passed, 0 failed
+```
 
-All tests passed!
+To regenerate the on-chain proof fixture used by the Aiken tests:
+
+```bash
+node tests/gen-onchain-fixture.cjs
 ```
 
 ---
@@ -121,22 +126,22 @@ circuits/
 ├── collateral_proof.r1cs         # Constraint system (auto-generated, gitignored)
 ├── collateral_proof.sym          # Debug symbols (auto-generated, gitignored)
 │
+├── lib/
+│   ├── poseidon255.circom       # Poseidon hash over BLS12-381 scalar field
+│   └── poseidon255_constants.circom
+│
 ├── keys/
-│   ├── pot14_final.ptau         # Powers of Tau (18MB, gitignored)
-│   ├── collateral_proof_0000.zkey  # Proving key (455KB, gitignored)
-│   ├── verification_key.json    # Verification key (3KB, committed)
+│   ├── collateral_proof_final.zkey # Proving key (gitignored)
+│   ├── verification_key.json    # Verification key (committed)
 │   └── README.md                # Key generation guide
 │
 ├── tests/
-│   ├── test_v3_circuit.mjs      # Main test suite
-│   ├── calculate_commitment.js  # Helper functions
-│   ├── README.md                # Test documentation
-│   └── *.json, *.wtns          # Test outputs (gitignored)
+│   ├── gate-bls12381.cjs        # End-to-end proof gate (9 checks)
+│   ├── gen-onchain-fixture.cjs  # Generates the on-chain Aiken proof fixture
+│   └── README.md                # Test documentation
 │
 ├── circomlib/                   # Circuit libraries (gitignored, install via npm)
 ├── node_modules/                # NPM dependencies (gitignored)
-├── verify-proof-node.mjs        # Standalone proof verifier
-├── input.json                   # Example input template
 ├── package.json                 # NPM dependencies
 └── README.md                    # This file
 ```
@@ -181,45 +186,21 @@ npx snarkjs groth16 prove \
 ### 5. Verify Proof
 
 ```bash
-# Via snarkjs
 npx snarkjs groth16 verify \
   keys/verification_key.json \
   tests/public.json \
   tests/proof.json
-
-# Or via standalone verifier
-node verify-proof-node.mjs
 ```
 
 ---
 
 ## Integration with Offchain Code
 
-The circuit is used by the Deno/TypeScript offchain code:
-
-### Proof Generation (User Side)
-
-```typescript
-// In offchain/lib/proof.ts
-import { generateCollateralProof } from "./proof.ts";
-
-const proof = await generateCollateralProof(
-  collateralAmount,  // 100 ADA
-  secret,            // User's secret
-  loanAmount,        // 70 ADA
-  collateralRatio    // 150 (150%)
-);
-```
-
-### Proof Verification (Backend)
-
-```typescript
-// In offchain/backend/services/borrow.ts
-const verifyScript = "../../circuits/verify-proof-node.mjs";
-const isValid = await verifyProof(proof, publicSignals, verificationKey);
-```
-
-**Note:** Uses Node.js subprocess due to snarkjs/Deno incompatibility.
+The proof is generated and serialized for on-chain verification by the v5 CLI
+(`offchain/cli/v5/`), which builds the proof, hashes the commitment with
+Poseidon (BLS12-381), and submits it in the borrow transaction. The Aiken
+validators verify the Groth16 proof on-chain against the committed
+`verification_key.json` using the `modulo-p/ak-381` library.
 
 ---
 
