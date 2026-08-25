@@ -10,15 +10,15 @@
  * with toBufferBE inlined so we only depend on ffjavascript (present in offchain/).
  */
 const fs = require("fs");
-const snarkjs = require("/Users/dominiktilman/ZK-Defi-Protocol/offchain/node_modules/snarkjs");
-const ff = require("/Users/dominiktilman/ZK-Defi-Protocol/offchain/node_modules/ffjavascript");
-const { poseidon2 } = require("/Users/dominiktilman/ZK-Voting-App/node_modules/poseidon-bls12381");
+const snarkjs = require("snarkjs");
+const ff = require("ffjavascript");
+const { poseidon2 } = require("poseidon-bls12381");
 
-const BASE = "/Users/dominiktilman/ZK-Defi-Protocol/circuits";
+const BASE = require("path").resolve(__dirname, "..");
 const WASM = `${BASE}/collateral_proof_js/collateral_proof.wasm`;
 const ZKEY = `${BASE}/keys/collateral_proof_final.zkey`;
 const VKEY = JSON.parse(fs.readFileSync(`${BASE}/keys/verification_key.json`, "utf8"));
-const OUT = "/Users/dominiktilman/ZK-Defi-Protocol/contracts/lib/zk_onchain_test.ak";
+const OUT = require("path").resolve(__dirname, "../../contracts/lib/zk_onchain_test.ak");
 
 function toBufferBE(v, width) {
   let hex = BigInt(v).toString(16);

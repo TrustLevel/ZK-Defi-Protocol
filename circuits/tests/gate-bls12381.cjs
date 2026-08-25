@@ -13,10 +13,10 @@
  * during the off-chain migration step).
  */
 const fs = require("fs");
-const snarkjs = require("/Users/dominiktilman/ZK-Defi-Protocol/offchain/node_modules/snarkjs");
-const { poseidon2 } = require("/Users/dominiktilman/ZK-Voting-App/node_modules/poseidon-bls12381");
+const snarkjs = require("snarkjs");
+const { poseidon2 } = require("poseidon-bls12381");
 
-const BASE = "/Users/dominiktilman/ZK-Defi-Protocol/circuits";
+const BASE = require("path").resolve(__dirname, "..");
 const WASM = `${BASE}/collateral_proof_js/collateral_proof.wasm`;
 const ZKEY = `${BASE}/keys/collateral_proof_final.zkey`;
 const VKEY = JSON.parse(fs.readFileSync(`${BASE}/keys/verification_key.json`, "utf8"));
