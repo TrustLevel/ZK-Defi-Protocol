@@ -134,3 +134,12 @@ circuits/circomlib/
 circuits/node_modules/
 circuits/collateral_proof_final.zkey
 # Note: verification_key.json is committed (small and needed for verification)
+
+# M3 reproducibility: commit the compiled circuit + proving key so the gate test
+# runs turnkey (npm install && npm test) and verifies against the deployed vkey.
+!circuits/collateral_proof_js/
+!circuits/collateral_proof_js/collateral_proof.wasm
+!circuits/keys/collateral_proof_final.zkey
+
+# Local dev instructions — kept locally, not published to the public repo
+/CLAUDE.md
