@@ -1,7 +1,14 @@
 {
+  "type": "module",
+  "description": "Off-chain scripts (Mesh) for the ZK private-lending protocol v5 — deposit/borrow/repay/unlock on Cardano Preprod",
   "dependencies": {
-    "circomlib": "^2.0.5",
-    "circomlibjs": "^0.1.7",
+    "@meshsdk/core": "^1.9.1",
+    "ffjavascript": "^0.2.63",
+    "poseidon-bls12381": "^1.0.2",
     "snarkjs": "^0.7.6"
+  },
+  "overrides": {
+    "libsodium-wrappers-sumo": "0.8.2",
+    "libsodium-sumo": "0.8.2"
   }
 }
