@@ -1,27 +1,33 @@
 pragma circom 2.0.0;
 
-include "circomlib/circuits/poseidon.circom";
 include "circomlib/circuits/comparators.circom";
 include "circomlib/circuits/bitify.circom";
+include "./lib/poseidon255.circom";
 
 /**
- * ProveOwnership Circuit
+ * ProveOwnership Circuit  (BLS12-381)
  *
  * Proves that a user owns a UTXO with sufficient collateral without revealing:
  * - The secret
  * - The exact collateral amount
  *
+ * MIGRATED BN254 -> BLS12-381 (v5 / Milestone 3):
+ * Cardano's on-chain Groth16 builtins are BLS12-381 only, so the commitment
+ * hash uses Poseidon255 (poseidon-bls12381-circom) instead of circomlib's
+ * BN254 Poseidon. Compile with:  circom --prime bls12381 -l .
+ * Logic and public-signal layout are unchanged from the BN254 version.
+ *
  * Public Inputs:
- *   - commitment: The commitment being proven (Poseidon hash output)
+ *   - commitment: The commitment being proven (Poseidon255 hash output)
  *   - loan_amount: Requested loan amount
  *   - collateral_ratio: Required collateralization ratio (e.g., 150 for 150%)
  *
  * Private Inputs (Witness):
- *   - secret: User's secret (random 256-bit value)
+ *   - secret: User's secret (random <254-bit value)
  *   - collateral_amount: Actual collateral in UTXO
  *
  * Constraints:
- *   1. commitment == Poseidon(collateral_amount, secret)
+ *   1. commitment == Poseidon255(collateral_amount, secret)
  *   2. collateral_amount * 100 >= loan_amount * collateral_ratio
  *   3. Range checks to prevent overflow
  */
@@ -36,16 +42,17 @@ template ProveOwnership() {
     // ========================================
     // Private Inputs (witness - secret)
     // ========================================
-    signal input secret;              // User's secret (random 256-bit)
+    signal input secret;              // User's secret (random <254-bit)
     signal input collateral_amount;   // Actual collateral in UTXO
 
     // ========================================
     // Constraint 1: Verify Commitment
     // ========================================
-    // Compute commitment from private inputs using Poseidon hash
-    component poseidon = Poseidon(2);
-    poseidon.inputs[0] <== collateral_amount;  // First input: collateral amount
-    poseidon.inputs[1] <== secret;              // Second input: secret
+    // Compute commitment from private inputs using BLS12-381 Poseidon255.
+    // NOTE: Poseidon255 exposes its inputs as `in[]` (not `inputs[]`).
+    component poseidon = Poseidon255(2);
+    poseidon.in[0] <== collateral_amount;  // First input: collateral amount
+    poseidon.in[1] <== secret;              // Second input: secret
 
     signal computed_commitment;
     computed_commitment <== poseidon.out;
@@ -86,7 +93,7 @@ template ProveOwnership() {
     component rc_loan = Num2Bits(64);
     rc_loan.in <== loan_amount;
 
-    // Range check for secret (must fit in 254 bits - safe for Poseidon)
+    // Range check for secret (must fit in 254 bits - safe for BLS12-381 field)
     component rc_secret = Num2Bits(254);
     rc_secret.in <== secret;
 

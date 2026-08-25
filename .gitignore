@@ -119,7 +119,11 @@ logs/
 # ==============================================================================
 # Documentation (Optional - uncomment if you want to ignore docs)
 # ==============================================================================
-/docs
+/docs/*
+# ...but keep the published Milestone 3 evidence docs (required deliverables)
+!/docs/MILESTONE3.md
+!/docs/MILESTONE3-TEST-RESULTS.md
+!/docs/MILESTONE3-EVIDENCE.md
 
 # Circomlib (install via npm or git clone)
 circuits/circomlib/

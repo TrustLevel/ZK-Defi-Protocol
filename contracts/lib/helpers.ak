@@ -70,11 +70,15 @@ pub fn value_paid_to_address(
 /// Used to ensure proof hashes meet requirements before accepting them
 pub fn verify_zk_proof_hash(proof_hash: ByteArray) -> Bool {
   // Must be exactly 32 bytes (Blake2b-256 output)
-  let valid_length = builtin.length_of_bytearray(proof_hash) == 32
+  let length = builtin.length_of_bytearray(proof_hash)
+  let valid_length = length == 32
+  trace @"DEBUG proof_hash_length": length
+  trace @"DEBUG proof_hash_valid_length": valid_length
 
   // Must not be all zeros
   let non_zero =
     proof_hash != #"0000000000000000000000000000000000000000000000000000000000000000"
+  trace @"DEBUG proof_hash_non_zero": non_zero
 
   valid_length && non_zero
 }
