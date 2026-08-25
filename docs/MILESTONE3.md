@@ -136,16 +136,4 @@ on-chain commitment.
 Live transaction hashes are listed in `docs/MILESTONE3-TEST-RESULTS.md` and
 `docs/MILESTONE3-EVIDENCE.md`.
 
----
 
-## 5. Root cause resolved (historical note)
-
-Four earlier borrow attempts failed and were mis-attributed to a "redeemer CBOR
-deserialization" bug. An offline CBOR diagnosis proved redeemer + datum encode
-byte-perfect against `plutus.json`, falsifying that theory. The **true** root cause:
-the v3/v4/v5 `spend` handlers declared the 4th argument as `ctx: ScriptContext`, but
-Aiken 1.1.x passes the raw **`Transaction`** as the 4th spend argument — causing an
-`unConstrData` failure at spend time. Fixed by using `tx: Transaction` (verified
-against the original DeFi-Lending and ZK-Voting-App references). With that fix plus the
-real on-chain verifier, the full deposit → borrow → repay → unlock cycle validates on
-Preprod (`valid_contract: true`).
