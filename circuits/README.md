@@ -1,308 +1,82 @@
-# ZK Circuits - Collateral Proof
+# ZK Circuit — Collateral Proof (BLS12-381)
 
-Zero-Knowledge circuit (Groth16 over BLS12-381) for private borrowing in the ZK
-Private-Lending Protocol. The proof is verified on-chain by the Aiken v5 validators.
+Groth16 circuit for private borrowing. The proof is verified **on-chain** by the
+Aiken v5 validators (see [`../contracts/`](../contracts/)), so it targets the
+**BLS12-381** scalar field.
 
-## Overview
+## What it proves
 
-This circuit proves that a user owns a UTXO with sufficient collateral **without revealing:**
-- The secret value
-- The exact collateral amount
-- Which specific UTXO is being used
+For a hidden `secret` and `collateral_amount`, the borrower proves:
 
-### How it Works
+1. `commitment == Poseidon255(collateral_amount, secret)`
+2. `collateral_amount * 100 >= loan_amount * collateral_ratio`
+3. the inputs are range-bounded (no field overflow)
 
-1. **Deposit:** User generates Poseidon commitment: `commitment = Poseidon(collateral_amount, secret)`
-2. **Borrow:** User generates ZK proof: "I know a secret for a valid deposit with sufficient collateral"
-3. **Verify:** Backend verifies proof without learning which deposit or the secret
+- **Public inputs** (learned by the verifier): `commitment`, `loan_amount`, `collateral_ratio`
+- **Private inputs** (witness): `secret`, `collateral_amount`
 
-### Circuit: collateral_proof.circom
+The verifier never learns the secret or the collateral amount. Poseidon over
+BLS12-381 comes from `lib/poseidon255.circom` (from `poseidon-bls12381-circom`);
+the comparators/range-checks come from circomlib.
 
-**Public Inputs** (visible to verifier):
-- `commitment` - The Poseidon commitment being proven
-- `loan_amount` - Requested loan amount
-- `collateral_ratio` - Required collateralization (e.g., 150%)
+**Size / performance:** ~1,100 constraints; proof generation ~0.4–0.7 s; on-chain
+verification is well within Plutus V3 limits (exact ExUnits in
+[`../docs/MILESTONE3-TEST-RESULTS.md`](../docs/MILESTONE3-TEST-RESULTS.md)).
 
-**Private Inputs** (witness - secret):
-- `secret` - User's secret (random 253-bit value)
-- `collateral_amount` - Actual collateral in UTXO
+## Prerequisites
 
-**Constraints:**
-1. **Commitment verification:** `commitment == Poseidon(collateral_amount, secret)`
-2. **Collateral check:** `collateral_amount * 100 >= loan_amount * collateral_ratio`
-3. **Range checks:** Prevent overflow attacks
+- circom ≥ 2.2 (must support `--prime bls12381`)
+- Node.js 18+, then `cd circuits && npm install`
 
-**Performance:**
-- Constraints: ~50-100 (very simple!)
-- Proof generation: ~25 seconds (Groth16)
-- Proof verification: <1 second
-- Proof size: ~200 bytes
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- **Circom** v2.1.9+ (circuit compiler)
-- **snarkjs** v0.7.4+ (proof generation/verification)
-- **Node.js** v18+ (for snarkjs)
-
-### Installation
+## Compile
 
 ```bash
-# 1. Install circom (choose one)
-brew install circom                    # macOS
-cargo install --git https://github.com/iden3/circom.git  # From source
-
-# 2. Install snarkjs
-npm install -g snarkjs
-
-# 3. Install project dependencies
-cd circuits/
-npm install
+circom collateral_proof.circom --r1cs --wasm --sym --prime bls12381 -l . -l node_modules
 ```
 
-### Compile Circuit
+This produces `collateral_proof.r1cs` and `collateral_proof_js/collateral_proof.wasm`
+(both gitignored).
+
+## Keys
+
+`keys/verification_key.json` is committed; the proving key and Powers-of-Tau file
+are gitignored. See [`keys/README.md`](keys/README.md) to regenerate them (and an
+important note: a fresh setup produces a new key pair that will not match the
+committed verification key / deployment).
+
+## Test
 
 ```bash
-# Compile circuit to WASM + R1CS
-circom collateral_proof.circom --r1cs --wasm --sym
-
-# This generates:
-# - collateral_proof_js/collateral_proof.wasm  (1.7MB)
-# - collateral_proof.r1cs (constraints)
-# - collateral_proof.sym (debug symbols)
+npm test        # -> node tests/gate-bls12381.cjs  ->  9/9 checks pass
 ```
 
-### Setup Trusted Keys (First Time Only)
+The gate proves a valid case, checks the three public signals + the BLS12-381
+curve + determinism, and confirms that a tampered public signal fails and an
+under-collateralized input is rejected. `tests/gen-onchain-fixture.cjs`
+regenerates the Aiken on-chain proof fixture (`../contracts/lib/zk_onchain_test.ak`).
 
-```bash
-cd keys/
+> The gate reads the compiled `collateral_proof_js/collateral_proof.wasm` and
+> `keys/collateral_proof_final.zkey`, both gitignored — compile the circuit and
+> regenerate the keys first (or obtain the committed artifacts from the maintainers).
 
-# Download Powers of Tau (18MB, one-time)
-wget https://hermez.s3-eu-west-1.amazonaws.com/powersOfTau28_hez_final_14.ptau
-
-# Generate proving key (~455 KB)
-npx snarkjs groth16 setup \
-  ../collateral_proof.r1cs \
-  pot14_final.ptau \
-  collateral_proof_0000.zkey
-
-# Export verification key (~3 KB)
-npx snarkjs zkey export verificationkey \
-  collateral_proof_0000.zkey \
-  verification_key.json
-```
-
-### Run Tests
-
-The end-to-end gate test proves a valid case, checks the on-chain vkey/public
-signals, and confirms that an under-collateralized proof is rejected:
-
-```bash
-node tests/gate-bls12381.cjs
-```
-
-Expected output:
-```
-GATE RESULT: 9 passed, 0 failed
-```
-
-To regenerate the on-chain proof fixture used by the Aiken tests:
-
-```bash
-node tests/gen-onchain-fixture.cjs
-```
-
----
-
-## Directory Structure
+## Layout
 
 ```
-circuits/
-├── collateral_proof.circom       # Circuit source code
-├── collateral_proof_js/          # Compiled WASM (auto-generated, gitignored)
-├── collateral_proof.r1cs         # Constraint system (auto-generated, gitignored)
-├── collateral_proof.sym          # Debug symbols (auto-generated, gitignored)
-│
-├── lib/
-│   ├── poseidon255.circom       # Poseidon hash over BLS12-381 scalar field
-│   └── poseidon255_constants.circom
-│
-├── keys/
-│   ├── collateral_proof_final.zkey # Proving key (gitignored)
-│   ├── verification_key.json    # Verification key (committed)
-│   └── README.md                # Key generation guide
-│
-├── tests/
-│   ├── gate-bls12381.cjs        # End-to-end proof gate (9 checks)
-│   ├── gen-onchain-fixture.cjs  # Generates the on-chain Aiken proof fixture
-│   └── README.md                # Test documentation
-│
-├── circomlib/                   # Circuit libraries (gitignored, install via npm)
-├── node_modules/                # NPM dependencies (gitignored)
-├── package.json                 # NPM dependencies
-└── README.md                    # This file
+collateral_proof.circom        circuit source
+lib/poseidon255*.circom        BLS12-381 Poseidon (committed)
+keys/verification_key.json     committed vkey (proving key + ptau gitignored)
+tests/                         gate test + on-chain fixture generator
 ```
 
-**Note:** Most files are auto-generated and gitignored. Only source code and documentation are committed.
+## Security
 
----
-
-## Development Workflow
-
-### 1. Edit Circuit
-
-```bash
-vim collateral_proof.circom
-```
-
-### 2. Compile
-
-```bash
-circom collateral_proof.circom --r1cs --wasm --sym
-```
-
-### 3. Generate Test Witness
-
-```bash
-node collateral_proof_js/generate_witness.js \
-  collateral_proof_js/collateral_proof.wasm \
-  tests/input_test.json \
-  tests/witness.wtns
-```
-
-### 4. Generate Proof
-
-```bash
-npx snarkjs groth16 prove \
-  keys/collateral_proof_0000.zkey \
-  tests/witness.wtns \
-  tests/proof.json \
-  tests/public.json
-```
-
-### 5. Verify Proof
-
-```bash
-npx snarkjs groth16 verify \
-  keys/verification_key.json \
-  tests/public.json \
-  tests/proof.json
-```
-
----
-
-## Integration with Offchain Code
-
-The proof is generated and serialized for on-chain verification by the v5 CLI
-(`offchain/cli/v5/`), which builds the proof, hashes the commitment with
-Poseidon (BLS12-381), and submits it in the borrow transaction. The Aiken
-validators verify the Groth16 proof on-chain against the committed
-`verification_key.json` using the `modulo-p/ak-381` library.
-
----
-
-## Troubleshooting
-
-### "circom: command not found"
-
-```bash
-# Install circom
-brew install circom
-
-# Or from source
-cargo install --git https://github.com/iden3/circom.git
-```
-
-### "snarkjs: command not found"
-
-```bash
-npm install -g snarkjs
-
-# Or use npx
-npx snarkjs --version
-```
-
-### "Powers of Tau file not found"
-
-```bash
-cd keys/
-wget https://hermez.s3-eu-west-1.amazonaws.com/powersOfTau28_hez_final_14.ptau
-```
-
-### "Proving key not found"
-
-The proving key is auto-generated locally (gitignored). Run setup:
-
-```bash
-cd keys/
-npx snarkjs groth16 setup ../collateral_proof.r1cs pot14_final.ptau collateral_proof_0000.zkey
-```
-
-### Proof generation fails
-
-```bash
-# Check WASM was compiled
-ls -lh collateral_proof_js/collateral_proof.wasm
-
-# Should be ~1.7MB
-# If missing, recompile:
-circom collateral_proof.circom --wasm
-```
-
----
-
-## Security Considerations
-
-### Trusted Setup
-
-This circuit uses **Groth16** which requires a trusted setup ceremony. The Powers of Tau file (`pot14_final.ptau`) is from the Hermez ceremony.
-
-**For Production:**
-- Run a multi-party computation (MPC) ceremony for this specific circuit
-- Or migrate to PLONK/STARK (no trusted setup required)
-
-### Circuit Simplicity
-
-The circuit is intentionally minimal (~50 constraints) to:
-- Reduce attack surface
-- Minimize audit complexity
-- Improve performance
-
-**Before Mainnet:** Professional circuit audit recommended.
-
----
-
-## Performance Benchmarks
-
-Tested on MacBook Pro M1:
-
-| Operation | Time |
-|-----------|------|
-| Circuit compilation | ~2 seconds |
-| Witness generation | ~100ms |
-| Proof generation | ~25 seconds |
-| Proof verification | <1 second |
-
----
+Groth16 requires a trusted setup; the committed keys use a dev-only
+single-contributor ceremony (see [`keys/README.md`](keys/README.md)) and are not
+suitable for mainnet. A professional circuit audit is recommended before mainnet.
 
 ## References
 
-- **Circom Docs:** https://docs.circom.io/
-- **snarkjs:** https://github.com/iden3/snarkjs
-- **circomlib:** https://github.com/iden3/circomlib
-- **Poseidon Hash:** https://www.poseidon-hash.info/
-- **Groth16 Paper:** https://eprint.iacr.org/2016/260
-
----
-
-## Contributing
-
-This circuit is part of the ZK-DeFi Protocol for Cardano. For questions or contributions, see the main project repository.
-
-**Last Updated:** 2026-01-22
-**Circuit Version:** v3
-**Circom Version:** 2.1.9
-**snarkjs Version:** 0.7.4
+- circom — https://docs.circom.io/
+- snarkjs — https://github.com/iden3/snarkjs
+- poseidon-bls12381-circom — https://github.com/modulo-p/poseidon-bls12381-circom
+- Groth16 — https://eprint.iacr.org/2016/260
