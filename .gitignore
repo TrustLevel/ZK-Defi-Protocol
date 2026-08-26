@@ -127,7 +127,8 @@ logs/
 !/docs/MILESTONE3.md
 !/docs/MILESTONE3-TEST-RESULTS.md
 !/docs/MILESTONE3-EVIDENCE.md
-!/docs/MILESTONE3-TESTER-FEEDBACK-TEMPLATE.md
+!/docs/Tester-Feedback/
+!/docs/Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-TEMPLATE.md
 
 # Circomlib (install via npm or git clone)
 circuits/circomlib/
