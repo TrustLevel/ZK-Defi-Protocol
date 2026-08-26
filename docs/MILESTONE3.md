@@ -54,6 +54,12 @@ Off-chain drivers (Mesh, Node ESM): `offchain/cli/v5/{1-park-vkey,2-init-pool,
 3-deposit,4-borrow,5-repay,6-unlock}.mjs`, shared helpers in
 `offchain/cli/v5/common.mjs`.
 
+> **Why Mesh (v5).** The Milestone-2 off-chain used the Lucid Evolution transaction
+> builder and ran into persistent, hard-to-diagnose transaction failures when integrating zk proofs. Milestone 3
+> is a clean rebuild on **Mesh** — the fifth iteration of the contracts and builder,
+> hence the `v5` naming — which brought the full deposit → borrow → repay → unlock cycle
+> to a reliable pass on Preprod.
+
 ---
 
 ## 2. zk-proof generation mechanism
@@ -134,5 +140,29 @@ on-chain commitment.
 
 Live transaction hashes are listed in `docs/MILESTONE3-TEST-RESULTS.md` and
 `docs/MILESTONE3-EVIDENCE.md`.
+
+---
+
+## 5. Security model
+
+The zk-SNARK proof is the **sole authorization** for every borrow, repayment and
+unlock — no admin key, no owner signature. Two on-chain properties make that
+trustworthy:
+
+- **Bound to chain state.** Public signals are not taken on trust from the redeemer —
+  the commitment is read from the referenced collateral UTxO and the amounts are
+  cross-checked against the pool's balance delta, so a spender cannot feed the verifier
+  convenient inputs.
+- **Immutable verification key.** The VKey is pinned to an unspendable (always-false)
+  reference UTxO, set once at pool init and never swappable.
+
+Both independent testers confirmed this holds under adversarial testing — including a
+permissionless borrow from a live pool using only a proof (see `docs/Tester-Feedback/`).
+
+## 6. Next steps (Milestone 4)
+
+Milestone 4 adds a simple web UI over the protocol demonstrated here — CIP-30 wallet
+integration, in-browser proof generation, and a guided deposit → borrow → repay flow,
+followed by user testing. Feedback from the two M3 testers is folded into that work.
 
 
