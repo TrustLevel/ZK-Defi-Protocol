@@ -9,12 +9,11 @@ collateral and loan transactions — without revealing the underlying secret.
 
 ## 1. Protocol overview
 
-The ZK-DeFi-Protocol lets a user borrow against locked collateral **anonymously**:
-the on-chain contracts authorize each loan/repayment/unlock with a real Groth16
-zk-SNARK proof instead of a signature. The proof attests, in zero knowledge, that
-the spender knows the secret behind a collateral commitment and that the collateral
-is sufficient for the requested amount — **without revealing the secret or the exact
-collateral amount**.
+In the ZK-DeFi-Protocol, the on-chain contracts authorize each borrow, repayment and
+unlock with a real Groth16 zk-SNARK proof **instead of a signature**. The proof
+attests, in zero knowledge, that the spender knows the secret behind a collateral
+commitment and that the collateral is sufficient for the requested amount —
+**without revealing the secret**.
 
 Two Plutus V3 validators implement the protocol (`contracts/validators/v5/`):
 
@@ -62,7 +61,7 @@ Off-chain drivers (Mesh, Node ESM): `offchain/cli/v5/{1-park-vkey,2-init-pool,
 ### Circuit — `circuits/collateral_proof.circom`
 
 `ProveOwnership` proves possession of a sufficiently-collateralized commitment
-without revealing the secret or the exact collateral amount.
+without revealing the secret.
 
 **Public inputs (signals):** `[commitment, loan_amount, collateral_ratio]`
 **Private inputs (witness):** `secret`, `collateral_amount`

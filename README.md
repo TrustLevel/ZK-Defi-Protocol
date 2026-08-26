@@ -1,10 +1,10 @@
 # ZK Private-Lending Protocol
 
-A privacy-preserving lending/borrowing protocol on Cardano. Borrowers prove —
-in zero knowledge — that they have deposited sufficient collateral for a loan,
-**without revealing the collateral amount, their secret, or which deposit they
-are spending**. The proof is a Groth16 SNARK verified **on-chain** by Aiken
-validators.
+A zero-knowledge lending/borrowing protocol on Cardano. Each loan, repayment and
+collateral unlock is authorized by a Groth16 zk-SNARK proof verified **on-chain** by
+Aiken validators — the borrower proves, in zero knowledge, that they know the secret
+behind a sufficiently-collateralized deposit, **without exposing that secret** and
+without a signature.
 
 ## Milestone 3 status
 
@@ -50,7 +50,7 @@ Evidence and details:
 3. **Repay / Unlock** — the borrower repays the loan and unlocks the collateral.
 
 The verifier learns only the public signals `[commitment, loan_amount,
-collateral_ratio]` — never the secret or the collateral amount.
+collateral_ratio]`; the secret is never revealed.
 
 ## Tech stack
 

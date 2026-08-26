@@ -15,7 +15,7 @@ For a hidden `secret` and `collateral_amount`, the borrower proves:
 - **Public inputs** (learned by the verifier): `commitment`, `loan_amount`, `collateral_ratio`
 - **Private inputs** (witness): `secret`, `collateral_amount`
 
-The verifier never learns the secret or the collateral amount. Poseidon over
+The proof reveals nothing about the `secret` — a private witness that never touches the chain. Poseidon over
 BLS12-381 comes from `lib/poseidon255.circom` (from `poseidon-bls12381-circom`);
 the comparators/range-checks come from circomlib.
 
