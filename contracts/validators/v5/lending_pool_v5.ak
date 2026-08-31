@@ -57,13 +57,17 @@ validator lending_pool_v5 {
         }
       }
 
-      // BorrowAnonymous: ZK proof authorizes the loan, verified on-chain.
-      BorrowAnonymous { collateral_ref, proof, loan_amount } -> {
+      // BorrowAnonymous: ZK proof authorizes the loan, verified on-chain. The
+      // referenced collateral must be SPENT and locked to this loan in the same
+      // tx (loan_bound -> Some(loan_nullifier)) — you cannot borrow without
+      // locking collateral.
+      BorrowAnonymous { collateral_ref, proof, loan_amount, loan_nullifier } -> {
         // Trusted verification key (pinned in pool datum -> reference input)
         let vkey = get_vkey(tx, pool_datum.vkey_ref)
 
-        // Commitment comes from the referenced collateral UTxO, not the redeemer
-        let commitment = referenced_commitment(tx, collateral_ref)
+        // Commitment comes from the spent collateral UTxO, which must continue
+        // locked to this loan nullifier (binds borrow <-> collateral).
+        let commitment = locked_collateral_commitment(tx, collateral_ref, loan_nullifier)
 
         // REAL on-chain zk-SNARK verification, bound to on-chain data
         let proof_ok =
@@ -103,7 +107,8 @@ validator lending_pool_v5 {
       }
 
       // RepayAnonymous: ZK proof re-attests collateral ownership, verified on-chain.
-      RepayAnonymous { deposit_ref, proof, repay_amount } -> {
+      // The loan_nullifier lets a paired SettleLoan free the matching collateral.
+      RepayAnonymous { deposit_ref, proof, repay_amount, loan_nullifier: _ } -> {
         let vkey = get_vkey(tx, pool_datum.vkey_ref)
         let commitment = referenced_commitment(tx, deposit_ref)
 
@@ -154,13 +159,46 @@ validator lending_pool_v5 {
 
 /// A3: every protocol-configuration field must survive a pool spend unchanged.
 /// Only total_deposited / total_borrowed may move, and only on their own branch.
-/// (open_loans_root is added in the loan-binding workstream and folded in here then.)
+/// open_loans_root is preserved here until Workstream C wires the MPF insert/delete.
 fn pool_config_preserved(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
   and {
     new.interest_rate == old.interest_rate,
     new.collateral_ratio == old.collateral_ratio,
     new.vkey_ref == old.vkey_ref,
+    new.open_loans_root == old.open_loans_root,
   }
+}
+
+/// Read the commitment from the collateral being locked, asserting it is genuinely
+/// SPENT and continues at its own address locked to `loan_nullifier`. This binds a
+/// borrow to a real collateral lock (you cannot borrow without locking collateral).
+fn locked_collateral_commitment(
+  tx: Transaction,
+  collateral_ref: OutputReference,
+  loan_nullifier: Int,
+) -> Int {
+  expect Some(coll_input) = find_input_by_ref(tx, collateral_ref)
+  // Must be a genuinely spent input, not merely a read-only reference input.
+  expect list.any(tx.inputs, fn(i) { i.output_reference == collateral_ref })
+  expect InlineDatum(coll_data) = coll_input.output.datum
+  expect coll_datum: DepositDatumV5 = coll_data
+
+  // A continuing collateral output at the same address must be locked to this loan.
+  let coll_outputs =
+    list.filter(tx.outputs, fn(o) { o.address == coll_input.output.address })
+  expect
+    list.any(
+      coll_outputs,
+      fn(o) {
+        expect InlineDatum(od) = o.datum
+        expect out_datum: DepositDatumV5 = od
+        and {
+          out_datum.commitment == coll_datum.commitment,
+          out_datum.loan_bound == Some(loan_nullifier),
+        }
+      },
+    )
+  coll_datum.commitment
 }
 
 /// The continuing pool output (same script address as the spent pool input).
