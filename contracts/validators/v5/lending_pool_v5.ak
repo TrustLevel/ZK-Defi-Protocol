@@ -35,17 +35,25 @@ validator lending_pool_v5 {
       // Deposit: anyone may add liquidity (increases pool value). Datum continues.
       Deposit -> {
         expect Some(pool_output) = continuing_pool_output(tx, pool_input)
-        let pool_increased =
-          lovelace_of(pool_output.value) > lovelace_of(pool_input.output.value)
+        let pool_in = lovelace_of(pool_input.output.value)
+        let pool_out = lovelace_of(pool_output.value)
+        let delta = pool_out - pool_in
+        let pool_increased = delta > 0
 
         expect InlineDatum(output_datum_data) = pool_output.datum
         expect output_datum: PoolDatumV5 = output_datum_data
-        let datum_valid =
-          output_datum.total_deposited >= pool_datum.total_deposited
+
+        // A3: exact deposit accounting; borrowed untouched; protocol config preserved
+        let deposited_updated =
+          output_datum.total_deposited == pool_datum.total_deposited + delta
+        let borrowed_unchanged =
+          output_datum.total_borrowed == pool_datum.total_borrowed
 
         and {
           pool_increased?,
-          datum_valid?,
+          deposited_updated?,
+          borrowed_unchanged?,
+          pool_config_preserved(pool_datum, output_datum)?,
         }
       }
 
@@ -76,16 +84,21 @@ validator lending_pool_v5 {
         expect InlineDatum(output_datum_data) = pool_output.datum
         expect output_datum: PoolDatumV5 = output_datum_data
 
-        let datum_updated =
+        let borrowed_updated =
           output_datum.total_borrowed == pool_datum.total_borrowed + loan_amount
+        // A3: liquidity accounting untouched by a borrow
+        let deposited_unchanged =
+          output_datum.total_deposited == pool_datum.total_deposited
         let pool_decreased_correctly =
           lovelace_of(pool_output.value) == pool_balance - loan_amount
 
         and {
           proof_ok?,
           sufficient_liquidity?,
-          datum_updated?,
+          borrowed_updated?,
+          deposited_unchanged?,
           pool_decreased_correctly?,
+          pool_config_preserved(pool_datum, output_datum)?,
         }
       }
 
@@ -109,16 +122,26 @@ validator lending_pool_v5 {
         expect InlineDatum(output_datum_data) = pool_output.datum
         expect output_datum: PoolDatumV5 = output_datum_data
 
-        // Pool must receive the repayment; borrowed total does not increase
+        // A4: exact debt reduction — a partial repay may not zero the debt,
+        // and it may not exceed the outstanding total (no underflow).
+        let repay_positive = repay_amount > 0
+        let no_overpay = repay_amount <= pool_datum.total_borrowed
+        let borrowed_updated =
+          output_datum.total_borrowed == pool_datum.total_borrowed - repay_amount
+        // Pool must receive exactly the repayment; liquidity total untouched
         let pool_increased_correctly =
           lovelace_of(pool_output.value) == pool_balance + repay_amount
-        let datum_updated =
-          output_datum.total_borrowed <= pool_datum.total_borrowed
+        let deposited_unchanged =
+          output_datum.total_deposited == pool_datum.total_deposited
 
         and {
           proof_ok?,
+          repay_positive?,
+          no_overpay?,
+          borrowed_updated?,
           pool_increased_correctly?,
-          datum_updated?,
+          deposited_unchanged?,
+          pool_config_preserved(pool_datum, output_datum)?,
         }
       }
     }
@@ -126,6 +149,17 @@ validator lending_pool_v5 {
 
   else(_ctx: ScriptContext) {
     fail @"Unsupported validator purpose"
+  }
+}
+
+/// A3: every protocol-configuration field must survive a pool spend unchanged.
+/// Only total_deposited / total_borrowed may move, and only on their own branch.
+/// (open_loans_root is added in the loan-binding workstream and folded in here then.)
+fn pool_config_preserved(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
+  and {
+    new.interest_rate == old.interest_rate,
+    new.collateral_ratio == old.collateral_ratio,
+    new.vkey_ref == old.vkey_ref,
   }
 }
 
