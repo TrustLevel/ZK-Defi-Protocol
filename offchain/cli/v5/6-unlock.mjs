@@ -1,33 +1,14 @@
 /**
- * Step 6 — UnlockDeposit, authorized by a real Groth16 proof verified ON-CHAIN.
- *
- * Completes the M3 "collateral verification" component: after the anonymous
- * loan has been repaid, the depositor unlocks their collateral UTxO from the
- * collateral_v5 validator by proving knowledge of the secret behind the
- * commitment — with NO admin/owner signature, only a zk-SNARK.
- *
- * - Generates a BLS12-381 Groth16 proof for public signals
- *     [commitment, collateral_amount, unlock_ratio=100]
- *   where, with loan_amount == collateral_amount and ratio == 100, the circuit's
- *   sufficiency constraint (collateral*100 >= loan*ratio) holds with equality,
- *   so the proof attests ONLY knowledge of the secret behind the commitment.
- * - Spends the deposit UTxO at collateral_v5 with redeemer
- *     UnlockDeposit{proof, vkey_ref} = conStr(2, [Proof, OutputReference]).
- * - References the VKey UTxO (read-only) — the verification key the on-chain
- *   groth_verify reads via get_vkey(tx, vkey_ref).
- * - Pays the freed collateral back to the admin wallet.
- *
- * The collateral validator calls
- *   groth_verify(vkey, proof, [commitment, collateral_amount, 100])
- * on-chain — no extra_signatories. This is real on-chain ZK collateral unlock.
+ * Step 6 — UnlockDeposit: spend the specific deposit with a commitment-bound ZK
+ * proof, gated on the loan nullifier being SETTLED (absent from the pool's
+ * open_loans, read via a pool reference input). No signature. This is the
+ * privacy-preserving, repayment-gated collateral unlock.
  */
 import {
   loadEnv, makeProvider, makeWallet, walletAddress, makeTxBuilder,
-  outputReference, generateProof,
-  COLLATERAL_ADDRESS, COLLATERAL_CBOR, loadReceipt, saveReceipt, scanLink,
+  generateUnlockProof, R_Unlock,
+  COLLATERAL_ADDRESS, COLLATERAL_CBOR, POOL_ADDRESS, loadReceipt, saveReceipt, scanLink,
 } from "./common.mjs";
-
-const UNLOCK_RATIO = 100; // must equal collateral_v5.ak `unlock_ratio`
 
 const env = loadEnv();
 const provider = makeProvider(env);
@@ -35,79 +16,48 @@ const wallet = await makeWallet(env, provider);
 const addr = await walletAddress(wallet);
 const utxos = await provider.fetchAddressUTxOs(addr);
 
+const pool = loadReceipt("pool.json");
 const deposit = loadReceipt("deposit.json");
-const vkey = loadReceipt("vkey.json");
 
-// Pure-ADA wallet UTxO for Cardano script collateral.
-const collateralUtxo = utxos.find(
-  (u) => u.output.amount.length === 1 && u.output.amount[0].unit === "lovelace" &&
-         Number(u.output.amount[0].quantity) >= 5_000_000,
-) || utxos[0];
-
-// Resolve the deposit UTxO on-chain (the input we are unlocking).
+// Resolve the deposit UTxO being unlocked.
 const depUtxos = await provider.fetchAddressUTxOs(COLLATERAL_ADDRESS);
-const depUtxo = depUtxos.find(
-  (u) => u.input.txHash === deposit.txHash && u.input.outputIndex === deposit.outputIndex,
-);
-if (!depUtxo) throw new Error(`deposit UTxO ${deposit.txHash}#${deposit.outputIndex} not found on-chain (already unlocked?)`);
+const depUtxo = depUtxos.find((u) => u.input.txHash === deposit.txHash && u.input.outputIndex === deposit.outputIndex);
+if (!depUtxo) throw new Error(`deposit UTxO ${deposit.txHash}#${deposit.outputIndex} not found (already unlocked?)`);
 const depBalance = Number(depUtxo.output.amount.find((a) => a.unit === "lovelace").quantity);
-console.log("deposit balance:", depBalance / 1e6, "ADA at", COLLATERAL_ADDRESS);
 
-// Ownership proof: public signals [commitment, collateral_amount, 100].
-// generateProof(commitment, amount, ratio, secret, collateralAmount)
-// -> circuit input loan_amount=collateral_amount, collateral_ratio=100.
-const commitment = BigInt(deposit.commitment);
-console.log("generating unlock (ownership) proof for commitment", commitment.toString().slice(0, 16) + "...");
-const { proofData, publicSignals, proofGenMs } = await generateProof(
-  commitment,
-  deposit.collateralAmount,   // loan_amount public signal == collateral_amount
-  UNLOCK_RATIO,               // collateral_ratio public signal == 100
-  BigInt(deposit.secret),
-  deposit.collateralAmount,
-);
-console.log("proof generated in", proofGenMs, "ms | publicSignals:", publicSignals);
+// The pool reference input must be the current pool UTxO (post-repay: nullifier gone).
+const poolUtxos = await provider.fetchAddressUTxOs(POOL_ADDRESS);
+const poolUtxo = poolUtxos.find((u) => u.input.txHash === pool.txHash && u.input.outputIndex === pool.outputIndex);
+if (!poolUtxo) throw new Error(`pool UTxO ${pool.txHash}#${pool.outputIndex} not found`);
 
-const { conStr } = await import("@meshsdk/core");
-// UnlockDeposit = conStr 2 [Proof, OutputReference(vkey_ref)]
-const unlockRedeemer = conStr(2, [
-  proofData,
-  outputReference(vkey.txHash, vkey.outputIndex),
-]);
+const { proofData, nullifier } = await generateUnlockProof({
+  commitment: BigInt(deposit.commitment), secret: BigInt(deposit.secret),
+  collateralAmount: deposit.collateralAmount,
+});
+const settled = !pool.open_loans.some((l) => l.nullifier === nullifier.toString());
+console.log("unlock proof ok | nullifier settled in pool?", settled);
 
-const tx = makeTxBuilder(provider, { autoEvaluate: false });
+const collateralUtxo = utxos.find((u) => u.output.amount.length === 1 && Number(u.output.amount[0].quantity) >= 5_000_000) || utxos[0];
+
+const tx = makeTxBuilder(provider);
 const unsigned = await tx
   .setNetwork("preprod")
-  // spend the deposit UTxO with the UnlockDeposit redeemer
   .spendingPlutusScriptV3()
   .txIn(depUtxo.input.txHash, depUtxo.input.outputIndex, depUtxo.output.amount, COLLATERAL_ADDRESS)
   .txInScript(COLLATERAL_CBOR)
   .txInInlineDatumPresent()
-  // groth_verify over BLS12-381 is heavy — set explicit ExUnits near the preprod max.
-  .txInRedeemerValue(unlockRedeemer, "JSON", { mem: 14000000, steps: 10000000000 })
-  // read-only reference: the VKey UTxO (verification key)
-  .readOnlyTxInReference(vkey.txHash, vkey.outputIndex)
-  // freed collateral paid back to admin (UnlockDeposit has no continuity constraint)
+  .txInRedeemerValue(R_Unlock(proofData, pool.txHash, pool.outputIndex, nullifier), "JSON")
+  // reference inputs: the pool (for open_loans + unlock vkey_ref) and the unlock vkey
+  .readOnlyTxInReference(pool.txHash, pool.outputIndex)
+  .readOnlyTxInReference(pool.unlock_vkey_ref_tx, pool.unlock_vkey_ref_idx)
   .txOut(addr, [{ unit: "lovelace", quantity: String(depBalance) }])
-  .txInCollateral(
-    collateralUtxo.input.txHash, collateralUtxo.input.outputIndex,
-    collateralUtxo.output.amount, addr,
-  )
+  .txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex, collateralUtxo.output.amount, addr)
   .changeAddress(addr)
   .selectUtxosFrom(utxos)
   .complete();
+const txHash = await wallet.submitTx(await wallet.signTx(unsigned, true));
 
-const signed = await wallet.signTx(unsigned, true);
-const txHash = await wallet.submitTx(signed);
-
-const receipt = {
-  txHash, spentDeposit: `${deposit.txHash}#${deposit.outputIndex}`,
-  address: COLLATERAL_ADDRESS, unlockedAda: depBalance,
-  vkeyRefTx: vkey.txHash, vkeyRefIdx: vkey.outputIndex,
-  unlockRatio: UNLOCK_RATIO, publicSignals, proofGenMs,
-};
-const file = saveReceipt("unlock.json", receipt);
-console.log("UNLOCK submitted. txHash:", txHash);
-console.log("on-chain groth_verify authorized this collateral unlock (no signature).");
-console.log("receipt:", file);
+saveReceipt("unlock.json", { txHash, spentDeposit: `${deposit.txHash}#${deposit.outputIndex}`, unlockedAda: depBalance, nullifier: nullifier.toString() });
+console.log("UNLOCK submitted (commitment-bound proof, repayment-gated, no signature). txHash:", txHash);
 console.log(scanLink(txHash));
 process.exit(0);
