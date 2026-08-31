@@ -9,7 +9,7 @@ Groth16 keys for `collateral_proof.circom`. Because the proof is verified
 | File | Committed | Purpose |
 |------|-----------|---------|
 | `verification_key.json` | yes | Public verification key. This is what the on-chain validator checks against (and what the deployed VKey reference UTxO holds). |
-| `collateral_proof_final.zkey` | no — gitignored (~788 KB) | Proving key. Regenerate locally (below), or commit it for turnkey testing. |
+| `collateral_proof_final.zkey` | yes — committed (~788 KB, via `!` negation in `.gitignore`) | Proving key, committed for turnkey testing so reviewers can reproduce proofs without a fresh setup. |
 | `pot12_final.ptau` | no — gitignored | BLS12-381 Powers of Tau. Regenerate locally. |
 
 > **Important:** the committed `verification_key.json` corresponds to a specific

@@ -82,10 +82,11 @@ cd contracts && aiken build && aiken check      # 2/2 tests pass
 node circuits/tests/gate-bls12381.cjs           # 9/9 checks pass
 ```
 
-> The proving key (`circuits/keys/collateral_proof_final.zkey`) and Powers-of-Tau
-> file are gitignored due to size; see `circuits/keys/README.md` to regenerate
-> them. The committed `verification_key.json` is what the on-chain validators
-> check against.
+> The proving key (`circuits/keys/collateral_proof_final.zkey`, ~788 KB) **is
+> committed** for turnkey testing (via a `!` negation in `.gitignore`); the large
+> Powers-of-Tau file is gitignored — see `circuits/keys/README.md` to regenerate
+> it. The committed `verification_key.json` is what the on-chain validators check
+> against and must correspond to the committed `.zkey`.
 
 ## Run the protocol (Preprod)
 

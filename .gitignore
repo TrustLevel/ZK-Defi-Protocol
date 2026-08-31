@@ -128,6 +128,9 @@ logs/
 !/docs/MILESTONE3-TEST-RESULTS.md
 !/docs/MILESTONE3-EVIDENCE.md
 !/docs/Tester-Feedback/
+# ...and the approved M1/M2 POAs + the privacy/pivot response (reviewer-requested)
+!/docs/poa/
+!/docs/PRIVACY-AND-PIVOT.md
 
 # Circomlib (install via npm or git clone)
 circuits/circomlib/
