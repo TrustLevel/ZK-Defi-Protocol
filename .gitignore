@@ -143,6 +143,10 @@ circuits/collateral_proof_final.zkey
 !circuits/collateral_proof_js/
 !circuits/collateral_proof_js/collateral_proof.wasm
 !circuits/keys/collateral_proof_final.zkey
+# v6 privacy circuit (Merkle membership + nullifier) — same turnkey policy
+!circuits/collateral_semaphore_js/
+!circuits/collateral_semaphore_js/collateral_semaphore.wasm
+!circuits/keys/collateral_semaphore_final.zkey
 
 # Local dev instructions — kept locally, not published to the public repo
 /CLAUDE.md
