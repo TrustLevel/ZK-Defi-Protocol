@@ -1,84 +1,78 @@
 # Milestone 3 — Evidence Index
 
 Maps each Catalyst M3 required-evidence item to concrete repo paths and live
-on-chain proof. Repo paths are relative to the project root
-(`/Users/dominiktilman/ZK-Defi-Protocol`). All links are Cardano **Preprod**.
-
-M3 acceptance requires: zk-SNARK proofs verifiable **on-chain** without revealing
-underlying details; private verification of collateral and loan transactions.
+on-chain proof. All links are Cardano **Preprod**. M3 acceptance requires:
+zk-SNARK proofs verifiable **on-chain** for **private** verification of collateral
+and loan transactions.
 
 ---
 
-## ✅ Item 1 — Published zk-SNARK integration code (circuit + validators + off-chain)
+## ✅ Item 1 — Published zk-SNARK integration code
 
 | Layer | Path |
 |---|---|
-| Circuit | `circuits/collateral_proof.circom` (BLS12-381, Poseidon255, 3 public signals) |
+| Borrow/repay circuit (Merkle membership + nullifier) | `circuits/collateral_semaphore.circom` (BLS12-381, Poseidon255, 5 signals) |
+| Unlock circuit (commitment-bound) | `circuits/unlock_proof.circom` (3 signals) |
 | Poseidon255 lib | `circuits/lib/poseidon255.circom` |
-| On-chain verifier wrapper | `contracts/lib/zk.ak` (`verify_collateral_proof`, `get_vkey`) |
+| On-chain verifier wrappers | `contracts/lib/zk.ak` (`verify_borrow_proof`, `verify_unlock_proof`, `get_vkey`) |
 | Redeemer / datum types | `contracts/lib/types_v5.ak` |
-| Pool validator | `contracts/validators/v5/lending_pool_v5.ak` (Borrow/Repay, on-chain `groth_verify`) |
-| Collateral validator | `contracts/validators/v5/collateral_v5.ak` (Withdraw/UsedAsCollateral/UnlockDeposit) |
+| Pool validator | `contracts/validators/v5/lending_pool_v5.ak` (Deposit / SetGroupRoot / BorrowAnonymous / RepayAnonymous) |
+| Collateral validator (param. by pool hash) | `contracts/validators/v5/collateral_v5.ak` (UnlockDeposit) |
 | Compiled blueprint | `contracts/plutus.json` |
-| Off-chain drivers (Mesh) | `offchain/cli/v5/{1-park-vkey,2-init-pool,3-deposit,4-borrow,5-repay,6-unlock}.mjs` |
-| Off-chain shared helpers | `offchain/cli/v5/common.mjs` (proof gen, point compression, encoders) |
-| Live receipts | `offchain/cli/v5/receipts/{vkey,pool,deposit,borrow,repay,unlock}.json` |
+| Off-chain drivers (Mesh) | `offchain/cli/v5/{1-park-vkey,2-init-pool,3-deposit,3b-setgrouproot,4-borrow,5-repay,6-unlock}.mjs` |
+| Off-chain shared helpers | `offchain/cli/v5/common.mjs` (Merkle tree, proof gen, point compression, encoders) |
 
 ## ✅ Item 2 — Published zk-SNARK library
 
 | Component | Source |
 |---|---|
-| Generic on-chain Groth16 verifier (BLS12-381) | `modulo-p/ak-381` v0.1.1 — declared in `contracts/aiken.toml`, pinned in `contracts/aiken.lock` |
-| Off-chain hash | `poseidon-bls12381` (Poseidon255), used in-circuit and in `common.mjs` |
-| Proof-generation keys (our trusted setup) | `circuits/keys/collateral_proof_final.zkey`, `circuits/keys/verification_key.json` |
-| Circuit WASM (witness gen) | `circuits/collateral_proof_js/collateral_proof.wasm` |
+| Generic on-chain Groth16 verifier (BLS12-381) | `modulo-p/ak-381` v0.1.1 — `contracts/aiken.toml` / `aiken.lock` |
+| Off-chain hash | `poseidon-bls12381` (Poseidon255), in-circuit and in `common.mjs` |
+| Borrow keys | `circuits/keys/collateral_semaphore_final.zkey`, `verification_key_semaphore.json`, `circuits/collateral_semaphore_js/collateral_semaphore.wasm` |
+| Unlock keys | `circuits/keys/unlock_proof_final.zkey`, `verification_key_unlock.json`, `circuits/unlock_proof_js/unlock_proof.wasm` |
 
 ## ✅ Item 3 — Published summary of test results
 
 | Artifact | Path |
 |---|---|
-| Test-results summary (pass/fail, edge cases, perf, feedback) | `docs/MILESTONE3-TEST-RESULTS.md` |
-| On-chain proof tests (2/2) | `contracts/lib/zk_onchain_test.ak` — run `cd contracts && aiken check` |
-| Off-chain proof gate (9/9) | `circuits/tests/gate-bls12381.cjs` — run `node circuits/tests/gate-bls12381.cjs` |
-| On-chain fixture generator | `circuits/tests/gen-onchain-fixture.cjs` |
+| Test-results summary | `docs/MILESTONE3-TEST-RESULTS.md` |
+| On-chain proof + adversarial validator tests (13/13) | `contracts/lib/semaphore_onchain_test.ak`, `contracts/validators/tests/v6_validator_test.ak` — `cd contracts && aiken check` |
+| Fixture generator | `circuits/tests/gen-semaphore-fixture.cjs` |
 
-Tallies (fresh): aiken **2/2**, off-chain gate **9/9**, live cycle **6/6** `valid_contract:true`.
+Tallies: aiken **13/13** (0 warnings), live cycle **7/7** `valid_contract:true`.
 
 ## ✅ Item 4 — Published documentation
 
 | Artifact | Path |
 |---|---|
-| Protocol + zk-proof-generation mechanism + on-chain design | `docs/MILESTONE3.md` |
+| Protocol + privacy model + zk mechanism + on-chain design + privacy boundary | `docs/MILESTONE3.md` |
 | Test results | `docs/MILESTONE3-TEST-RESULTS.md` |
 | This evidence index | `docs/MILESTONE3-EVIDENCE.md` |
-| Implementation plan (Scope A) | `~/.claude/plans/vectorized-cooking-nebula.md` |
+| Approved M1 / M2 POAs (re-published) | `docs/poa/M1-POA.pdf`, `docs/poa/M2-POA.pdf` |
 
 ---
 
 ## Live on-chain proof (Preprod) — the M3 core claim
 
-zk-SNARK proofs verified **on-chain** (`groth_verify` inside the spending validator,
-no signature) for private collateral + loan transactions:
+Private lending, every action authorized by an **on-chain** Groth16 proof (no signature):
 
-| Step | Tx hash | valid_contract | Cardanoscan |
-|---|---|:---:|---|
-| Park VKey | `b3da9481…001c8e` | true | https://preprod.cardanoscan.io/transaction/b3da94815002b9339390d76491b961da161595c18ff31ce0f1ea2ecbf9001c8e |
-| Init pool | `1be3c892…52c0f9` | true | https://preprod.cardanoscan.io/transaction/1be3c892140bac8b6ed0db3d5e90ff71a21aed86edf2dfe1de53837a4a52c0f9 |
-| Deposit | `34f216e7…747a8a` | true | https://preprod.cardanoscan.io/transaction/34f216e73ac4a209a9d392c34ca8e7df6e2ec2a5859d217fe747843ab8747a8a |
-| **Borrow (on-chain ZK)** | `19d9016a…bb2b37` | true | https://preprod.cardanoscan.io/transaction/19d9016ad95c3c410e8d66ce469a3f5e4cf2b329380555993fa1028110bb2b37 |
-| **Repay (on-chain ZK)** | `8b934c05…4a76cf6` | true | https://preprod.cardanoscan.io/transaction/8b934c059ab1d352f47277181bb871875907dd34c5506b1e75ac7a8e44a76cf6 |
-| **Unlock (on-chain ZK)** | `24281542…1ed609` | true | https://preprod.cardanoscan.io/transaction/24281542de3ab7e71e5a683917bd053d5a698ae2dfbf8daac0cf2346771ed609 |
+| Step | Tx hash | valid_contract |
+|---|---|:---:|
+| Park VKeys | [`0f3d9603…247375`](https://preprod.cardanoscan.io/transaction/0f3d96031261456ebe5e9e6210b67cf398c4925e78ab049a996436f867247375) | true |
+| Init pool | [`6cd76fb3…53ce8a`](https://preprod.cardanoscan.io/transaction/6cd76fb343697f9f18af5982f27fe8336372dbaf35e7968497011759d953ce8a) | true |
+| Deposit | [`4d1901c5…a9ec15`](https://preprod.cardanoscan.io/transaction/4d1901c507fc5b4b2cea0bc420ae07e6a5a0f32e351f1c9d22b4d9ca07a9ec15) | true |
+| Set group root | [`e9a5ffdf…30076c`](https://preprod.cardanoscan.io/transaction/e9a5ffdfe6f35769b3b99749aec2a048c9758e8315bea9d99f0567d4d430076c) | true |
+| **Borrow (on-chain membership ZK)** | [`bc620342…1bdebb`](https://preprod.cardanoscan.io/transaction/bc62034295d37dc10b4fcaab05e33c38161f969867b340e76632a464a11bdebb) | true |
+| **Repay (principal + interest)** | [`e7933333…d5d789`](https://preprod.cardanoscan.io/transaction/e79333330567139c844ccc57f4b6ac4e5aba98972dd29f6b5df11304585d5789) | true |
+| **Unlock (repayment-gated, no signature)** | [`c4492a39…dca1720`](https://preprod.cardanoscan.io/transaction/c4492a390bfbb807b477b7d50d3df22ff31de15e7a66b4349e7f1e2a5dca1720) | true |
 
 ### Deployed script hashes (Preprod)
 
-- `lending_pool_v5`: `0686aaaf136fde2af6aa1f78af30bc67d0aa410461c4bfb5877eb199`
-- `collateral_v5`: `f88347ff9ee0ffbdbb575d94c76803ca319e1471fe2c2697ce852aef`
+- `lending_pool_v5`: `4c09216852aec4b5254867f06f30ce73e560638ff32563d8abdc4ff5`
+- `collateral_v5`: `f027b9d8bf35fafd36836abd41bf6f0d414218561840d60a0a4031e7`
 
 ---
 
-## Pre-publish checklist (user-gated)
+## Immutable evidence
 
-- [ ] Confirm no secret values are committed (`.env` is git-ignored; receipts contain a
-      test-only deposit secret for an already-unlocked UTxO — safe, but review before public push).
-- [ ] `git push` branch `v5` to GitHub (currently committed locally only).
-- [ ] Paste the six cardanoscan links + doc paths into the Catalyst M3 evidence form.
+This POA is tagged **`m3-poa-v2`** — cite the tagged tree, not `main`.
