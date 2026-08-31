@@ -6,7 +6,15 @@
 use ak_381/groth16.{Proof, SnarkVerificationKey}
 use zk.{verify_borrow_proof, verify_unlock_proof}
 
-fn vkey() -> SnarkVerificationKey {
+// Real public-signal values, exported so validator tests can build fixtures.
+pub const group_root: Int = 43095192365617529365567206317561372600253908895298921684433365536892715520362
+pub const loan_null: Int = 13363567938272564440676172658199675024663324988111273564368569843933911498447
+pub const loan_amt: Int = 10000000
+pub const ratio: Int = 125
+pub const ext: Int = 7777
+pub const commitment: Int = 48707217396632466940431594379771371494673832691449549189392295227648777145638
+
+pub fn vkey() -> SnarkVerificationKey {
   SnarkVerificationKey {
     nPublic: 5,
     vkAlpha: #"a60114bdb346edf1e6d2286e7bb2982ded2332ed5326b3f5dab7327531d193f5ab9a5ab5ef22c63826524d195fe41838",
@@ -18,11 +26,11 @@ fn vkey() -> SnarkVerificationKey {
   }
 }
 
-fn proof() -> Proof {
-  Proof { piA: #"a89c57b155eeef7d88f7c718ff8c1a3696c808ee085867cb528b9a91e1e1c8776bd3168ccf29f97b17797824cc47d24e", piB: #"99fe6bd8b72a600cb468b7f6ab15f9ac5414ae562e05986f0b1f7e6f61c2496640ab17968c42c9380788185cf08426010e4203456b98e46f6a974e5adc4902b75758c4cbf91f3e233ddf16456b9bdc6282ea3f106b52754629f5e40626c28265", piC: #"a86ec1926ade01ae7f7a49266915be7defdb92748e388d0a3a43a1cb37607a9e70172aafc2cd64211b5e44fd61323bc3" }
+pub fn proof() -> Proof {
+  Proof { piA: #"8652eb70550355194f9efa1ac3ea68ec1187a43132c13f0ae66cf7b21983b297f42ae11bd58bc3d7e26d5be0adb6f655", piB: #"83b224556621aedc7117dfea1b804983b90ccdd28b7030a4b10c42c3753010393ca8fc1c782c00d56d0f2bea3c6c8cac0f69df54b6a3355695338609e942c256cf66574b8fc3e3c51b4f4d0b4bcddcc05270e3bc1da224566b6bea0b6765418f", piC: #"b9c37333300742495f9dba5ce5b9ef27902172a0157b696a3835f8564182919d70386601442b82ec5a8a5d46d4b2f07e" }
 }
 
-fn unlock_vkey() -> SnarkVerificationKey {
+pub fn unlock_vkey() -> SnarkVerificationKey {
   SnarkVerificationKey {
     nPublic: 3,
     vkAlpha: #"b84e558e8e711c9d375d7ae342e5ec3466b896fff7c6723954aee56b73a3e0b6a96c3155938076fff85116390ec09388",
@@ -34,8 +42,8 @@ fn unlock_vkey() -> SnarkVerificationKey {
   }
 }
 
-fn unlock_proof() -> Proof {
-  Proof { piA: #"86f08e112ecd73693d41949968b21dab9abefb549c554e8d060d144a62264d70fe6dcdeb5e650db75463739d3f4ebaf9", piB: #"a40a4528f5f5a3928606b15af9f0056ebd4608ba411f3250b994ac5809bd0277b7a0a78b33bc2f063b8fb68381734c0116be00b90c284e93e86bc1a0ee329dc942f41c2acceb50dedc8f16c418adc1156466532652f319bd2cbba728834cf4c4", piC: #"88dffd10eda12fd0aa7c68c8bfb954e5268b9d48e3682916b6d984e85f78969a8b4347e0363e51022173e2b5e54f3079" }
+pub fn unlock_proof() -> Proof {
+  Proof { piA: #"954a80dc4e21252f0b1db4b0cd6c8515d0bf09f5489e1e479cf73a6c9f69bf564e0f827ca6bea12f7561fad8e395e680", piB: #"8e8dfb7383b5c9a690408efee25bd5efb95c91742de251b32671c8123747b6c44d62385127b388830b9c4aa336338eb90ca57b051d5205edccb14511c54b02b33ee6039e117b134c35cdc2108fa3640987cd9c51de62577aafdbff8b916632c4", piC: #"975acda77fa0b64ff8ff0e9e3dfdba1b4d19161bcbf40219a02a22d2786b7eec8b186a67dd95d7a28c6bd618b7702393" }
 }
 
 test borrow_proof_verifies_onchain() {

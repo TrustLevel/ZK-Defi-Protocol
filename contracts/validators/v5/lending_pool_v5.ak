@@ -1,24 +1,22 @@
 //// ============================================
-//// LENDING POOL V5 — real on-chain ZK verification (Milestone 3)
+//// LENDING POOL V6 — private on-chain ZK lending (Milestone 3)
 //// ============================================
-//// Anonymous borrow/repay authorized by a Groth16 proof verified ON-CHAIN via
-//// modulo-p/ak-381. No admin signature / extra_signatories: the proof is the
-//// authorization. Public signals are bound to trusted on-chain state:
-////   commitment      <- referenced collateral UTxO's DepositDatumV5.commitment
-////   loan/repay_amt  <- redeemer amount, cross-checked against the pool delta
-////   collateral_ratio<- pool datum (protocol config)
-//// The verification key is read from the reference input pinned in the pool datum.
+//// Borrow/repay are authorized by a Groth16 membership proof verified ON-CHAIN.
+//// The borrow does NOT reference a specific collateral UTxO — it proves the
+//// commitment is a member of `group_root` — so deposit<->borrow is unlinkable.
+//// A loan is a `loan_nullifier` recorded in `open_loans` with its principal;
+//// repayment (principal + interest) removes it, which is what later lets the
+//// owner unlock that collateral.
 
 use aiken/collection/list
 use cardano/assets.{lovelace_of}
 use cardano/script_context.{ScriptContext}
 use cardano/transaction.{Input, InlineDatum, Output, OutputReference, Transaction}
-use helpers.{find_input_by_ref}
 use types_v5.{
-  BorrowAnonymous, Deposit, DepositDatumV5, PoolDatumV5, PoolRedeemerV5,
-  RepayAnonymous,
+  BorrowAnonymous, Deposit, OpenLoan, PoolDatumV5, PoolRedeemerV5, RepayAnonymous,
+  SetGroupRoot,
 }
-use zk.{get_vkey, verify_collateral_proof}
+use zk.{get_vkey, verify_borrow_proof}
 
 validator lending_pool_v5 {
   spend(
@@ -30,123 +28,104 @@ validator lending_pool_v5 {
     expect Some(pool_datum) = datum
     expect Some(pool_input) =
       list.find(tx.inputs, fn(i) { i.output_reference == output_ref })
+    expect Some(pool_output) = continuing_pool_output(tx, pool_input)
+    expect InlineDatum(out_data) = pool_output.datum
+    expect out: PoolDatumV5 = out_data
+
+    let bal_in = lovelace_of(pool_input.output.value)
+    let bal_out = lovelace_of(pool_output.value)
 
     when redeemer is {
-      // Deposit: anyone may add liquidity (increases pool value). Datum continues.
+      // Deposit: add liquidity. Only total_deposited grows; loans/config frozen.
       Deposit -> {
-        expect Some(pool_output) = continuing_pool_output(tx, pool_input)
-        let pool_in = lovelace_of(pool_input.output.value)
-        let pool_out = lovelace_of(pool_output.value)
-        let delta = pool_out - pool_in
-        let pool_increased = delta > 0
-
-        expect InlineDatum(output_datum_data) = pool_output.datum
-        expect output_datum: PoolDatumV5 = output_datum_data
-
-        // A3: exact deposit accounting; borrowed untouched; protocol config preserved
-        let deposited_updated =
-          output_datum.total_deposited == pool_datum.total_deposited + delta
-        let borrowed_unchanged =
-          output_datum.total_borrowed == pool_datum.total_borrowed
-
+        let delta = bal_out - bal_in
         and {
-          pool_increased?,
-          deposited_updated?,
-          borrowed_unchanged?,
-          pool_config_preserved(pool_datum, output_datum)?,
+          (delta > 0)?,
+          (out.total_deposited == pool_datum.total_deposited + delta)?,
+          (out.total_borrowed == pool_datum.total_borrowed)?,
+          (out.group_root == pool_datum.group_root)?,
+          same_open_loans(pool_datum, out)?,
+          pool_static_preserved(pool_datum, out)?,
         }
       }
 
-      // BorrowAnonymous: ZK proof authorizes the loan, verified on-chain. The
-      // referenced collateral must be SPENT and locked to this loan in the same
-      // tx (loan_bound -> Some(loan_nullifier)) — you cannot borrow without
-      // locking collateral.
-      BorrowAnonymous { collateral_ref, proof, loan_amount, loan_nullifier } -> {
-        // Trusted verification key (pinned in pool datum -> reference input)
+      // SetGroupRoot: the protocol admin publishes the updated commitment-set root
+      // (the anonymity set is admin-curated for M3). Nothing else may move.
+      SetGroupRoot { new_root } ->
+        and {
+          list.has(tx.extra_signatories, pool_datum.admin)?,
+          (out.group_root == new_root)?,
+          (bal_out == bal_in)?,
+          (out.total_deposited == pool_datum.total_deposited)?,
+          (out.total_borrowed == pool_datum.total_borrowed)?,
+          same_open_loans(pool_datum, out)?,
+          pool_static_preserved(pool_datum, out)?,
+        }
+
+      // BorrowAnonymous: membership proof authorizes the loan. The nullifier is
+      // recorded; no collateral UTxO is referenced (unlinkable).
+      BorrowAnonymous { proof, loan_amount, loan_nullifier } -> {
         let vkey = get_vkey(tx, pool_datum.vkey_ref)
-
-        // Commitment comes from the spent collateral UTxO, which must continue
-        // locked to this loan nullifier (binds borrow <-> collateral).
-        let commitment = locked_collateral_commitment(tx, collateral_ref, loan_nullifier)
-
-        // REAL on-chain zk-SNARK verification, bound to on-chain data
         let proof_ok =
-          verify_collateral_proof(
+          verify_borrow_proof(
             vkey,
             proof,
-            commitment,
+            pool_datum.group_root,
+            loan_nullifier,
             loan_amount,
             pool_datum.collateral_ratio,
+            pool_datum.external_nullifier,
           )
-
-        // Pool liquidity + continuity
-        let pool_balance = lovelace_of(pool_input.output.value)
-        let sufficient_liquidity =
-          loan_amount <= pool_balance - pool_datum.total_borrowed
-
-        expect Some(pool_output) = continuing_pool_output(tx, pool_input)
-        expect InlineDatum(output_datum_data) = pool_output.datum
-        expect output_datum: PoolDatumV5 = output_datum_data
-
-        let borrowed_updated =
-          output_datum.total_borrowed == pool_datum.total_borrowed + loan_amount
-        // A3: liquidity accounting untouched by a borrow
-        let deposited_unchanged =
-          output_datum.total_deposited == pool_datum.total_deposited
-        let pool_decreased_correctly =
-          lovelace_of(pool_output.value) == pool_balance - loan_amount
-
+        let fresh = !has_nullifier(pool_datum.open_loans, loan_nullifier)
+        let liquidity = loan_amount <= bal_in - pool_datum.total_borrowed
+        let new_loan =
+          OpenLoan {
+            nullifier: loan_nullifier,
+            principal: loan_amount,
+            start: out.last_updated,
+          }
         and {
           proof_ok?,
-          sufficient_liquidity?,
-          borrowed_updated?,
-          deposited_unchanged?,
-          pool_decreased_correctly?,
-          pool_config_preserved(pool_datum, output_datum)?,
+          fresh?,
+          liquidity?,
+          (loan_amount > 0)?,
+          (out.open_loans == [new_loan, ..pool_datum.open_loans])?,
+          (out.total_borrowed == pool_datum.total_borrowed + loan_amount)?,
+          (out.total_deposited == pool_datum.total_deposited)?,
+          (bal_out == bal_in - loan_amount)?,
+          (out.group_root == pool_datum.group_root)?,
+          pool_static_preserved(pool_datum, out)?,
         }
       }
 
-      // RepayAnonymous: ZK proof re-attests collateral ownership, verified on-chain.
-      // The loan_nullifier lets a paired SettleLoan free the matching collateral.
-      RepayAnonymous { deposit_ref, proof, repay_amount, loan_nullifier: _ } -> {
+      // RepayAnonymous: re-attest membership + the loan nullifier, pay principal +
+      // interest, and remove the loan from the open set.
+      RepayAnonymous { proof, repay_amount, loan_nullifier } -> {
+        expect Some(loan) = find_loan(pool_datum.open_loans, loan_nullifier)
         let vkey = get_vkey(tx, pool_datum.vkey_ref)
-        let commitment = referenced_commitment(tx, deposit_ref)
-
-        // Proof binds the repayment amount: collateral covers repay_amount at ratio
+        // The proof re-attests membership + the loan nullifier for this loan's
+        // principal (public in open_loans). repay_amount itself is enforced by the
+        // pool accounting below, not by the proof.
         let proof_ok =
-          verify_collateral_proof(
+          verify_borrow_proof(
             vkey,
             proof,
-            commitment,
-            repay_amount,
+            pool_datum.group_root,
+            loan_nullifier,
+            loan.principal,
             pool_datum.collateral_ratio,
+            pool_datum.external_nullifier,
           )
-
-        let pool_balance = lovelace_of(pool_input.output.value)
-        expect Some(pool_output) = continuing_pool_output(tx, pool_input)
-        expect InlineDatum(output_datum_data) = pool_output.datum
-        expect output_datum: PoolDatumV5 = output_datum_data
-
-        // A4: exact debt reduction — a partial repay may not zero the debt,
-        // and it may not exceed the outstanding total (no underflow).
-        let repay_positive = repay_amount > 0
-        let no_overpay = repay_amount <= pool_datum.total_borrowed
-        let borrowed_updated =
-          output_datum.total_borrowed == pool_datum.total_borrowed - repay_amount
-        // Pool must receive exactly the repayment; liquidity total untouched
-        let pool_increased_correctly =
-          lovelace_of(pool_output.value) == pool_balance + repay_amount
-        let deposited_unchanged =
-          output_datum.total_deposited == pool_datum.total_deposited
-
+        let due = loan.principal + interest_of(loan.principal, pool_datum.interest_rate)
         and {
           proof_ok?,
-          repay_positive?,
-          no_overpay?,
-          borrowed_updated?,
-          pool_increased_correctly?,
-          deposited_unchanged?,
-          pool_config_preserved(pool_datum, output_datum)?,
+          (repay_amount >= due)?,
+          (out.open_loans == remove_loan(pool_datum.open_loans, loan_nullifier))?,
+          (out.total_borrowed == pool_datum.total_borrowed - loan.principal)?,
+          (out.total_deposited == pool_datum.total_deposited)?,
+          (bal_out == bal_in + repay_amount)?,
+          (out.group_root == pool_datum.group_root)?,
+          pool_static_preserved(pool_datum, out)?,
         }
       }
     }
@@ -157,62 +136,40 @@ validator lending_pool_v5 {
   }
 }
 
-/// A3: every protocol-configuration field must survive a pool spend unchanged.
-/// Only total_deposited / total_borrowed may move, and only on their own branch.
-/// open_loans_root is preserved here until Workstream C wires the MPF insert/delete.
-fn pool_config_preserved(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
+/// Flat-rate interest (bps): principal * interest_rate / 10000.
+fn interest_of(principal: Int, interest_rate: Int) -> Int {
+  principal * interest_rate / 10000
+}
+
+/// Every non-financial config field must survive any pool spend unchanged.
+/// (group_root is checked per-branch: frozen everywhere except SetGroupRoot.)
+fn pool_static_preserved(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
   and {
     new.interest_rate == old.interest_rate,
     new.collateral_ratio == old.collateral_ratio,
     new.vkey_ref == old.vkey_ref,
-    new.open_loans_root == old.open_loans_root,
+    new.unlock_vkey_ref == old.unlock_vkey_ref,
+    new.external_nullifier == old.external_nullifier,
+    new.admin == old.admin,
   }
 }
 
-/// Read the commitment from the collateral being locked, asserting it is genuinely
-/// SPENT and continues at its own address locked to `loan_nullifier`. This binds a
-/// borrow to a real collateral lock (you cannot borrow without locking collateral).
-fn locked_collateral_commitment(
-  tx: Transaction,
-  collateral_ref: OutputReference,
-  loan_nullifier: Int,
-) -> Int {
-  expect Some(coll_input) = find_input_by_ref(tx, collateral_ref)
-  // Must be a genuinely spent input, not merely a read-only reference input.
-  expect list.any(tx.inputs, fn(i) { i.output_reference == collateral_ref })
-  expect InlineDatum(coll_data) = coll_input.output.datum
-  expect coll_datum: DepositDatumV5 = coll_data
-
-  // A continuing collateral output at the same address must be locked to this loan.
-  let coll_outputs =
-    list.filter(tx.outputs, fn(o) { o.address == coll_input.output.address })
-  expect
-    list.any(
-      coll_outputs,
-      fn(o) {
-        expect InlineDatum(od) = o.datum
-        expect out_datum: DepositDatumV5 = od
-        and {
-          out_datum.commitment == coll_datum.commitment,
-          out_datum.loan_bound == Some(loan_nullifier),
-        }
-      },
-    )
-  coll_datum.commitment
+fn same_open_loans(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
+  new.open_loans == old.open_loans
 }
 
-/// The continuing pool output (same script address as the spent pool input).
+fn has_nullifier(loans: List<OpenLoan>, n: Int) -> Bool {
+  list.any(loans, fn(l) { l.nullifier == n })
+}
+
+fn find_loan(loans: List<OpenLoan>, n: Int) -> Option<OpenLoan> {
+  list.find(loans, fn(l) { l.nullifier == n })
+}
+
+fn remove_loan(loans: List<OpenLoan>, n: Int) -> List<OpenLoan> {
+  list.filter(loans, fn(l) { l.nullifier != n })
+}
+
 fn continuing_pool_output(tx: Transaction, pool_input: Input) -> Option<Output> {
-  list.find(
-    tx.outputs,
-    fn(output) { output.address == pool_input.output.address },
-  )
-}
-
-/// Read the commitment (Int field element) from a referenced collateral/deposit UTxO.
-fn referenced_commitment(tx: Transaction, ref: OutputReference) -> Int {
-  expect Some(collateral_input) = find_input_by_ref(tx, ref)
-  expect InlineDatum(collateral_datum_data) = collateral_input.output.datum
-  expect collateral_datum: DepositDatumV5 = collateral_datum_data
-  collateral_datum.commitment
+  list.find(tx.outputs, fn(output) { output.address == pool_input.output.address })
 }

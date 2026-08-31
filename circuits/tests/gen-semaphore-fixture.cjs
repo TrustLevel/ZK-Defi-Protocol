@@ -127,7 +127,15 @@ async function main() {
 use ak_381/groth16.{Proof, SnarkVerificationKey}
 use zk.{verify_borrow_proof, verify_unlock_proof}
 
-fn vkey() -> SnarkVerificationKey {
+// Real public-signal values, exported so validator tests can build fixtures.
+pub const group_root: Int = ${g_root}
+pub const loan_null: Int = ${g_null}
+pub const loan_amt: Int = ${g_loan}
+pub const ratio: Int = ${g_ratio}
+pub const ext: Int = ${g_ext}
+pub const commitment: Int = ${u_cmt}
+
+pub fn vkey() -> SnarkVerificationKey {
   SnarkVerificationKey {
     nPublic: ${VKEY.nPublic},
     vkAlpha: #"${vkAlpha}",
@@ -139,11 +147,11 @@ fn vkey() -> SnarkVerificationKey {
   }
 }
 
-fn proof() -> Proof {
+pub fn proof() -> Proof {
   Proof { piA: #"${piA}", piB: #"${piB}", piC: #"${piC}" }
 }
 
-fn unlock_vkey() -> SnarkVerificationKey {
+pub fn unlock_vkey() -> SnarkVerificationKey {
   SnarkVerificationKey {
     nPublic: ${UVKEY.nPublic},
     vkAlpha: #"${uvkAlpha}",
@@ -155,7 +163,7 @@ fn unlock_vkey() -> SnarkVerificationKey {
   }
 }
 
-fn unlock_proof() -> Proof {
+pub fn unlock_proof() -> Proof {
   Proof { piA: #"${uPiA}", piB: #"${uPiB}", piC: #"${uPiC}" }
 }
 
