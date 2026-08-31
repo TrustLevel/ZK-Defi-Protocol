@@ -147,6 +147,10 @@ circuits/collateral_proof_final.zkey
 !circuits/collateral_semaphore_js/
 !circuits/collateral_semaphore_js/collateral_semaphore.wasm
 !circuits/keys/collateral_semaphore_final.zkey
+# v6 unlock circuit (commitment + nullifier bound)
+!circuits/unlock_proof_js/
+!circuits/unlock_proof_js/unlock_proof.wasm
+!circuits/keys/unlock_proof_final.zkey
 
 # Local dev instructions — kept locally, not published to the public repo
 /CLAUDE.md

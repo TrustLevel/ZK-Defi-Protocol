@@ -42,6 +42,21 @@ pub fn verify_borrow_proof(
   )
 }
 
+/// Verify a v6 unlock proof, bound to the SPECIFIC collateral UTxO being spent.
+/// Public-signal order MUST match `circuits/unlock_proof.circom`:
+///   [commitment, loan_nullifier, external_nullifier]
+/// commitment is bound to the spent deposit datum; loan_nullifier is then checked
+/// absent from the pool's open-loans set (the repayment gate).
+pub fn verify_unlock_proof(
+  vkey: SnarkVerificationKey,
+  proof: Proof,
+  commitment: Int,
+  loan_nullifier: Int,
+  external_nullifier: Int,
+) -> Bool {
+  groth_verify(vkey, proof, [commitment, loan_nullifier, external_nullifier])
+}
+
 /// Resolve the trusted verification key from the reference input pinned by `vkey_ref`.
 /// The VKey UTxO is parked at an always-false address and set once at pool init, so
 /// referencing it by OutputReference from the (continuity-enforced) pool datum is trusted.
