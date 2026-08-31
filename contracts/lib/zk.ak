@@ -20,6 +20,28 @@ pub fn verify_collateral_proof(
   groth_verify(vkey, proof, [commitment, loan_amount, collateral_ratio])
 }
 
+/// Verify a v6 privacy borrow/repay proof (membership + nullifier + sufficiency).
+/// Public-signal order MUST match `circuits/collateral_semaphore.circom`:
+///   [group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier]
+/// group_merkle_root / external_nullifier / collateral_ratio are bound to trusted
+/// on-chain state; loan_nullifier / loan_amount to the redeemer, cross-checked by
+/// the validator against the MPF set and the pool value delta.
+pub fn verify_borrow_proof(
+  vkey: SnarkVerificationKey,
+  proof: Proof,
+  group_merkle_root: Int,
+  loan_nullifier: Int,
+  loan_amount: Int,
+  collateral_ratio: Int,
+  external_nullifier: Int,
+) -> Bool {
+  groth_verify(
+    vkey,
+    proof,
+    [group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier],
+  )
+}
+
 /// Resolve the trusted verification key from the reference input pinned by `vkey_ref`.
 /// The VKey UTxO is parked at an always-false address and set once at pool init, so
 /// referencing it by OutputReference from the (continuity-enforced) pool datum is trusted.
