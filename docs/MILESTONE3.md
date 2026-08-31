@@ -16,8 +16,8 @@ or admin signature**. Two Plutus V3 validators implement it (`contracts/validato
 
 | Validator | Script hash (Preprod) | Role |
 |---|---|---|
-| `lending_pool_v5` | `4c09216852aec4b5254867f06f30ce73e560638ff32563d8abdc4ff5` | Pool liquidity; authorizes `BorrowAnonymous` / `RepayAnonymous` on-chain; keeps the outstanding-loan set and the admin-published commitment-set root |
-| `collateral_v5` (parameterised by the pool hash) | `f027b9d8bf35fafd36836abd41bf6f0d414218561840d60a0a4031e7` | Holds collateral (fixed denomination) with a commitment; authorizes `UnlockDeposit` on-chain, gated on the loan being settled |
+| `lending_pool_v5` | `3fe6fa031e1d97cb2b271a6341ea9909961cc00e63eeca820d47cc65` | Pool liquidity; authorizes `BorrowAnonymous` / `RepayAnonymous` on-chain; keeps the outstanding-loan set and the admin-published commitment-set root |
+| `collateral_v5` (parameterised by the pool hash) | `2bcc23434d83f47ffa474a906d6d57cc24fdd190e1234371827a1593` | Holds collateral (fixed denomination) with a commitment; authorizes `UnlockDeposit` on-chain, gated on the loan being settled |
 
 The two verification keys are parked once as inline datums on an **unspendable
 (always-false) UTxO** and consumed only as **read-only reference inputs**.
@@ -26,7 +26,9 @@ The two verification keys are parked once as inline datums on an **unspendable
 
 1. **Amount confidentiality.** The collateral amount is **never on-chain** — it is a
    private circuit witness, and collateral is held in a **fixed denomination**, so
-   the UTxO value reveals only "one unit", not the position size.
+   the UTxO value reveals only "one unit", not the position size. **Loans are also a
+   fixed denomination**, so every loan payout is identical and loan amounts carry no
+   per-loan information (the outstanding-loan set stores only nullifiers).
 2. **Deposit ↔ borrow unlinkability.** A borrow proves the collateral commitment is a
    **member of the on-chain commitment set** (a Merkle root) — it does **not**
    reference a specific deposit UTxO. Nobody can tell which deposit backs a loan.
@@ -39,13 +41,13 @@ The two verification keys are parked once as inline datums on an **unspendable
 
 | # | Step | Preprod tx |
 |---|------|-----------|
-| 1 | **Park VKeys** — borrow + unlock verification keys on an always-false UTxO | [`0f3d9603…`](https://preprod.cardanoscan.io/transaction/0f3d96031261456ebe5e9e6210b67cf398c4925e78ab049a996436f867247375) |
-| 2 | **Init pool** — `PoolDatumV5` (liquidity, ratio, both vkey refs, empty commitment set, empty loan set, admin) | [`6cd76fb3…`](https://preprod.cardanoscan.io/transaction/6cd76fb343697f9f18af5982f27fe8336372dbaf35e7968497011759d953ce8a) |
-| 3 | **Deposit** — lock collateral with `DepositDatumV5 { commitment, timestamp }`; `commitment = Poseidon255(collateral_amount, secret)`; the secret + amount never leave the depositor | [`4d1901c5…`](https://preprod.cardanoscan.io/transaction/4d1901c507fc5b4b2cea0bc420ae07e6a5a0f32e351f1c9d22b4d9ca07a9ec15) |
-| 3b | **Publish set root** — admin `SetGroupRoot` updates the Merkle root of the commitment set | [`e9a5ffdf…`](https://preprod.cardanoscan.io/transaction/e9a5ffdfe6f35769b3b99749aec2a048c9758e8315bea9d99f0567d4d430076c) |
-| 4 | **Borrow** — `BorrowAnonymous { proof, loan_amount, loan_nullifier }`; the validator runs `groth_verify(vkey, proof, [group_root, nullifier, loan, ratio, ext])` **on-chain**; **no collateral UTxO is referenced**; loan paid out; nullifier recorded | [`bc620342…`](https://preprod.cardanoscan.io/transaction/bc62034295d37dc10b4fcaab05e33c38161f969867b340e76632a464a11bdebb) |
-| 5 | **Repay** — `RepayAnonymous`; re-attests membership + nullifier; pays **principal + interest**; removes the nullifier (settles the loan) | [`e7933333…`](https://preprod.cardanoscan.io/transaction/e79333330567139c844ccc57f4b6ac4e5aba98972dd29f6b5df11304585d5789) |
-| 6 | **Unlock** — `UnlockDeposit { proof, pool_ref, loan_nullifier }`; a commitment-bound proof + the pool reference input prove ownership and that the nullifier is settled; collateral freed **with no signature** | [`c4492a39…`](https://preprod.cardanoscan.io/transaction/c4492a390bfbb807b477b7d50d3df22ff31de15e7a66b4349e7f1e2a5dca1720) |
+| 1 | **Park VKeys** — borrow + unlock verification keys on an always-false UTxO | [`ee6b270f…`](https://preprod.cardanoscan.io/transaction/ee6b270fdb93ec1720af401e67a6d7db2c5fe1304e4bbeeb9e1f6ee3871be0c3) |
+| 2 | **Init pool** — `PoolDatumV5` (liquidity, ratio, both vkey refs, loan denomination, empty commitment set, empty loan set, admin) | [`8a106cb2…`](https://preprod.cardanoscan.io/transaction/8a106cb2dda054ab783a289bcdc4123b8bb8a881879c53abbeb566a87e143ea4) |
+| 3 | **Deposit** — lock collateral with `DepositDatumV5 { commitment, timestamp }`; `commitment = Poseidon255(collateral_amount, secret)`; the secret + amount never leave the depositor | [`686989ff…`](https://preprod.cardanoscan.io/transaction/686989ff429a4ddcd89e61da07bda255c3b5b8d444f447a59912585335e99e17) |
+| 3b | **Publish set root** — admin `SetGroupRoot` updates the Merkle root of the commitment set | [`03c6e636…`](https://preprod.cardanoscan.io/transaction/03c6e636545f95d4588b19139f6d3366fef7179964c5d1e0c4ce22f35f16aa84) |
+| 4 | **Borrow** — `BorrowAnonymous { proof, loan_amount, loan_nullifier }`; the validator runs `groth_verify(vkey, proof, [group_root, nullifier, loan, ratio, ext])` **on-chain**; **no collateral UTxO is referenced**; loan paid out; nullifier recorded | [`f473f9c1…`](https://preprod.cardanoscan.io/transaction/f473f9c159c024d2b2c557f3fc06f8768833f155c0512a082645ad36213cad9d) |
+| 5 | **Repay** — `RepayAnonymous`; re-attests membership + nullifier; pays **principal + interest**; removes the nullifier (settles the loan) | [`dfba747c…`](https://preprod.cardanoscan.io/transaction/dfba747c872948cd3de5f0515e785f4f747c3fb78651357ea88aa2248ea2a89a) |
+| 6 | **Unlock** — `UnlockDeposit { proof, pool_ref, loan_nullifier }`; a commitment-bound proof + the pool reference input prove ownership and that the nullifier is settled; collateral freed **with no signature** | [`3af0d112…`](https://preprod.cardanoscan.io/transaction/3af0d112eda2e92290532a1ac11da44844c7169969d48f1a0ab498c972905f69) |
 
 Off-chain drivers (Mesh, Node ESM): `offchain/cli/v5/{1-park-vkey, 2-init-pool,
 3-deposit, 3b-setgrouproot, 4-borrow, 5-repay, 6-unlock}.mjs`, shared helpers in
@@ -113,10 +115,10 @@ Preprod; a multi-party ceremony is required before mainnet (see M1 Appendix A).*
 
 | Component | Value |
 |---|---|
-| `lending_pool_v5` address | `addr_test1wpxqjgtg22hvfdf9fpnlqmeseee72crr3lej2c7c40wylag8xq2nd` |
-| `lending_pool_v5` hash | `4c09216852aec4b5254867f06f30ce73e560638ff32563d8abdc4ff5` |
-| `collateral_v5` address | `addr_test1wrcz0wwchu6l4lfksd4t6sdldux5zssc2cvyp4s2pfqrrecw9e63k` |
-| `collateral_v5` hash | `f027b9d8bf35fafd36836abd41bf6f0d414218561840d60a0a4031e7` |
+| `lending_pool_v5` address | `addr_test1wql7d7srrcwe0jetyudxxs02nyyev8xqpe37aj5zp4ruceggseu8g` |
+| `lending_pool_v5` hash | `3fe6fa031e1d97cb2b271a6341ea9909961cc00e63eeca820d47cc65` |
+| `collateral_v5` address | `addr_test1wq4ucg6rfkplgll6ga9fqmtd2lxzflw3jrsjxsm3sfaptyc3taqhz` |
+| `collateral_v5` hash | `2bcc23434d83f47ffa474a906d6d57cc24fdd190e1234371827a1593` |
 | Compiler | Aiken v1.1.15, Plutus V3 |
 | Verifier lib | `modulo-p/ak-381` v0.1.1 |
 | Circuits | BLS12-381, Groth16, Poseidon255; borrow (5 signals, depth-10 membership), unlock (3 signals) |
@@ -150,18 +152,15 @@ hides information *within a set*, it does not make a public ledger opaque:
 1. **Anonymity-set size.** Privacy scales with the number of deposits sharing a
    denomination; on a young protocol the practical set is small even though the
    mechanism is sound. It improves with adoption, not with code.
-2. **Loan principals.** For on-chain interest accounting, loan principals are recorded
-   in `open_loans` — visible, but **unlinkable to identity**. Per-loan amount privacy
-   requires moving interest verification into the circuit (future work).
-3. **Value at the edges & timing.** ADA entering (deposit) and leaving (loan payout,
+2. **Timing.** ADA entering (deposit) and leaving (loan payout,
    repay) is visible; fixed denominations blur amounts inside the set but timing
    correlation can still relate activity. Timing resistance is out of scope for M3.
-4. **Fee-payer.** The wallet that pays fees is visible; sender-level anonymity needs a
+3. **Fee-payer.** The wallet that pays fees is visible; sender-level anonymity needs a
    relayer (as Tornado Cash uses).
-5. **Anonymity set is admin-curated.** For M3 the commitment-set root is published by
+4. **Anonymity set is admin-curated.** For M3 the commitment-set root is published by
    the protocol admin (`SetGroupRoot`), mirroring the reference Cardano-Semaphore
    group model.
-6. **Nullifier set.** Stored as a list for M3; a Merkle-Patricia-Forestry set is the
+5. **Nullifier set.** Stored as a list for M3; a Merkle-Patricia-Forestry set is the
    scale upgrade.
 
 Cardano L1 was chosen deliberately (M1 §1.2) rather than the Midnight privacy

@@ -6,7 +6,7 @@
  */
 import {
   loadEnv, makeProvider, makeWallet, walletAddress, makeTxBuilder,
-  poolDatum, generateBorrowProof, R_Repay,
+  poolDatum, generateBorrowProof, R_Repay, LOAN_DENOMINATION,
   POOL_ADDRESS, POOL_CBOR, loadReceipt, saveReceipt, scanLink,
 } from "./common.mjs";
 
@@ -21,9 +21,8 @@ const deposit = loadReceipt("deposit.json");
 const { commitments } = loadReceipt("commitments.json");
 const borrow = loadReceipt("borrow.json");
 
-const loan = pool.open_loans.find((l) => l.nullifier === borrow.nullifier);
-if (!loan) throw new Error("loan nullifier not in open_loans");
-const principal = Number(loan.principal);
+if (!pool.open_loans.includes(borrow.nullifier)) throw new Error("loan nullifier not in open_loans");
+const principal = Number(LOAN_DENOMINATION);
 const interest = Math.floor((principal * pool.interest_rate) / 10000);
 const repay = principal + interest;
 console.log("principal:", principal / 1e6, "ADA | interest:", interest / 1e6, "| due:", repay / 1e6);
@@ -39,7 +38,7 @@ const { proofData, nullifier } = await generateBorrowProof({
 });
 
 const now = Date.now();
-const openLoans = pool.open_loans.filter((l) => l.nullifier !== borrow.nullifier);
+const openLoans = pool.open_loans.filter((n) => n !== borrow.nullifier);
 const newBorrowed = pool.total_borrowed - principal;
 const contDatum = poolDatum({
   total_deposited: pool.total_deposited, total_borrowed: newBorrowed,
@@ -47,6 +46,7 @@ const contDatum = poolDatum({
   vkey_ref_tx: pool.vkey_ref_tx, vkey_ref_idx: pool.vkey_ref_idx,
   unlock_vkey_ref_tx: pool.unlock_vkey_ref_tx, unlock_vkey_ref_idx: pool.unlock_vkey_ref_idx,
   group_root: BigInt(pool.group_root), external_nullifier: BigInt(pool.external_nullifier),
+  loan_denomination: BigInt(pool.loan_denomination),
   open_loans: openLoans, admin: pool.admin, last_updated: now,
 });
 

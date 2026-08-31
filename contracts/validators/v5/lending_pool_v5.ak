@@ -13,7 +13,7 @@ use cardano/assets.{lovelace_of}
 use cardano/script_context.{ScriptContext}
 use cardano/transaction.{Input, InlineDatum, Output, OutputReference, Transaction}
 use types_v5.{
-  BorrowAnonymous, Deposit, OpenLoan, PoolDatumV5, PoolRedeemerV5, RepayAnonymous,
+  BorrowAnonymous, Deposit, PoolDatumV5, PoolRedeemerV5, RepayAnonymous,
   SetGroupRoot,
 }
 use zk.{get_vkey, verify_borrow_proof}
@@ -78,18 +78,15 @@ validator lending_pool_v5 {
           )
         let fresh = !has_nullifier(pool_datum.open_loans, loan_nullifier)
         let liquidity = loan_amount <= bal_in - pool_datum.total_borrowed
-        let new_loan =
-          OpenLoan {
-            nullifier: loan_nullifier,
-            principal: loan_amount,
-            start: out.last_updated,
-          }
+        // Fixed denomination: every loan is exactly loan_denomination, so loan
+        // amounts are uniform and carry no per-loan information.
+        let denominated = loan_amount == pool_datum.loan_denomination
         and {
           proof_ok?,
           fresh?,
           liquidity?,
-          (loan_amount > 0)?,
-          (out.open_loans == [new_loan, ..pool_datum.open_loans])?,
+          denominated?,
+          (out.open_loans == [loan_nullifier, ..pool_datum.open_loans])?,
           (out.total_borrowed == pool_datum.total_borrowed + loan_amount)?,
           (out.total_deposited == pool_datum.total_deposited)?,
           (bal_out == bal_in - loan_amount)?,
@@ -101,27 +98,28 @@ validator lending_pool_v5 {
       // RepayAnonymous: re-attest membership + the loan nullifier, pay principal +
       // interest, and remove the loan from the open set.
       RepayAnonymous { proof, repay_amount, loan_nullifier } -> {
-        expect Some(loan) = find_loan(pool_datum.open_loans, loan_nullifier)
+        let outstanding = has_nullifier(pool_datum.open_loans, loan_nullifier)
+        let principal = pool_datum.loan_denomination
         let vkey = get_vkey(tx, pool_datum.vkey_ref)
-        // The proof re-attests membership + the loan nullifier for this loan's
-        // principal (public in open_loans). repay_amount itself is enforced by the
-        // pool accounting below, not by the proof.
+        // The proof re-attests membership + the loan nullifier for the (fixed)
+        // loan denomination. repay_amount is enforced by the pool accounting below.
         let proof_ok =
           verify_borrow_proof(
             vkey,
             proof,
             pool_datum.group_root,
             loan_nullifier,
-            loan.principal,
+            principal,
             pool_datum.collateral_ratio,
             pool_datum.external_nullifier,
           )
-        let due = loan.principal + interest_of(loan.principal, pool_datum.interest_rate)
+        let due = principal + interest_of(principal, pool_datum.interest_rate)
         and {
           proof_ok?,
+          outstanding?,
           (repay_amount >= due)?,
           (out.open_loans == remove_loan(pool_datum.open_loans, loan_nullifier))?,
-          (out.total_borrowed == pool_datum.total_borrowed - loan.principal)?,
+          (out.total_borrowed == pool_datum.total_borrowed - principal)?,
           (out.total_deposited == pool_datum.total_deposited)?,
           (bal_out == bal_in + repay_amount)?,
           (out.group_root == pool_datum.group_root)?,
@@ -150,6 +148,7 @@ fn pool_static_preserved(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
     new.vkey_ref == old.vkey_ref,
     new.unlock_vkey_ref == old.unlock_vkey_ref,
     new.external_nullifier == old.external_nullifier,
+    new.loan_denomination == old.loan_denomination,
     new.admin == old.admin,
   }
 }
@@ -158,16 +157,12 @@ fn same_open_loans(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
   new.open_loans == old.open_loans
 }
 
-fn has_nullifier(loans: List<OpenLoan>, n: Int) -> Bool {
-  list.any(loans, fn(l) { l.nullifier == n })
+fn has_nullifier(loans: List<Int>, n: Int) -> Bool {
+  list.has(loans, n)
 }
 
-fn find_loan(loans: List<OpenLoan>, n: Int) -> Option<OpenLoan> {
-  list.find(loans, fn(l) { l.nullifier == n })
-}
-
-fn remove_loan(loans: List<OpenLoan>, n: Int) -> List<OpenLoan> {
-  list.filter(loans, fn(l) { l.nullifier != n })
+fn remove_loan(loans: List<Int>, n: Int) -> List<Int> {
+  list.filter(loans, fn(x) { x != n })
 }
 
 fn continuing_pool_output(tx: Transaction, pool_input: Input) -> Option<Output> {

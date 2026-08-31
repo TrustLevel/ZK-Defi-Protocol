@@ -58,6 +58,9 @@ export const RECEIPTS = path.join(__dirname, "receipts");
 // depth must match the circuit (CollateralSemaphore(10)).
 export const DEPTH = 10;
 export const EXTERNAL_NULLIFIER = 7777n;
+// Every loan is exactly this size, so loan amounts are uniform (carry no
+// per-loan information) and open_loans stores only nullifiers.
+export const LOAN_DENOMINATION = 10_000_000n; // 10 ADA
 
 // ── env ──────────────────────────────────────────────────────────────────────
 export function loadEnv() {
@@ -248,9 +251,6 @@ export function outputReference(txHash, index) {
 export function depositDatum(commitment, timestamp) {
   return conStr(0, [integer(commitment.toString()), integer(timestamp)]);
 }
-export function openLoan(l) {
-  return conStr(0, [integer(l.nullifier.toString()), integer(l.principal), integer(l.start)]);
-}
 export function poolDatum(d) {
   return conStr(0, [
     integer(d.total_deposited),
@@ -261,7 +261,8 @@ export function poolDatum(d) {
     outputReference(d.unlock_vkey_ref_tx, d.unlock_vkey_ref_idx),
     integer(d.group_root.toString()),
     integer(d.external_nullifier.toString()),
-    list((d.open_loans || []).map(openLoan)),
+    integer(d.loan_denomination.toString()),
+    list((d.open_loans || []).map((n) => integer(n.toString()))),
     byteString(d.admin),
     integer(d.last_updated),
   ]);

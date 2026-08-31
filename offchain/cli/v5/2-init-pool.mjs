@@ -6,7 +6,8 @@
 import { deserializeAddress } from "@meshsdk/core";
 import {
   loadEnv, makeProvider, makeWallet, walletAddress, makeTxBuilder,
-  poolDatum, merkleRoot, EXTERNAL_NULLIFIER, POOL_ADDRESS, loadReceipt, saveReceipt, scanLink,
+  poolDatum, merkleRoot, EXTERNAL_NULLIFIER, LOAN_DENOMINATION,
+  POOL_ADDRESS, loadReceipt, saveReceipt, scanLink,
 } from "./common.mjs";
 
 const POOL_ADA = 100_000_000;
@@ -33,6 +34,7 @@ const state = {
   unlock_vkey_ref_tx: vkey.txHash, unlock_vkey_ref_idx: vkey.unlockIdx,
   group_root: groupRoot,
   external_nullifier: EXTERNAL_NULLIFIER,
+  loan_denomination: LOAN_DENOMINATION,
   open_loans: [],
   admin: pubKeyHash,
   last_updated: now,

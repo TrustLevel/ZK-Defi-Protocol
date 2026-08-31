@@ -32,6 +32,7 @@ const contDatum = poolDatum({
   vkey_ref_tx: pool.vkey_ref_tx, vkey_ref_idx: pool.vkey_ref_idx,
   unlock_vkey_ref_tx: pool.unlock_vkey_ref_tx, unlock_vkey_ref_idx: pool.unlock_vkey_ref_idx,
   group_root: newRoot, external_nullifier: BigInt(pool.external_nullifier),
+  loan_denomination: BigInt(pool.loan_denomination),
   open_loans: pool.open_loans, admin: pool.admin, last_updated: now,
 });
 

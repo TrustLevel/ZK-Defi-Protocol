@@ -37,13 +37,13 @@ All figures below are for the private (v6) protocol.
 
 | Step | Tx hash | valid_contract | Fee (ADA) |
 |---|---|---|---|
-| Park VKeys | `0f3d9603…247375` | true | 0.2251 |
-| Init pool | `6cd76fb3…53ce8a` | true | 0.1783 |
-| Deposit | `4d1901c5…a9ec15` | true | 0.1711 |
-| Set group root | `e9a5ffdf…30076c` | true | 0.3303 |
-| **Borrow** (on-chain membership groth_verify) | `bc620342…1bdebb` | true | 0.5383 |
-| **Repay** (principal + interest) | `e7933333…d5d789` | true | 0.5344 |
-| **Unlock** (repayment-gated, no signature) | `c4492a39…dca1720` | true | 0.4331 |
+| Park VKeys | `ee6b270f…1be0c3` | true | 0.2270 |
+| Init pool | `8a106cb2…143ea4` | true | 0.1783 |
+| Deposit | `686989ff…e99e17` | true | 0.1711 |
+| Set group root | `03c6e636…16aa84` | true | 0.3278 |
+| **Borrow** (on-chain membership groth_verify) | `f473f9c1…3cad9d` | true | 0.5340 |
+| **Repay** (principal + interest) | `dfba747c…a2a89a` | true | 0.5301 |
+| **Unlock** (repayment-gated, no signature) | `3af0d112…905f69` | true | 0.4294 |
 
 **Fees.** The proof-carrying txs cost ~0.43–0.54 ADA. The Mesh builder's
 `autoEvaluate` produces tight ExUnits for these BLS12-381 scripts — materially
@@ -60,10 +60,10 @@ Both circuits' verification fits comfortably within Plutus V3 limits.
 
 ## 4. Cardanoscan links
 
-- Park: https://preprod.cardanoscan.io/transaction/0f3d96031261456ebe5e9e6210b67cf398c4925e78ab049a996436f867247375
-- Init: https://preprod.cardanoscan.io/transaction/6cd76fb343697f9f18af5982f27fe8336372dbaf35e7968497011759d953ce8a
-- Deposit: https://preprod.cardanoscan.io/transaction/4d1901c507fc5b4b2cea0bc420ae07e6a5a0f32e351f1c9d22b4d9ca07a9ec15
-- Set group root: https://preprod.cardanoscan.io/transaction/e9a5ffdfe6f35769b3b99749aec2a048c9758e8315bea9d99f0567d4d430076c
-- **Borrow:** https://preprod.cardanoscan.io/transaction/bc62034295d37dc10b4fcaab05e33c38161f969867b340e76632a464a11bdebb
-- **Repay:** https://preprod.cardanoscan.io/transaction/e79333330567139c844ccc57f4b6ac4e5aba98972dd29f6b5df11304585d5789
-- **Unlock:** https://preprod.cardanoscan.io/transaction/c4492a390bfbb807b477b7d50d3df22ff31de15e7a66b4349e7f1e2a5dca1720
+- Park: https://preprod.cardanoscan.io/transaction/ee6b270fdb93ec1720af401e67a6d7db2c5fe1304e4bbeeb9e1f6ee3871be0c3
+- Init: https://preprod.cardanoscan.io/transaction/8a106cb2dda054ab783a289bcdc4123b8bb8a881879c53abbeb566a87e143ea4
+- Deposit: https://preprod.cardanoscan.io/transaction/686989ff429a4ddcd89e61da07bda255c3b5b8d444f447a59912585335e99e17
+- Set group root: https://preprod.cardanoscan.io/transaction/03c6e636545f95d4588b19139f6d3366fef7179964c5d1e0c4ce22f35f16aa84
+- **Borrow:** https://preprod.cardanoscan.io/transaction/f473f9c159c024d2b2c557f3fc06f8768833f155c0512a082645ad36213cad9d
+- **Repay:** https://preprod.cardanoscan.io/transaction/dfba747c872948cd3de5f0515e785f4f747c3fb78651357ea88aa2248ea2a89a
+- **Unlock:** https://preprod.cardanoscan.io/transaction/3af0d112eda2e92290532a1ac11da44844c7169969d48f1a0ab498c972905f69

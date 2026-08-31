@@ -11,7 +11,7 @@ use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction, placeholder,
 }
 use types_v5.{
-  BorrowAnonymous, DepositDatumV5, OpenLoan, PoolDatumV5, RepayAnonymous,
+  BorrowAnonymous, DepositDatumV5, PoolDatumV5, RepayAnonymous,
   UnlockDeposit,
 }
 use semaphore_onchain_test.{
@@ -39,7 +39,7 @@ const uvk_oref: OutputReference =
 const coll_oref: OutputReference =
   OutputReference { transaction_id: #"b3", output_index: 0 }
 
-fn pool_datum(total_borrowed: Int, open_loans: List<OpenLoan>) -> PoolDatumV5 {
+fn pool_datum(total_borrowed: Int, open_loans: List<Int>) -> PoolDatumV5 {
   PoolDatumV5 {
     total_deposited: 100_000_000,
     total_borrowed,
@@ -49,6 +49,7 @@ fn pool_datum(total_borrowed: Int, open_loans: List<OpenLoan>) -> PoolDatumV5 {
     unlock_vkey_ref: uvk_oref,
     group_root,
     external_nullifier: ext,
+    loan_denomination: loan_amt,
     open_loans,
     admin: admin_pkh,
     last_updated: 0,
@@ -104,7 +105,7 @@ fn pool_out(pd: PoolDatumV5, lovelace: Int) -> Output {
 
 test borrow_membership_succeeds() {
   let pd = pool_datum(0, [])
-  let new_loan = OpenLoan { nullifier: loan_null, principal: loan_amt, start: 0 }
+  let new_loan = loan_null
   let out = pool_datum(loan_amt, [new_loan])
   let tx =
     Transaction {
@@ -123,7 +124,7 @@ test borrow_membership_succeeds() {
 
 test borrow_reused_nullifier_fails() {
   // The loan nullifier is already outstanding -> no second loan on it.
-  let existing = OpenLoan { nullifier: loan_null, principal: loan_amt, start: 0 }
+  let existing = loan_null
   let pd = pool_datum(loan_amt, [existing])
   let out = pool_datum(loan_amt * 2, [existing, existing])
   let tx =
@@ -145,7 +146,7 @@ test borrow_reused_nullifier_fails() {
 
 // principal 10_000_000 at 500 bps -> interest 500_000 -> due 10_500_000.
 test repay_principal_plus_interest_succeeds() {
-  let loan = OpenLoan { nullifier: loan_null, principal: loan_amt, start: 0 }
+  let loan = loan_null
   let pd = pool_datum(loan_amt, [loan])
   let out = pool_datum(0, [])
   let repay = 10_500_000
@@ -165,7 +166,7 @@ test repay_principal_plus_interest_succeeds() {
 }
 
 test repay_below_interest_fails() {
-  let loan = OpenLoan { nullifier: loan_null, principal: loan_amt, start: 0 }
+  let loan = loan_null
   let pd = pool_datum(loan_amt, [loan])
   let out = pool_datum(0, [])
   let repay = 10_000_000
@@ -203,7 +204,7 @@ fn coll_input(cmt: Int) -> Input {
   }
 }
 
-fn pool_ref_input(open_loans: List<OpenLoan>) -> Input {
+fn pool_ref_input(open_loans: List<Int>) -> Input {
   Input {
     output_reference: pool_oref,
     output: Output {
@@ -233,7 +234,7 @@ test unlock_when_settled_succeeds() {
 
 test unlock_blocked_while_loan_open_fails() {
   // Valid proof, but the loan nullifier is still outstanding -> cannot unlock.
-  let open = OpenLoan { nullifier: loan_null, principal: loan_amt, start: 0 }
+  let open = loan_null
   let tx =
     Transaction {
       ..placeholder,

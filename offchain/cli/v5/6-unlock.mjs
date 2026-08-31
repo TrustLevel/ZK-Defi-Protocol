@@ -34,7 +34,7 @@ const { proofData, nullifier } = await generateUnlockProof({
   commitment: BigInt(deposit.commitment), secret: BigInt(deposit.secret),
   collateralAmount: deposit.collateralAmount,
 });
-const settled = !pool.open_loans.some((l) => l.nullifier === nullifier.toString());
+const settled = !pool.open_loans.includes(nullifier.toString());
 console.log("unlock proof ok | nullifier settled in pool?", settled);
 
 const collateralUtxo = utxos.find((u) => u.output.amount.length === 1 && Number(u.output.amount[0].quantity) >= 5_000_000) || utxos[0];

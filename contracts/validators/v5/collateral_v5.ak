@@ -20,7 +20,7 @@ use aiken/crypto.{ScriptHash}
 use cardano/address.{Script}
 use cardano/script_context.{ScriptContext}
 use cardano/transaction.{InlineDatum, Input, Output, OutputReference, Transaction}
-use types_v5.{CollateralRedeemerV5, DepositDatumV5, OpenLoan, PoolDatumV5, UnlockDeposit}
+use types_v5.{CollateralRedeemerV5, DepositDatumV5, PoolDatumV5, UnlockDeposit}
 use zk.{get_vkey, verify_unlock_proof}
 
 validator collateral_v5(pool_script_hash: ScriptHash) {
@@ -75,6 +75,6 @@ fn find_reference_input(tx: Transaction, ref: OutputReference) -> Option<Input> 
   list.find(tx.reference_inputs, fn(i) { i.output_reference == ref })
 }
 
-fn has_nullifier(loans: List<OpenLoan>, n: Int) -> Bool {
-  list.any(loans, fn(l) { l.nullifier == n })
+fn has_nullifier(loans: List<Int>, n: Int) -> Bool {
+  list.has(loans, n)
 }

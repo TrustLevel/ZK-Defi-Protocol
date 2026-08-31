@@ -23,20 +23,15 @@ pub type DepositDatumV5 {
   timestamp: Int,
 }
 
-/// One outstanding loan: its nullifier, principal (for exact debt + interest
-/// accounting) and the pool timestamp it started at.
-pub type OpenLoan {
-  nullifier: Int,
-  principal: Int,
-  start: Int,
-}
-
 /// Lending pool datum (v6).
 /// `vkey_ref`        -> borrow/repay membership circuit verification key
 /// `unlock_vkey_ref` -> unlock (commitment-bound) circuit verification key
 /// `group_root`      -> Merkle root of the collateral commitment set
 /// `external_nullifier` -> fixed protocol constant scoping loan nullifiers
-/// `open_loans`      -> outstanding loans (nullifier double-spend + interest source)
+/// `loan_denomination` -> every loan is exactly this size, so loan amounts are
+///                        uniform (carry no per-loan information) and open_loans
+///                        need only store nullifiers, not principals.
+/// `open_loans`      -> outstanding loan nullifiers (double-spend + settlement gate)
 /// `admin`           -> may update the published group_root
 pub type PoolDatumV5 {
   total_deposited: Int,
@@ -47,7 +42,8 @@ pub type PoolDatumV5 {
   unlock_vkey_ref: OutputReference,
   group_root: Int,
   external_nullifier: Int,
-  open_loans: List<OpenLoan>,
+  loan_denomination: Int,
+  open_loans: List<Int>,
   admin: ByteArray,
   last_updated: Int,
 }
