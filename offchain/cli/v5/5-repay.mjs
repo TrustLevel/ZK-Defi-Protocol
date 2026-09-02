@@ -1,12 +1,16 @@
 /**
  * Step 5 — RepayAnonymous: re-attest membership + the loan nullifier, pay
- * principal + interest, and remove the loan from open_loans (settling it, which
- * is what later permits unlock). On-chain groth_verify over [group_root,
- * nullifier, principal, ratio, ext]; repay_amount enforced by pool accounting.
+ * principal + interest, and remove the loan from open_loans. Permissionless (no
+ * admin signature). Also computes the repayment nullifier R and carries it in the
+ * redeemer (repay_nullifier) + appends it to receipts/repaid.json, so the admin
+ * can insert R into repaid_root via 5b-insert-repaid — which is what later lets
+ * the owner prove settlement (in ZK) at unlock. repaid_root is UNCHANGED here.
+ * On-chain groth_verify over [group_root, nullifier, principal, ratio, ext];
+ * repay_amount enforced by pool accounting.
  */
 import {
   loadEnv, makeProvider, makeWallet, walletAddress, makeTxBuilder,
-  poolDatum, generateBorrowProof, R_Repay, LOAN_DENOMINATION,
+  poolDatumFrom, generateBorrowProof, computeRepayNullifier, R_Repay, LOAN_DENOMINATION,
   POOL_ADDRESS, POOL_CBOR, loadReceipt, saveReceipt, scanLink,
 } from "./common.mjs";
 
@@ -36,19 +40,13 @@ const { proofData, nullifier } = await generateBorrowProof({
   commitments, index: deposit.index, secret: BigInt(deposit.secret),
   collateralAmount: deposit.collateralAmount, loanAmount: principal, ratio: pool.collateral_ratio,
 });
+// Repayment nullifier R (private witness at unlock; carried publicly here).
+const R = computeRepayNullifier(BigInt(deposit.secret));
 
 const now = Date.now();
 const openLoans = pool.open_loans.filter((n) => n !== borrow.nullifier);
 const newBorrowed = pool.total_borrowed - principal;
-const contDatum = poolDatum({
-  total_deposited: pool.total_deposited, total_borrowed: newBorrowed,
-  interest_rate: pool.interest_rate, collateral_ratio: pool.collateral_ratio,
-  vkey_ref_tx: pool.vkey_ref_tx, vkey_ref_idx: pool.vkey_ref_idx,
-  unlock_vkey_ref_tx: pool.unlock_vkey_ref_tx, unlock_vkey_ref_idx: pool.unlock_vkey_ref_idx,
-  group_root: BigInt(pool.group_root), external_nullifier: BigInt(pool.external_nullifier),
-  loan_denomination: BigInt(pool.loan_denomination),
-  open_loans: openLoans, admin: pool.admin, last_updated: now,
-});
+const contDatum = poolDatumFrom(pool, { total_borrowed: newBorrowed, open_loans: openLoans, last_updated: now });
 
 const collateralUtxo = utxos.find((u) => u.output.amount.length === 1 && Number(u.output.amount[0].quantity) >= 5_000_000) || utxos[0];
 
@@ -59,7 +57,7 @@ const unsigned = await tx
   .txIn(poolUtxo.input.txHash, poolUtxo.input.outputIndex, poolUtxo.output.amount, POOL_ADDRESS)
   .txInScript(POOL_CBOR)
   .txInInlineDatumPresent()
-  .txInRedeemerValue(R_Repay(proofData, repay, nullifier), "JSON")
+  .txInRedeemerValue(R_Repay(proofData, repay, nullifier, R), "JSON")
   .readOnlyTxInReference(pool.vkey_ref_tx, pool.vkey_ref_idx)
   .txOut(POOL_ADDRESS, [{ unit: "lovelace", quantity: String(poolBalance + repay) }])
   .txOutInlineDatumValue(contDatum, "JSON")
@@ -73,7 +71,17 @@ saveReceipt("pool.json", {
   ...pool, txHash, outputIndex: 0, poolBalance: poolBalance + repay,
   total_borrowed: newBorrowed, open_loans: openLoans, last_updated: now,
 });
-saveReceipt("repay.json", { txHash, repayAda: repay, interest, nullifier: nullifier.toString() });
-console.log("REPAY submitted (principal + interest, nullifier settled). txHash:", txHash);
+// Append R to the append-only repaid-set so the admin can insert it (5b) and the
+// owner can later prove settlement membership at unlock.
+const repaid = loadReceipt("repaid.json");
+if (!repaid.repaidNullifiers.includes(R.toString())) repaid.repaidNullifiers.push(R.toString());
+saveReceipt("repaid.json", repaid);
+saveReceipt("repay.json", {
+  txHash, repayAda: repay, interest,
+  nullifier: nullifier.toString(), repay_nullifier: R.toString(),
+  repaid_index: repaid.repaidNullifiers.indexOf(R.toString()),
+});
+console.log("REPAY submitted (principal + interest; loan nullifier removed; R recorded). txHash:", txHash);
+console.log("  R (repay nullifier):", R.toString().slice(0, 16) + "... | repaid-set size", repaid.repaidNullifiers.length);
 console.log(scanLink(txHash));
 process.exit(0);

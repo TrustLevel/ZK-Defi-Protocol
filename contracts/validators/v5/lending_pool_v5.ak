@@ -4,17 +4,17 @@
 //// Borrow/repay are authorized by a Groth16 membership proof verified ON-CHAIN.
 //// The borrow does NOT reference a specific collateral UTxO — it proves the
 //// commitment is a member of `group_root` — so deposit<->borrow is unlinkable.
-//// A loan is a `loan_nullifier` recorded in `open_loans` with its principal;
-//// repayment (principal + interest) removes it, which is what later lets the
-//// owner unlock that collateral.
+//// A loan is a `loan_nullifier` recorded in `open_loans`; repayment (principal +
+//// interest) removes it (double-borrow gate) and publicly records the repayment
+//// nullifier R. The admin then inserts R into the append-only `repaid_root` via
+//// SetRoots, which is what lets the owner later prove settlement (in ZK) at unlock.
 
 use aiken/collection/list
 use cardano/assets.{lovelace_of}
 use cardano/script_context.{ScriptContext}
 use cardano/transaction.{Input, InlineDatum, Output, OutputReference, Transaction}
 use types_v5.{
-  BorrowAnonymous, Deposit, PoolDatumV5, PoolRedeemerV5, RepayAnonymous,
-  SetGroupRoot,
+  BorrowAnonymous, Deposit, PoolDatumV5, PoolRedeemerV5, RepayAnonymous, SetRoots,
 }
 use zk.{get_vkey, verify_borrow_proof}
 
@@ -44,17 +44,21 @@ validator lending_pool_v5 {
           (out.total_deposited == pool_datum.total_deposited + delta)?,
           (out.total_borrowed == pool_datum.total_borrowed)?,
           (out.group_root == pool_datum.group_root)?,
+          (out.repaid_root == pool_datum.repaid_root)?,
           same_open_loans(pool_datum, out)?,
           pool_static_preserved(pool_datum, out)?,
         }
       }
 
-      // SetGroupRoot: the protocol admin publishes the updated commitment-set root
-      // (the anonymity set is admin-curated for M3). Nothing else may move.
-      SetGroupRoot { new_root } ->
+      // SetRoots: the protocol admin publishes the updated commitment-set root
+      // (group_root) and/or the append-only repayment-nullifier root (repaid_root).
+      // Both anonymity sets are admin-curated for M3 (on-chain incremental append
+      // is M4). Nothing else may move.
+      SetRoots { new_group_root, new_repaid_root } ->
         and {
           list.has(tx.extra_signatories, pool_datum.admin)?,
-          (out.group_root == new_root)?,
+          (out.group_root == new_group_root)?,
+          (out.repaid_root == new_repaid_root)?,
           (bal_out == bal_in)?,
           (out.total_deposited == pool_datum.total_deposited)?,
           (out.total_borrowed == pool_datum.total_borrowed)?,
@@ -91,13 +95,18 @@ validator lending_pool_v5 {
           (out.total_deposited == pool_datum.total_deposited)?,
           (bal_out == bal_in - loan_amount)?,
           (out.group_root == pool_datum.group_root)?,
+          (out.repaid_root == pool_datum.repaid_root)?,
           pool_static_preserved(pool_datum, out)?,
         }
       }
 
       // RepayAnonymous: re-attest membership + the loan nullifier, pay principal +
-      // interest, and remove the loan from the open set.
-      RepayAnonymous { proof, repay_amount, loan_nullifier } -> {
+      // interest, and remove the loan from the open set. Stays PERMISSIONLESS (no
+      // admin signature). `repay_nullifier` (R) is carried publicly so the admin
+      // can later insert it into repaid_root via SetRoots; the validator does not
+      // (and cannot without a proof) verify R here, so repaid_root is FROZEN on
+      // repay. A bogus R only harms the repayer (their real R never enters the set).
+      RepayAnonymous { proof, repay_amount, loan_nullifier, repay_nullifier: _ } -> {
         let outstanding = has_nullifier(pool_datum.open_loans, loan_nullifier)
         let principal = pool_datum.loan_denomination
         let vkey = get_vkey(tx, pool_datum.vkey_ref)
@@ -123,6 +132,7 @@ validator lending_pool_v5 {
           (out.total_deposited == pool_datum.total_deposited)?,
           (bal_out == bal_in + repay_amount)?,
           (out.group_root == pool_datum.group_root)?,
+          (out.repaid_root == pool_datum.repaid_root)?,
           pool_static_preserved(pool_datum, out)?,
         }
       }
@@ -140,14 +150,16 @@ fn interest_of(principal: Int, interest_rate: Int) -> Int {
 }
 
 /// Every non-financial config field must survive any pool spend unchanged.
-/// (group_root is checked per-branch: frozen everywhere except SetGroupRoot.)
+/// (group_root and repaid_root are checked per-branch: frozen everywhere except
+/// SetRoots, where the admin may republish them.)
 fn pool_static_preserved(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
   and {
     new.interest_rate == old.interest_rate,
     new.collateral_ratio == old.collateral_ratio,
     new.vkey_ref == old.vkey_ref,
-    new.unlock_vkey_ref == old.unlock_vkey_ref,
+    new.settlement_vkey_ref == old.settlement_vkey_ref,
     new.external_nullifier == old.external_nullifier,
+    new.repay_external_nullifier == old.repay_external_nullifier,
     new.loan_denomination == old.loan_denomination,
     new.admin == old.admin,
   }

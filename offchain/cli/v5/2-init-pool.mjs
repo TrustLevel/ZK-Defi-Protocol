@@ -1,12 +1,13 @@
 /**
  * Step 2 — Initialize the lending pool with PoolDatumV5 (v6 private model).
- * group_root starts as the empty-tree root; open_loans = []; admin = wallet pkh;
- * vkey_ref -> borrow vkey (#0), unlock_vkey_ref -> unlock vkey (#1).
+ * group_root + repaid_root start as the empty-tree root; open_loans = [];
+ * admin = wallet pkh; vkey_ref -> borrow vkey (#0), settlement_vkey_ref ->
+ * settlement vkey (#1). Also seeds receipts/repaid.json = { repaidNullifiers: [] }.
  */
 import { deserializeAddress } from "@meshsdk/core";
 import {
   loadEnv, makeProvider, makeWallet, walletAddress, makeTxBuilder,
-  poolDatum, merkleRoot, EXTERNAL_NULLIFIER, LOAN_DENOMINATION,
+  poolDatum, merkleRoot, EXTERNAL_NULLIFIER, REPAY_EXTERNAL_NULLIFIER, LOAN_DENOMINATION,
   POOL_ADDRESS, loadReceipt, saveReceipt, scanLink,
 } from "./common.mjs";
 
@@ -23,6 +24,7 @@ const utxos = await wallet.getUtxos();
 
 const vkey = loadReceipt("vkey.json");
 const groupRoot = merkleRoot([]); // empty anonymity set at init
+const repaidRoot = merkleRoot([]); // empty repaid-set at init
 const now = Date.now();
 
 const state = {
@@ -31,9 +33,11 @@ const state = {
   interest_rate: INTEREST_RATE,
   collateral_ratio: COLLATERAL_RATIO,
   vkey_ref_tx: vkey.txHash, vkey_ref_idx: vkey.borrowIdx,
-  unlock_vkey_ref_tx: vkey.txHash, unlock_vkey_ref_idx: vkey.unlockIdx,
+  settlement_vkey_ref_tx: vkey.txHash, settlement_vkey_ref_idx: vkey.settlementIdx,
   group_root: groupRoot,
+  repaid_root: repaidRoot,
   external_nullifier: EXTERNAL_NULLIFIER,
+  repay_external_nullifier: REPAY_EXTERNAL_NULLIFIER,
   loan_denomination: LOAN_DENOMINATION,
   open_loans: [],
   admin: pubKeyHash,
@@ -56,5 +60,6 @@ const receipt = { txHash, outputIndex: 0, poolBalance: POOL_ADA, ...state };
 console.log("Pool initialized. txHash:", txHash, "#0 | group_root:", groupRoot.toString().slice(0, 16) + "...");
 console.log("receipt:", saveReceipt("pool.json", receipt));
 saveReceipt("commitments.json", { commitments: [] });
+saveReceipt("repaid.json", { repaidNullifiers: [] });
 console.log(scanLink(txHash));
 process.exit(0);

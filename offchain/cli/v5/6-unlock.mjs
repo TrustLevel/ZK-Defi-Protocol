@@ -1,12 +1,14 @@
 /**
- * Step 6 — UnlockDeposit: spend the specific deposit with a commitment-bound ZK
- * proof, gated on the loan nullifier being SETTLED (absent from the pool's
- * open_loans, read via a pool reference input). No signature. This is the
- * privacy-preserving, repayment-gated collateral unlock.
+ * Step 6 — UnlockDeposit: spend the specific deposit with a SETTLEMENT proof — a
+ * single ZK proof binding to the deposit commitment AND proving Merkle membership
+ * of the PRIVATE repayment nullifier R in the pool's repaid_root (read via a pool
+ * reference input). No signature. The redeemer carries NO borrow-shared value, so
+ * borrow<->unlock is unlinkable (Leak-2 closed). A valid proof exists only after
+ * the loan was repaid and R was inserted into repaid_root (steps 5 + 5b).
  */
 import {
   loadEnv, makeProvider, makeWallet, walletAddress, makeTxBuilder,
-  generateUnlockProof, R_Unlock,
+  generateSettlementProof, R_Unlock,
   COLLATERAL_ADDRESS, COLLATERAL_CBOR, POOL_ADDRESS, loadReceipt, saveReceipt, scanLink,
 } from "./common.mjs";
 
@@ -18,6 +20,8 @@ const utxos = await provider.fetchAddressUTxOs(addr);
 
 const pool = loadReceipt("pool.json");
 const deposit = loadReceipt("deposit.json");
+const { repaidNullifiers } = loadReceipt("repaid.json");
+const repay = loadReceipt("repay.json");
 
 // Resolve the deposit UTxO being unlocked.
 const depUtxos = await provider.fetchAddressUTxOs(COLLATERAL_ADDRESS);
@@ -25,17 +29,21 @@ const depUtxo = depUtxos.find((u) => u.input.txHash === deposit.txHash && u.inpu
 if (!depUtxo) throw new Error(`deposit UTxO ${deposit.txHash}#${deposit.outputIndex} not found (already unlocked?)`);
 const depBalance = Number(depUtxo.output.amount.find((a) => a.unit === "lovelace").quantity);
 
-// The pool reference input must be the current pool UTxO (post-repay: nullifier gone).
+// The pool reference input must be the current pool UTxO (post-5b: repaid_root ∋ R).
 const poolUtxos = await provider.fetchAddressUTxOs(POOL_ADDRESS);
 const poolUtxo = poolUtxos.find((u) => u.input.txHash === pool.txHash && u.input.outputIndex === pool.outputIndex);
 if (!poolUtxo) throw new Error(`pool UTxO ${pool.txHash}#${pool.outputIndex} not found`);
 
-const { proofData, nullifier } = await generateUnlockProof({
+// Membership witness index of this deposit's R in the append-only repaid-set.
+const repaidIndex = repay.repaid_index ?? 0;
+const { proofData, root } = await generateSettlementProof({
   commitment: BigInt(deposit.commitment), secret: BigInt(deposit.secret),
-  collateralAmount: deposit.collateralAmount,
+  collateralAmount: deposit.collateralAmount, repaidNullifiers, index: repaidIndex,
 });
-const settled = !pool.open_loans.includes(nullifier.toString());
-console.log("unlock proof ok | nullifier settled in pool?", settled);
+if (root.toString() !== String(pool.repaid_root)) {
+  throw new Error(`settlement membership root != published repaid_root (insert R via 5b first?)`);
+}
+console.log("settlement proof ok | repaid_root membership verified (no borrow-shared value revealed)");
 
 const collateralUtxo = utxos.find((u) => u.output.amount.length === 1 && Number(u.output.amount[0].quantity) >= 5_000_000) || utxos[0];
 
@@ -46,10 +54,10 @@ const unsigned = await tx
   .txIn(depUtxo.input.txHash, depUtxo.input.outputIndex, depUtxo.output.amount, COLLATERAL_ADDRESS)
   .txInScript(COLLATERAL_CBOR)
   .txInInlineDatumPresent()
-  .txInRedeemerValue(R_Unlock(proofData, pool.txHash, pool.outputIndex, nullifier), "JSON")
-  // reference inputs: the pool (for open_loans + unlock vkey_ref) and the unlock vkey
+  .txInRedeemerValue(R_Unlock(proofData, pool.txHash, pool.outputIndex), "JSON")
+  // reference inputs: the pool (for repaid_root + settlement vkey_ref) and the settlement vkey
   .readOnlyTxInReference(pool.txHash, pool.outputIndex)
-  .readOnlyTxInReference(pool.unlock_vkey_ref_tx, pool.unlock_vkey_ref_idx)
+  .readOnlyTxInReference(pool.settlement_vkey_ref_tx, pool.settlement_vkey_ref_idx)
   .txOut(addr, [{ unit: "lovelace", quantity: String(depBalance) }])
   .txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex, collateralUtxo.output.amount, addr)
   .changeAddress(addr)
@@ -57,7 +65,7 @@ const unsigned = await tx
   .complete();
 const txHash = await wallet.submitTx(await wallet.signTx(unsigned, true));
 
-saveReceipt("unlock.json", { txHash, spentDeposit: `${deposit.txHash}#${deposit.outputIndex}`, unlockedAda: depBalance, nullifier: nullifier.toString() });
-console.log("UNLOCK submitted (commitment-bound proof, repayment-gated, no signature). txHash:", txHash);
+saveReceipt("unlock.json", { txHash, spentDeposit: `${deposit.txHash}#${deposit.outputIndex}`, unlockedAda: depBalance });
+console.log("UNLOCK submitted (settlement proof, ZK membership, no signature, no borrow-shared value). txHash:", txHash);
 console.log(scanLink(txHash));
 process.exit(0);

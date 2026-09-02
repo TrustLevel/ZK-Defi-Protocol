@@ -15,11 +15,28 @@ const BASE = path.resolve(__dirname, "..");
 const WASM = `${BASE}/collateral_semaphore_js/collateral_semaphore.wasm`;
 const ZKEY = `${BASE}/keys/collateral_semaphore_final.zkey`;
 const VKEY = JSON.parse(fs.readFileSync(`${BASE}/keys/verification_key_semaphore.json`, "utf8"));
-const UWASM = `${BASE}/unlock_proof_js/unlock_proof.wasm`;
-const UZKEY = `${BASE}/keys/unlock_proof_final.zkey`;
-const UVKEY = JSON.parse(fs.readFileSync(`${BASE}/keys/verification_key_unlock.json`, "utf8"));
+const SWASM = `${BASE}/settlement_proof_js/settlement_proof.wasm`;
+const SZKEY = `${BASE}/keys/settlement_proof_final.zkey`;
+const SVKEY = JSON.parse(fs.readFileSync(`${BASE}/keys/verification_key_settlement.json`, "utf8"));
 const OUT = path.resolve(__dirname, "../../contracts/lib/semaphore_onchain_test.ak");
 const DEPTH = 10;
+
+// Build a depth-DEPTH Poseidon255 Merkle tree with `leaf` at index 0, returning
+// { root, siblings, pathIndices } — the membership witness the circuit expects.
+function merkleWitness(leaf) {
+  let level = new Array(1 << DEPTH).fill(0n);
+  level[0] = leaf;
+  const siblings = [], pathIndices = [];
+  let idx = 0;
+  for (let d = 0; d < DEPTH; d++) {
+    siblings.push(level[idx ^ 1]);
+    pathIndices.push(idx & 1);
+    const next = new Array(level.length >> 1);
+    for (let i = 0; i < next.length; i++) next[i] = poseidon2([level[2 * i], level[2 * i + 1]]);
+    level = next; idx >>= 1;
+  }
+  return { root: level[0], siblings, pathIndices };
+}
 
 function toBufferBE(v, width) {
   let hex = BigInt(v).toString(16);
@@ -57,20 +74,10 @@ async function main() {
   const secret = 88553311220099887766554433221100998877n;
   const collateral_amount = 20_000_000n, loan_amount = 10_000_000n, collateral_ratio = 125n;
   const external_nullifier = 7777n;
+  const repay_external_nullifier = 8888n;
 
   const leaf = poseidon2([collateral_amount, secret]);
-  let level = new Array(1 << DEPTH).fill(0n);
-  level[0] = leaf;
-  const siblings = [], pathIndices = [];
-  let idx = 0;
-  for (let d = 0; d < DEPTH; d++) {
-    siblings.push(level[idx ^ 1]);
-    pathIndices.push(idx & 1);
-    const next = new Array(level.length >> 1);
-    for (let i = 0; i < next.length; i++) next[i] = poseidon2([level[2 * i], level[2 * i + 1]]);
-    level = next; idx >>= 1;
-  }
-  const root = level[0];
+  const { root, siblings, pathIndices } = merkleWitness(leaf);
   const nullifier = poseidon2([secret, external_nullifier]);
 
   const input = {
@@ -88,16 +95,23 @@ async function main() {
   const { proof, publicSignals } = await snarkjs.groth16.fullProve(input, WASM, ZKEY);
   if (!(await snarkjs.groth16.verify(VKEY, publicSignals, proof))) throw new Error("off-chain verify failed");
 
-  // Unlock proof for the SAME deposit: commitment-bound, same nullifier.
-  const uInput = {
+  // Settlement proof for the SAME deposit: commitment-bound + Merkle membership of
+  // the PRIVATE repayment nullifier R in an append-only repaid-set (size 1 here).
+  // R is scoped to a DISTINCT external nullifier so it cannot be correlated with
+  // the borrow-time loan_nullifier, and it is NOT a public signal.
+  const R = poseidon2([secret, repay_external_nullifier]);
+  const sWitness = merkleWitness(R);
+  const sInput = {
     commitment: leaf.toString(),
-    loan_nullifier: nullifier.toString(),
-    external_nullifier: external_nullifier.toString(),
+    repaid_root: sWitness.root.toString(),
+    repay_external_nullifier: repay_external_nullifier.toString(),
     secret: secret.toString(),
     collateral_amount: collateral_amount.toString(),
+    pathIndices: sWitness.pathIndices.map(String),
+    siblings: sWitness.siblings.map((s) => s.toString()),
   };
-  const u = await snarkjs.groth16.fullProve(uInput, UWASM, UZKEY);
-  if (!(await snarkjs.groth16.verify(UVKEY, u.publicSignals, u.proof))) throw new Error("unlock off-chain verify failed");
+  const u = await snarkjs.groth16.fullProve(sInput, SWASM, SZKEY);
+  if (!(await snarkjs.groth16.verify(SVKEY, u.publicSignals, u.proof))) throw new Error("settlement off-chain verify failed");
 
   const curve = await ff.getCurveFromName("bls12381");
   const cG1 = (p) => compressedG1(curve, p);
@@ -106,17 +120,17 @@ async function main() {
   const vkAlpha = cG1(VKEY.vk_alpha_1), vkBeta = cG2(VKEY.vk_beta_2);
   const vkGamma = cG2(VKEY.vk_gamma_2), vkDelta = cG2(VKEY.vk_delta_2);
   const vkIC = VKEY.IC.map(cG1);
-  // unlock
-  const uPiA = cG1(u.proof.pi_a), uPiB = cG2(u.proof.pi_b), uPiC = cG1(u.proof.pi_c);
-  const uvkAlpha = cG1(UVKEY.vk_alpha_1), uvkBeta = cG2(UVKEY.vk_beta_2);
-  const uvkGamma = cG2(UVKEY.vk_gamma_2), uvkDelta = cG2(UVKEY.vk_delta_2);
-  const uvkIC = UVKEY.IC.map(cG1);
+  // settlement
+  const sPiA = cG1(u.proof.pi_a), sPiB = cG2(u.proof.pi_b), sPiC = cG1(u.proof.pi_c);
+  const svkAlpha = cG1(SVKEY.vk_alpha_1), svkBeta = cG2(SVKEY.vk_beta_2);
+  const svkGamma = cG2(SVKEY.vk_gamma_2), svkDelta = cG2(SVKEY.vk_delta_2);
+  const svkIC = SVKEY.IC.map(cG1);
   await curve.terminate();
 
   const icLit = vkIC.map((h) => `#"${h}"`).join(", ");
-  const uIcLit = uvkIC.map((h) => `#"${h}"`).join(", ");
+  const sIcLit = svkIC.map((h) => `#"${h}"`).join(", ");
   const [g_root, g_null, g_loan, g_ratio, g_ext] = publicSignals;
-  const [u_cmt, u_null, u_ext] = u.publicSignals;
+  const [s_cmt, s_repaid_root, s_repay_ext] = u.publicSignals;
   const loanTampered = (BigInt(g_loan) + 1n).toString();
 
   const ak = `// AUTO-GENERATED by circuits/tests/gen-semaphore-fixture.cjs — do not edit by hand.
@@ -125,7 +139,7 @@ async function main() {
 // v6 lending_pool validator calls. Public signals:
 //   [group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier]
 use ak_381/groth16.{Proof, SnarkVerificationKey}
-use zk.{verify_borrow_proof, verify_unlock_proof}
+use zk.{verify_borrow_proof, verify_settlement_proof}
 
 // Real public-signal values, exported so validator tests can build fixtures.
 pub const group_root: Int = ${g_root}
@@ -133,7 +147,11 @@ pub const loan_null: Int = ${g_null}
 pub const loan_amt: Int = ${g_loan}
 pub const ratio: Int = ${g_ratio}
 pub const ext: Int = ${g_ext}
-pub const commitment: Int = ${u_cmt}
+pub const commitment: Int = ${s_cmt}
+// Settlement public signals: [commitment, repaid_root, repay_external_nullifier].
+// repaid_root here is the root of a size-1 repaid-set containing the private R.
+pub const repaid_root: Int = ${s_repaid_root}
+pub const repay_ext: Int = ${s_repay_ext}
 
 pub fn vkey() -> SnarkVerificationKey {
   SnarkVerificationKey {
@@ -151,20 +169,20 @@ pub fn proof() -> Proof {
   Proof { piA: #"${piA}", piB: #"${piB}", piC: #"${piC}" }
 }
 
-pub fn unlock_vkey() -> SnarkVerificationKey {
+pub fn settlement_vkey() -> SnarkVerificationKey {
   SnarkVerificationKey {
-    nPublic: ${UVKEY.nPublic},
-    vkAlpha: #"${uvkAlpha}",
-    vkBeta: #"${uvkBeta}",
-    vkGamma: #"${uvkGamma}",
-    vkDelta: #"${uvkDelta}",
+    nPublic: ${SVKEY.nPublic},
+    vkAlpha: #"${svkAlpha}",
+    vkBeta: #"${svkBeta}",
+    vkGamma: #"${svkGamma}",
+    vkDelta: #"${svkDelta}",
     vkAlphaBeta: [],
-    vkIC: [${uIcLit}],
+    vkIC: [${sIcLit}],
   }
 }
 
-pub fn unlock_proof() -> Proof {
-  Proof { piA: #"${uPiA}", piB: #"${uPiB}", piC: #"${uPiC}" }
+pub fn settlement_proof() -> Proof {
+  Proof { piA: #"${sPiA}", piB: #"${sPiB}", piC: #"${sPiC}" }
 }
 
 test borrow_proof_verifies_onchain() {
@@ -175,12 +193,13 @@ test tampered_borrow_signal_fails_onchain() {
   !verify_borrow_proof(vkey(), proof(), ${g_root}, ${g_null}, ${loanTampered}, ${g_ratio}, ${g_ext})
 }
 
-test unlock_proof_verifies_onchain() {
-  verify_unlock_proof(unlock_vkey(), unlock_proof(), ${u_cmt}, ${u_null}, ${u_ext})
+test settlement_proof_verifies_onchain() {
+  verify_settlement_proof(settlement_vkey(), settlement_proof(), ${s_cmt}, ${s_repaid_root}, ${s_repay_ext})
 }
 
-test tampered_unlock_signal_fails_onchain() {
-  !verify_unlock_proof(unlock_vkey(), unlock_proof(), ${u_cmt}, ${BigInt(u_null) + 1n}, ${u_ext})
+test tampered_settlement_signal_fails_onchain() {
+  // Tamper the repaid_root public signal (+1) -> membership no longer holds.
+  !verify_settlement_proof(settlement_vkey(), settlement_proof(), ${s_cmt}, ${BigInt(s_repaid_root) + 1n}, ${s_repay_ext})
 }
 `;
   fs.writeFileSync(OUT, ak);

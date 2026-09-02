@@ -147,10 +147,11 @@ circuits/collateral_proof_final.zkey
 !circuits/collateral_semaphore_js/
 !circuits/collateral_semaphore_js/collateral_semaphore.wasm
 !circuits/keys/collateral_semaphore_final.zkey
-# v6 unlock circuit (commitment + nullifier bound)
-!circuits/unlock_proof_js/
-!circuits/unlock_proof_js/unlock_proof.wasm
-!circuits/keys/unlock_proof_final.zkey
+# v6 settlement circuit (commitment + repaid-set membership) — retires unlock_proof;
+# unlock now proves settlement in ZK without revealing any borrow-shared value (Leak-2 fix)
+!circuits/settlement_proof_js/
+!circuits/settlement_proof_js/settlement_proof.wasm
+!circuits/keys/settlement_proof_final.zkey
 
 # Local dev instructions — kept locally, not published to the public repo
 /CLAUDE.md

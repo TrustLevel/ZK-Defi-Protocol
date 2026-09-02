@@ -6,7 +6,7 @@
  */
 import {
   loadEnv, makeProvider, makeWallet, walletAddress, makeTxBuilder,
-  poolDatum, generateBorrowProof, R_Borrow, LOAN_DENOMINATION,
+  poolDatumFrom, generateBorrowProof, R_Borrow, LOAN_DENOMINATION,
   POOL_ADDRESS, POOL_CBOR, loadReceipt, saveReceipt, scanLink,
 } from "./common.mjs";
 
@@ -38,15 +38,7 @@ console.log("membership proof ok | nullifier", nullifier.toString().slice(0, 16)
 const now = Date.now();
 const openLoans = [nullifier.toString(), ...pool.open_loans];
 const newBorrowed = pool.total_borrowed + LOAN_ADA;
-const contDatum = poolDatum({
-  total_deposited: pool.total_deposited, total_borrowed: newBorrowed,
-  interest_rate: pool.interest_rate, collateral_ratio: pool.collateral_ratio,
-  vkey_ref_tx: pool.vkey_ref_tx, vkey_ref_idx: pool.vkey_ref_idx,
-  unlock_vkey_ref_tx: pool.unlock_vkey_ref_tx, unlock_vkey_ref_idx: pool.unlock_vkey_ref_idx,
-  group_root: BigInt(pool.group_root), external_nullifier: BigInt(pool.external_nullifier),
-  loan_denomination: BigInt(pool.loan_denomination),
-  open_loans: openLoans, admin: pool.admin, last_updated: now,
-});
+const contDatum = poolDatumFrom(pool, { total_borrowed: newBorrowed, open_loans: openLoans, last_updated: now });
 
 const collateralUtxo = utxos.find((u) => u.output.amount.length === 1 && Number(u.output.amount[0].quantity) >= 5_000_000) || utxos[0];
 
