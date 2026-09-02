@@ -12,45 +12,52 @@ Milestone 3 is **complete and live on Cardano Preprod**:
 
 - On-chain Groth16 (BLS12-381) verification working inside the Aiken validators.
 - The full lifecycle runs end-to-end on Preprod:
-  **park verification key → init pool → deposit → borrow → repay → unlock**.
+  **park verification keys → init pool → deposit → set group root → borrow → repay → unlock**.
 
 Evidence and details:
 
 - [docs/MILESTONE3.md](docs/MILESTONE3.md)
 - [docs/MILESTONE3-EVIDENCE.md](docs/MILESTONE3-EVIDENCE.md)
 - [docs/MILESTONE3-TEST-RESULTS.md](docs/MILESTONE3-TEST-RESULTS.md)
-- [docs/Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-TEMPLATE.md](docs/Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-TEMPLATE.md)
+- [docs/Tester-Feedback/](docs/Tester-Feedback/)
 
-### Deployed v5 validators (Preprod)
+### Deployed validators (Preprod)
 
 | Validator | Script hash |
 |-----------|-------------|
-| `lending_pool_v5` | `0686aaaf136fde2af6aa1f78af30bc67d0aa410461c4bfb5877eb199` |
-| `collateral_v5`   | `f88347ff9ee0ffbdbb575d94c76803ca319e1471fe2c2697ce852aef` |
+| `lending_pool_v5` | `75317267a9fa7d8fcb09c62d371bcf8160c7991eba6637c221f22ff2` |
+| `collateral_v5`   | `f2813e76cfb431d80ad5a50682e16d64524c6c3372b6bee4800f881d` |
 
-### On-chain transactions (Cardanoscan, Preprod)
+### On-chain transactions (Cardanoscan, Preprod) — all `valid_contract: true`
 
 | Step | Transaction |
 |------|-------------|
-| Park verification key | [b3da9481…](https://preprod.cardanoscan.io/transaction/b3da94815002b9339390d76491b961da161595c18ff31ce0f1ea2ecbf9001c8e) |
-| Init pool | [1be3c892…](https://preprod.cardanoscan.io/transaction/1be3c892140bac8b6ed0db3d5e90ff71a21aed86edf2dfe1de53837a4a52c0f9) |
-| Deposit collateral | [34f216e7…](https://preprod.cardanoscan.io/transaction/34f216e73ac4a209a9d392c34ca8e7df6e2ec2a5859d217fe747843ab8747a8a) |
-| Borrow (ZK proof verified on-chain) | [19d9016a…](https://preprod.cardanoscan.io/transaction/19d9016ad95c3c410e8d66ce469a3f5e4cf2b329380555993fa1028110bb2b37) |
-| Repay | [8b934c05…](https://preprod.cardanoscan.io/transaction/8b934c059ab1d352f47277181bb871875907dd34c5506b1e75ac7a8e44a76cf6) |
-| Unlock collateral | [24281542…](https://preprod.cardanoscan.io/transaction/24281542de3ab7e71e5a683917bd053d5a698ae2dfbf8daac0cf2346771ed609) |
+| Park verification keys | [880446043ab5…](https://preprod.cardanoscan.io/transaction/880446043ab5345038b03f31705082d8dbeb8b5929a31bfe92bbeae9caddc211) |
+| Init pool | [9aa40d4f1364…](https://preprod.cardanoscan.io/transaction/9aa40d4f1364fe47bf71df256bc5f0b062cb32284491635fc24ef4c1fd09332c) |
+| Deposit collateral | [fd6ace7bd7dc…](https://preprod.cardanoscan.io/transaction/fd6ace7bd7dcf3e436611fabcfa5dcd087f29f70aa6327624e1ecff3917900b5) |
+| Set group root (admin) | [9737b260bd2f…](https://preprod.cardanoscan.io/transaction/9737b260bd2fcf0a4bfd583a9e7e5096f0c9e5c077a459b55525aa8b3252de02) |
+| Borrow (ZK membership proof verified on-chain) | [8bc3d205f67e…](https://preprod.cardanoscan.io/transaction/8bc3d205f67eaa6d965e2f59e24210abba4251bbba2ae31e96f13507b5fc45b9) |
+| Repay (self-appends R to repaid set) | [f8756c92addb…](https://preprod.cardanoscan.io/transaction/f8756c92addb71fae26c6bdf160be3028266825199b5acf53d202bd89d316a38) |
+| Unlock collateral (settlement proof) | [43f4339ea8aa…](https://preprod.cardanoscan.io/transaction/43f4339ea8aac1d34bb14581e02aaabcc3f2e23ce15dd2f1c30118a805f02521) |
 
 ## How it works
 
 1. **Deposit** — the borrower locks collateral and records a Poseidon
-   commitment `commitment = Poseidon(collateral_amount, secret)`.
-2. **Borrow** — the borrower generates a Groth16 proof that, for a hidden
-   `secret` and `collateral_amount`, the commitment is valid **and**
-   `collateral_amount * 100 >= loan_amount * collateral_ratio`. The lending-pool
-   validator verifies the proof on-chain and releases the loan.
-3. **Repay / Unlock** — the borrower repays the loan and unlocks the collateral.
-
-The verifier learns only the public signals `[commitment, loan_amount,
-collateral_ratio]`; the secret is never revealed.
+   commitment `commitment = Poseidon255(collateral_amount, secret)`. The commitment
+   joins an on-chain anonymity set (a Merkle root).
+2. **Borrow** — the borrower generates a Groth16 proof that their commitment is a
+   **member** of the set and is sufficiently collateralized
+   (`collateral_amount·100 ≥ loan_amount·collateral_ratio`) — without revealing which
+   deposit it is. The lending-pool validator verifies the proof on-chain and releases
+   the loan. Public signals: `[group_root, loan_nullifier, loan_amount, collateral_ratio,
+   external_nullifier]`.
+3. **Repay** — the borrower repays principal + interest, settles the loan nullifier, and
+   self-appends a distinct repayment nullifier `R` into an append-only repaid set (a ZK
+   append proof — permissionless, no admin).
+4. **Unlock** — the borrower proves, in zero knowledge, membership of the private `R` in
+   the repaid set (settlement proof). Its public signals `[commitment, repaid_root,
+   repay_external_nullifier]` share nothing with the borrow, so borrow ↔ unlock cannot be
+   linked. The secret is never revealed on any path.
 
 ## Tech stack
 

@@ -16,13 +16,13 @@ and confirm it shows **Script/Contract: valid** (`valid_contract: true`).
 
 | Step | Tx hash | valid? (Y/N) | Notes |
 |---|---|---|---|
-| Park VKeys | `ee6b270fdb93ec1720af401e67a6d7db2c5fe1304e4bbeeb9e1f6ee3871be0c3` | | |
-| Init pool | `8a106cb2dda054ab783a289bcdc4123b8bb8a881879c53abbeb566a87e143ea4` | | |
-| Deposit | `686989ff429a4ddcd89e61da07bda255c3b5b8d444f447a59912585335e99e17` | | |
-| Set group root | `03c6e636545f95d4588b19139f6d3366fef7179964c5d1e0c4ce22f35f16aa84` | | |
-| **Borrow** (ZK) | `f473f9c159c024d2b2c557f3fc06f8768833f155c0512a082645ad36213cad9d` | | |
-| **Repay** (ZK) | `dfba747c872948cd3de5f0515e785f4f747c3fb78651357ea88aa2248ea2a89a` | | |
-| **Unlock** (ZK) | `3af0d112eda2e92290532a1ac11da44844c7169969d48f1a0ab498c972905f69` | | |
+| Park VKeys | `880446043ab5345038b03f31705082d8dbeb8b5929a31bfe92bbeae9caddc211` | | |
+| Init pool | `9aa40d4f1364fe47bf71df256bc5f0b062cb32284491635fc24ef4c1fd09332c` | | |
+| Deposit | `fd6ace7bd7dcf3e436611fabcfa5dcd087f29f70aa6327624e1ecff3917900b5` | | |
+| Set group root | `9737b260bd2fcf0a4bfd583a9e7e5096f0c9e5c077a459b55525aa8b3252de02` | | |
+| **Borrow** (ZK) | `8bc3d205f67eaa6d965e2f59e24210abba4251bbba2ae31e96f13507b5fc45b9` | | |
+| **Repay** (ZK, self-appends R) | `f8756c92addb71fae26c6bdf160be3028266825199b5acf53d202bd89d316a38` | | |
+| **Unlock** (ZK settlement) | `43f4339ea8aac1d34bb14581e02aaabcc3f2e23ce15dd2f1c30118a805f02521` | | |
 
 Cross-check that the docs match the chain:
 - [ ] Every link in `docs/MILESTONE3.md` / `docs/MILESTONE3-EVIDENCE.md` opens and is `valid`.
@@ -40,8 +40,8 @@ Anything that doesn't match, note it here:
 You will deploy your **own** instance and run the full cycle with your **own** Preprod wallet.
 
 **Setup**
-1. `git clone <repo> && cd ZK-Defi-Protocol && git checkout m3-poa-v2`
-2. Contracts: `cd contracts && aiken check` → expect **13 checks, 0 failed, 0 warnings**. Record the number you see: ____
+1. `git clone <repo> && cd ZK-Defi-Protocol && git checkout m3-poa-v3`
+2. Contracts: `cd contracts && aiken check` → expect **17 checks, 0 failed, 0 warnings**. Record the number you see: ____
 3. Off-chain: `cd ../offchain && npm install`
 4. Create a Preprod wallet, fund it from the faucet (https://docs.cardano.org/cardano-testnets/tools/faucet), and put its 24-word seed + a Blockfrost Preprod key in `.env`:
    - `ADMIN_WALLET_SEED="word1 word2 …"`
@@ -70,7 +70,7 @@ Record YOUR tx hashes and confirm each is `valid` on cardanoscan:
 | Repay | | |
 | Unlock | | |
 
-- [ ] `aiken check` passed with 13/13.
+- [ ] `aiken check` passed with 17/17.
 - [ ] All 7 of your own txs are `valid_contract: true`.
 - [ ] The borrow paid you the loan; the unlock returned your collateral.
 

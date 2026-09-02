@@ -1,7 +1,7 @@
 # M3 Tester Runbook 2 — Break it (pumbiii)
 
 **Your role:** try to **break** the protocol. Do the setup from Runbook 1 (§B) first
-(clone, `git checkout m3-poa-v2`, `aiken check`, `npm install`, funded Preprod wallet
+(clone, `git checkout m3-poa-v3`, `aiken check`, `npm install`, funded Preprod wallet
 in `.env`). Then run each attack below and record whether the protocol **correctly
 rejected** it. For this runbook, **"attack rejected" = PASS** (the protocol held).
 Return as `MILESTONE3-TESTER-FEEDBACK-<yourname>.md`.
@@ -78,7 +78,7 @@ For each finding from the previous Catalyst review, confirm it's addressed:
 - [ ] Loan **amounts** carry no per-loan info (fixed denomination); collateral amount is not in the datum (private witness) though the locked UTxO value is public
 - [ ] Borrow does **not** reveal which deposit it is (no collateral reference)
 - [ ] Adversarial **validator tests** exist and pass (Part A)
-- [ ] Evidence is on an **immutable tag** (`m3-poa-v2`), not `main`
+- [ ] Evidence is on an **immutable tag** (`m3-poa-v3`), not `main`
 
 ---
 
