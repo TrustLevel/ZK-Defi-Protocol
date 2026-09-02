@@ -1,13 +1,14 @@
 /**
- * Step 3b — SetRoots: the admin spends the pool and publishes the updated Merkle
- * root of the commitment set (group_root) so new deposits become valid membership
- * witnesses for borrowing. repaid_root is carried through UNCHANGED here (it is
- * updated after repay by 5b-insert-repaid). Separate, retriable step.
+ * Step 3b — SetGroupRoot: the admin spends the pool and publishes the updated
+ * Merkle root of the commitment set (group_root) so new deposits become valid
+ * membership witnesses for borrowing. repaid_root / next_index are frozen here —
+ * the repaid set only grows via the permissionless append on Repay (step 5).
+ * The deposit anonymity set (group_root) is admin-curated for M3.
  */
 import { deserializeAddress } from "@meshsdk/core";
 import {
   loadEnv, makeProvider, makeWallet, walletAddress, makeTxBuilder,
-  poolDatumFrom, merkleRoot, R_SetRoots,
+  poolDatumFrom, merkleRoot, R_SetGroupRoot,
   POOL_ADDRESS, POOL_CBOR, loadReceipt, saveReceipt, scanLink,
 } from "./common.mjs";
 
@@ -26,9 +27,8 @@ if (!poolUtxo) throw new Error(`pool UTxO ${pool.txHash}#${pool.outputIndex} not
 const poolBalance = Number(poolUtxo.output.amount.find((a) => a.unit === "lovelace").quantity);
 
 const newRoot = merkleRoot(commitments);
-const repaidRoot = BigInt(pool.repaid_root); // unchanged in this step
 const now = Date.now();
-const contDatum = poolDatumFrom(pool, { group_root: newRoot, repaid_root: repaidRoot, last_updated: now });
+const contDatum = poolDatumFrom(pool, { group_root: newRoot, last_updated: now });
 
 const utxos = await provider.fetchAddressUTxOs(addr);
 const pureAda = utxos.filter((u) => u.output.amount.length === 1 && Number(u.output.amount[0].quantity) >= 5_000_000);
@@ -43,7 +43,7 @@ const unsigned = await tx
   .txIn(poolUtxo.input.txHash, poolUtxo.input.outputIndex, poolUtxo.output.amount, POOL_ADDRESS)
   .txInScript(POOL_CBOR)
   .txInInlineDatumPresent()
-  .txInRedeemerValue(R_SetRoots(newRoot, repaidRoot), "JSON")
+  .txInRedeemerValue(R_SetGroupRoot(newRoot), "JSON")
   .txOut(POOL_ADDRESS, [{ unit: "lovelace", quantity: String(poolBalance) }])
   .txOutInlineDatumValue(contDatum, "JSON")
   .requiredSignerHash(pubKeyHash)

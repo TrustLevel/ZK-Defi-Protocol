@@ -60,6 +60,24 @@ pub fn verify_settlement_proof(
   groth_verify(vkey, proof, [commitment, repaid_root, repay_external_nullifier])
 }
 
+/// Verify a v6 append proof: R was correctly appended at `index` (an empty slot),
+/// taking the repaid-set root from `old_root` to `new_root`. Public-signal order
+/// MUST match `circuits/append_proof.circom`:
+///   [old_root, new_root, leaf, index]
+/// The validator binds old_root to the pool's current repaid_root, new_root to the
+/// continuing datum's repaid_root, leaf to the repay redeemer's R, and index to
+/// next_index — so a borrower can grow repaid_root themselves, permissionlessly.
+pub fn verify_append_proof(
+  vkey: SnarkVerificationKey,
+  proof: Proof,
+  old_root: Int,
+  new_root: Int,
+  leaf: Int,
+  index: Int,
+) -> Bool {
+  groth_verify(vkey, proof, [old_root, new_root, leaf, index])
+}
+
 /// Resolve the trusted verification key from the reference input pinned by `vkey_ref`.
 /// The VKey UTxO is parked at an always-false address and set once at pool init, so
 /// referencing it by OutputReference from the (continuity-enforced) pool datum is trusted.

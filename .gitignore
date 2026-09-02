@@ -152,6 +152,10 @@ circuits/collateral_proof_final.zkey
 !circuits/settlement_proof_js/
 !circuits/settlement_proof_js/settlement_proof.wasm
 !circuits/keys/settlement_proof_final.zkey
+# v6 append circuit (permissionless self-append of R into repaid_root at repay)
+!circuits/append_proof_js/
+!circuits/append_proof_js/append_proof.wasm
+!circuits/keys/append_proof_final.zkey
 
 # Local dev instructions — kept locally, not published to the public repo
 /CLAUDE.md

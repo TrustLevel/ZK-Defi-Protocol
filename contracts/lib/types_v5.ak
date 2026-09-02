@@ -17,6 +17,9 @@
 //// repay_external_nullifier] — none shared with borrow, so borrow<->unlock is
 //// unlinkable (closes the Leak-2 vector where the old redeemer revealed the
 //// borrow-time loan_nullifier).
+//// Repay inserts R into `repaid_root` ITSELF via a zero-knowledge append proof
+//// (permissionless — no admin), so the whole borrow/repay/unlock path needs no
+//// signature. `group_root` (the deposit anonymity set) stays admin-curated.
 
 use ak_381/groth16.{Proof}
 use cardano/transaction.{OutputReference}
@@ -31,10 +34,13 @@ pub type DepositDatumV5 {
 /// Lending pool datum (v6).
 /// `vkey_ref`            -> borrow/repay membership circuit verification key
 /// `settlement_vkey_ref` -> unlock settlement circuit verification key
+/// `append_vkey_ref`     -> repay-time append circuit verification key
 /// `group_root`          -> Merkle root of the collateral commitment set
+///                          (admin-curated for M3, via SetGroupRoot)
 /// `repaid_root`         -> append-only Merkle root of repayment nullifiers R;
-///                          admin-curated (like `group_root`), R inserted after
-///                          repay so unlock can prove settlement in zero knowledge
+///                          grown PERMISSIONLESSLY by Repay via a ZK append proof
+///                          (no admin), so unlock can prove settlement in zero knowledge
+/// `next_index`          -> next free leaf position in the repaid_root tree
 /// `external_nullifier`  -> fixed protocol constant scoping loan nullifiers
 /// `repay_external_nullifier` -> DISTINCT protocol constant scoping repayment
 ///                          nullifiers, so R cannot be correlated with the
@@ -43,7 +49,7 @@ pub type DepositDatumV5 {
 ///                          uniform (carry no per-loan information) and open_loans
 ///                          need only store nullifiers, not principals.
 /// `open_loans`          -> outstanding loan nullifiers (double-borrow gate)
-/// `admin`               -> may update the published group_root / repaid_root
+/// `admin`               -> may update the published group_root (SetGroupRoot)
 pub type PoolDatumV5 {
   total_deposited: Int,
   total_borrowed: Int,
@@ -51,8 +57,10 @@ pub type PoolDatumV5 {
   collateral_ratio: Int,
   vkey_ref: OutputReference,
   settlement_vkey_ref: OutputReference,
+  append_vkey_ref: OutputReference,
   group_root: Int,
   repaid_root: Int,
+  next_index: Int,
   external_nullifier: Int,
   repay_external_nullifier: Int,
   loan_denomination: Int,
@@ -62,17 +70,19 @@ pub type PoolDatumV5 {
 }
 
 /// Lending pool redeemer (v6).
-/// `RepayAnonymous.repay_nullifier` = R = Poseidon255(secret, repay_external_nullifier);
-/// carried publicly so the admin can insert it into `repaid_root` via SetRoots.
+/// `RepayAnonymous`: `repay_nullifier` = R = Poseidon255(secret, repay_external_nullifier);
+/// `append_proof` attests R is appended at `next_index`, taking repaid_root ->
+/// out.repaid_root (permissionless — no admin signature on repay).
 pub type PoolRedeemerV5 {
   Deposit
-  SetRoots { new_group_root: Int, new_repaid_root: Int }
+  SetGroupRoot { new_root: Int }
   BorrowAnonymous { proof: Proof, loan_amount: Int, loan_nullifier: Int }
   RepayAnonymous {
     proof: Proof,
     repay_amount: Int,
     loan_nullifier: Int,
     repay_nullifier: Int,
+    append_proof: Proof,
   }
 }
 

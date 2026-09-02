@@ -7,17 +7,19 @@
  *   UNLOCK:       settlement_proof (commitment-bound + Merkle membership of the
  *                 PRIVATE repayment nullifier R in the append-only repaid_root)
  *     public [commitment, repaid_root, repay_external_nullifier]
+ *   APPEND:       append_proof (R inserted at next_index: old_root -> new_root)
+ *     public [old_root, new_root, leaf, index]  (used inside Repay, permissionless)
  *
  * Aiken encodings (contracts/lib/types_v5.ak) — field order is load-bearing:
  *   DepositDatumV5 = conStr 0 [commitment:int, timestamp:int]
  *   PoolDatumV5    = conStr 0 [total_deposited, total_borrowed, interest_rate,
  *                    collateral_ratio, vkey_ref:OutRef, settlement_vkey_ref:OutRef,
- *                    group_root:int, repaid_root:int, external_nullifier:int,
- *                    repay_external_nullifier:int, loan_denomination:int,
- *                    open_loans:[int], admin:bytes, last_updated:int]
+ *                    append_vkey_ref:OutRef, group_root:int, repaid_root:int,
+ *                    next_index:int, external_nullifier:int, repay_external_nullifier:int,
+ *                    loan_denomination:int, open_loans:[int], admin:bytes, last_updated:int]
  *   OutputReference= conStr 0 [txHash:bytes, index:int]   (stdlib v2.2.0 flat bytes)
- *   PoolRedeemerV5 : Deposit=0[] · SetRoots=1[int,int] ·
- *                    BorrowAnonymous=2[Proof,int,int] · RepayAnonymous=3[Proof,int,int,int]
+ *   PoolRedeemerV5 : Deposit=0[] · SetGroupRoot=1[int] ·
+ *                    BorrowAnonymous=2[Proof,int,int] · RepayAnonymous=3[Proof,int,int,int,Proof]
  *   CollateralRedeemerV5 : UnlockDeposit=0[Proof, OutRef]
  *   Proof          = conStr 0 [piA, piB, piC]
  */
@@ -52,6 +54,9 @@ export const BORROW_VKEY = JSON.parse(fs.readFileSync(path.join(CIRCUITS, "keys/
 export const SETTLEMENT_WASM = path.join(CIRCUITS, "settlement_proof_js/settlement_proof.wasm");
 export const SETTLEMENT_ZKEY = path.join(CIRCUITS, "keys/settlement_proof_final.zkey");
 export const SETTLEMENT_VKEY = JSON.parse(fs.readFileSync(path.join(CIRCUITS, "keys/verification_key_settlement.json"), "utf8"));
+export const APPEND_WASM = path.join(CIRCUITS, "append_proof_js/append_proof.wasm");
+export const APPEND_ZKEY = path.join(CIRCUITS, "keys/append_proof_final.zkey");
+export const APPEND_VKEY = JSON.parse(fs.readFileSync(path.join(CIRCUITS, "keys/verification_key_append.json"), "utf8"));
 
 export const RECEIPTS = path.join(__dirname, "receipts");
 
@@ -259,6 +264,25 @@ export async function generateSettlementProof({ commitment, secret, collateralAm
   return { proofData: await compressProof(proof), R, root, publicSignals };
 }
 
+// Repay-time append proof: inserts R at `index` (the next free slot), taking the
+// repaid-set root from old_root -> new_root. `repaidBefore` is the list of R's
+// already in the set (length == index). Public signals [old_root, new_root, R, index].
+export async function generateAppendProof({ secret, repaidBefore, index, repayExternalNullifier = REPAY_EXTERNAL_NULLIFIER }) {
+  const R = computeRepayNullifier(secret, repayExternalNullifier);
+  const { root: oldRoot, siblings } = merkleProof(repaidBefore, index);
+  const newRoot = merkleRoot([...repaidBefore, R]);
+  const input = {
+    old_root: oldRoot.toString(),
+    new_root: newRoot.toString(),
+    leaf: R.toString(),
+    index: String(index),
+    siblings: siblings.map((s) => s.toString()),
+  };
+  const { proof, publicSignals } = await snarkjs.groth16.fullProve(input, APPEND_WASM, APPEND_ZKEY);
+  if (!(await snarkjs.groth16.verify(APPEND_VKEY, publicSignals, proof))) throw new Error("append proof off-chain verify failed");
+  return { proofData: await compressProof(proof), R, oldRoot, newRoot };
+}
+
 // ── Plutus data encoders ─────────────────────────────────────────────────────
 export function outputReference(txHash, index) {
   return conStr(0, [byteString(txHash), integer(index)]);
@@ -274,8 +298,10 @@ export function poolDatum(d) {
     integer(d.collateral_ratio),
     outputReference(d.vkey_ref_tx, d.vkey_ref_idx),
     outputReference(d.settlement_vkey_ref_tx, d.settlement_vkey_ref_idx),
+    outputReference(d.append_vkey_ref_tx, d.append_vkey_ref_idx),
     integer(d.group_root.toString()),
     integer(d.repaid_root.toString()),
+    integer(d.next_index),
     integer(d.external_nullifier.toString()),
     integer(d.repay_external_nullifier.toString()),
     integer(d.loan_denomination.toString()),
@@ -296,8 +322,10 @@ export function poolDatumFrom(pool, overrides = {}) {
     collateral_ratio: pool.collateral_ratio,
     vkey_ref_tx: pool.vkey_ref_tx, vkey_ref_idx: pool.vkey_ref_idx,
     settlement_vkey_ref_tx: pool.settlement_vkey_ref_tx, settlement_vkey_ref_idx: pool.settlement_vkey_ref_idx,
+    append_vkey_ref_tx: pool.append_vkey_ref_tx, append_vkey_ref_idx: pool.append_vkey_ref_idx,
     group_root: BigInt(pool.group_root),
     repaid_root: BigInt(pool.repaid_root),
+    next_index: pool.next_index,
     external_nullifier: BigInt(pool.external_nullifier),
     repay_external_nullifier: BigInt(pool.repay_external_nullifier),
     loan_denomination: BigInt(pool.loan_denomination),
@@ -310,14 +338,14 @@ export function poolDatumFrom(pool, overrides = {}) {
 
 // redeemers
 export const R_Deposit = conStr(0, []);
-export function R_SetRoots(newGroupRoot, newRepaidRoot) {
-  return conStr(1, [integer(newGroupRoot.toString()), integer(newRepaidRoot.toString())]);
+export function R_SetGroupRoot(newRoot) {
+  return conStr(1, [integer(newRoot.toString())]);
 }
 export function R_Borrow(proofData, loanAmount, nullifier) {
   return conStr(2, [proofData, integer(loanAmount), integer(nullifier.toString())]);
 }
-export function R_Repay(proofData, repayAmount, nullifier, repayNullifier) {
-  return conStr(3, [proofData, integer(repayAmount), integer(nullifier.toString()), integer(repayNullifier.toString())]);
+export function R_Repay(proofData, repayAmount, nullifier, repayNullifier, appendProofData) {
+  return conStr(3, [proofData, integer(repayAmount), integer(nullifier.toString()), integer(repayNullifier.toString()), appendProofData]);
 }
 export function R_Unlock(proofData, poolRefTx, poolRefIdx) {
   return conStr(0, [proofData, outputReference(poolRefTx, poolRefIdx)]);
