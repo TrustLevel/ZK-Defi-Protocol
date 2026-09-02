@@ -24,11 +24,13 @@ The two verification keys are parked once as inline datums on an **unspendable
 
 ### Privacy model
 
-1. **Amount confidentiality.** The collateral amount is **never on-chain** — it is a
-   private circuit witness, and collateral is held in a **fixed denomination**, so
-   the UTxO value reveals only "one unit", not the position size. **Loans are also a
-   fixed denomination**, so every loan payout is identical and loan amounts carry no
-   per-loan information (the outstanding-loan set stores only nullifiers).
+1. **Amount confidentiality.** The collateral amount is **not in the datum** — it is a
+   private circuit witness — and collateral is held in a **fixed denomination**, so the
+   UTxO value reveals only "one unit", not the position size (the locked lovelace itself
+   is public L1 state; privacy comes from the uniform denomination, not from hiding the
+   number). **Loans are also a fixed denomination**, so every loan payout is identical
+   and loan amounts carry no per-loan information (the outstanding-loan set stores only
+   nullifiers).
 2. **Deposit ↔ borrow unlinkability.** A borrow proves the collateral commitment is a
    **member of the on-chain commitment set** (a Merkle root) — it does **not**
    reference a specific deposit UTxO. Nobody can tell which deposit backs a loan.
@@ -142,8 +144,11 @@ trustworthy:
 The protocol delivers a **set-membership + linkage** privacy model plus
 **denomination-bucketed amount hiding**:
 
-- **Delivered:** the collateral amount is never on-chain (fixed denomination + private
-  witness); a borrow is unlinkable to any specific deposit (Merkle membership); the
+- **Delivered:** the collateral amount is **not in the datum** (a private circuit
+  witness); it is bucketed by a **uniform fixed denomination**, so the on-chain UTxO
+  value reveals only "one unit", not the position size — privacy comes from the
+  denomination, not from hiding the number (the locked lovelace is public L1 state). A
+  borrow is unlinkable to any specific deposit at borrow time (Merkle membership); the
   depositor's identity is not a signer on the anonymous paths (proof instead of key).
 
 We state the limits plainly rather than overclaim — on a transparent UTXO ledger, ZK
@@ -162,6 +167,12 @@ hides information *within a set*, it does not make a public ledger opaque:
    group model.
 5. **Nullifier set.** Stored as a list for M3; a Merkle-Patricia-Forestry set is the
    scale upgrade.
+6. **Unlock re-links deposit↔borrow.** The `UnlockDeposit` redeemer currently reveals
+   the loan nullifier, and that same value was public at borrow — so an observer can
+   chain borrow↔unlock↔deposit (even across wallets). This is a known de-anonymization
+   vector; it is being removed by a settlement-proof upgrade in which the loan nullifier
+   becomes a private witness and settlement is proven by in-circuit membership, so the
+   unlock shares no public value with the borrow.
 
 Cardano L1 was chosen deliberately (M1 §1.2) rather than the Midnight privacy
 sidechain; the L1 privacy ceiling is genuinely lower than a purpose-built privacy

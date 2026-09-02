@@ -49,6 +49,16 @@ All figures below are for the private (v6) protocol.
 `autoEvaluate` produces tight ExUnits for these BLS12-381 scripts — materially
 cheaper than a hand-budgeted upper bound.
 
+**Operational notes (for reproducing testers).** Blockfrost's preprod
+evaluate/submit endpoints can be intermittently unreliable (long hangs) while plain
+REST stays instant; if `autoEvaluate` hangs, supply **manual ExUnits**
+(`makeTxBuilder(provider, { autoEvaluate: false })` + explicit budgets) — the txs are
+otherwise identical and every legit cycle tx confirms `valid_contract:true`, so the
+manual budget only bypasses the flaky evaluation endpoint, not the validator. Script
+txs also need a **pure-ADA** UTxO for Cardano collateral (split one off first). The
+`.env` Demeter Kupo/Ogmios endpoints currently return 401 (tokens expired) — refresh
+or ignore; Blockfrost alone is sufficient.
+
 ## 3. On-chain verification cost
 
 | Metric | borrow verify | unlock verify | Plutus V3 limit |
