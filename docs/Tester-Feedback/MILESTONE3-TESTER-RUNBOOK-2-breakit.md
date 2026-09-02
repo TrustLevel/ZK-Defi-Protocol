@@ -75,7 +75,7 @@ For each finding from the previous Catalyst review, confirm it's addressed:
 - [ ] **Interest** is charged and enforced (Attack 2; repay = principal + interest)
 - [ ] The verification key **cannot** be swapped by the spender (it's read from the pool datum, pinned to an unspendable UTxO)
 - [ ] Datum/config fields **cannot** be rewritten on a spend (Attack 5)
-- [ ] Loan **amounts** carry no per-loan info (fixed denomination) and collateral amount is never on-chain
+- [ ] Loan **amounts** carry no per-loan info (fixed denomination); collateral amount is not in the datum (private witness) though the locked UTxO value is public
 - [ ] Borrow does **not** reveal which deposit it is (no collateral reference)
 - [ ] Adversarial **validator tests** exist and pass (Part A)
 - [ ] Evidence is on an **immutable tag** (`m3-poa-v2`), not `main`
