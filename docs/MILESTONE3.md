@@ -166,8 +166,8 @@ upper bound; independent testers reproduced borrow/repay at lower cost.
 ## 5. Security & privacy model
 
 The zk-SNARK proof is the **sole authorization** for every borrow, repayment and
-unlock — no admin key, no owner signature. Three on-chain properties make that
-trustworthy:
+unlock — no admin key, no owner signature (the admin signs only `SetGroupRoot`, which
+moves no value). Three on-chain properties make that trustworthy:
 
 - **Bound to chain state.** Public signals are reconstructed from trusted pool-datum
   state and cross-checked against the loan set, the pool balance delta, and (on repay)
@@ -204,10 +204,10 @@ market. The following are deliberately not delivered here:
 - **No liquidation / repayment incentive.** Repay enforces a `principal + interest`
   floor (`repay_amount ≥ due`), but nothing on-chain compels a borrower to ever repay;
   the `interest_rate` datum field drives that floor and is otherwise informational.
-- **Collateral-amount coverage is denomination-based, not proof-bound.** The hidden
-  `collateral_amount` is not cryptographically tied to the deposited UTxO value; M3
-  relies on the uniform fixed denomination. Binding the amount to the UTxO value (a
-  deposit-time proof) is a future hardening.
+- **Collateral coverage is denomination-based.** Amounts are handled by a uniform
+  fixed denomination rather than a per-deposit value proof — every collateral UTxO is
+  identical, so there is no per-position amount to reveal or to bind. A value-binding
+  deposit proof (for variable denominations) is a future refinement.
 - **Accounting asymmetry.** Borrow checks the pool delta exactly (`== balance − loan`);
   repay checks a floor (`repay_amount ≥ due`, value `== balance + repay_amount`). This
   is intentional (over-repayment is permitted, under-repayment rejected) and not
@@ -231,9 +231,8 @@ denomination-bucketed amount hiding) has these known limits:
 5. **Nullifier / repaid sets.** Stored as a list / depth-10 Merkle tree for M3; a
    Merkle-Patricia-Forestry set is the scale upgrade.
 
-Note that the earlier borrow ↔ unlock re-linkage (the old unlock redeemer revealed the
-loan nullifier, which was public at borrow) **does not exist in this design**: unlock
-proves settlement in zero knowledge and shares no public value with the borrow.
+Unlock proves settlement in zero knowledge and shares no public value with the borrow,
+so borrow and unlock cannot be linked.
 
 Cardano L1 was chosen deliberately (M1 §1.2) rather than the Midnight privacy
 sidechain; the L1 privacy ceiling is genuinely lower than a purpose-built privacy
