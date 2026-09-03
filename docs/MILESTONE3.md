@@ -17,12 +17,12 @@ implement it (`contracts/validators/v5/`):
 
 | Validator | Script hash (Preprod) | Role |
 |---|---|---|
-| `lending_pool_v5` | `75317267a9fa7d8fcb09c62d371bcf8160c7991eba6637c221f22ff2` | Pool liquidity; authorizes `BorrowAnonymous` / `RepayAnonymous` on-chain; keeps the outstanding-loan set, the commitment-set root, and the append-only repaid-set root |
-| `collateral_v5` (parameterised by the pool hash) | `f2813e76cfb431d80ad5a50682e16d64524c6c3372b6bee4800f881d` | Holds collateral (fixed denomination) with a commitment; authorizes `UnlockDeposit` on-chain via a settlement proof |
+| `lending_pool_v5` | `76c8efd63189120023acdccb59a226ab2bc8d27ce55c3561d495fa5b` | Pool liquidity; authorizes `BorrowAnonymous` / `RepayAnonymous` on-chain; keeps the outstanding-loan set, the commitment-set root, and the append-only repaid-set root |
+| `collateral_v5` (parameterised by the pool hash) | `7f955bbc57a95d355eb3c8107327fd52ebef2c4ac0ed4a1a5f83976b` | Holds collateral (fixed denomination) with a commitment; authorizes `UnlockDeposit` on-chain via a settlement proof |
 
-The three verification keys (borrow / settlement / append) are parked once as inline
-datums on an **unspendable (always-false) UTxO** and consumed only as **read-only
-reference inputs**.
+The four verification keys (borrow / repay / settlement / append) are parked once as
+inline datums on an **unspendable (always-false) UTxO** and consumed only as
+**read-only reference inputs**.
 
 ### Privacy model
 
@@ -37,27 +37,30 @@ reference inputs**.
    **member of the on-chain commitment set** (a Merkle root) — it does **not**
    reference a specific deposit UTxO. Nobody can tell which deposit backs a loan.
 3. **Settlement-gated, unlinkable unlock.** Repaying a loan removes its
-   `loan_nullifier` from `open_loans` (the double-borrow gate) **and**, in the same
+   `loan_nullifier` `N` from `open_loans` (the double-borrow gate) **and**, in the same
    transaction, inserts a distinct **repayment nullifier**
    `R = Poseidon255(secret, repay_external_nullifier)` into an **append-only
    `repaid_root`** — the borrower does this themselves with a zero-knowledge append
-   proof, no admin. Unlock then proves, in zero knowledge, **membership of the private
-   `R` in `repaid_root`**. Its public signals are `[commitment, repaid_root,
-   repay_external_nullifier]` — none of which is shared with the borrow — so a deposit
-   can only be unlocked after it is genuinely repaid, **and borrow ↔ unlock cannot be
-   linked**.
+   proof, no admin. The repay proof proves `N` **and** `R` **from the same secret**, and
+   the validator feeds that one `R` to both the repay proof and the append proof, so the
+   `R` that lands in `repaid_root` is exactly the one bound to the settled loan — a repay
+   can only ever settle its own deposit. Unlock then proves, in zero knowledge,
+   **membership of the private `R` in `repaid_root`**. Its public signals are
+   `[commitment, repaid_root, repay_external_nullifier]` — none of which is shared with
+   the borrow — so a deposit can only be unlocked after it is genuinely repaid, **and
+   borrow ↔ unlock cannot be linked**.
 
 ### The full private lending cycle (confirmed live on Preprod)
 
 | # | Step | Preprod tx |
 |---|------|-----------|
-| 1 | **Park VKeys** — borrow, settlement and append verification keys on an always-false UTxO | [`880446043ab5…`](https://preprod.cardanoscan.io/transaction/880446043ab5345038b03f31705082d8dbeb8b5929a31bfe92bbeae9caddc211) |
-| 2 | **Init pool** — `PoolDatumV5` (liquidity, ratio, three vkey refs, loan denomination, empty commitment set, empty repaid set, `next_index = 0`, empty loan set, admin) | [`9aa40d4f1364…`](https://preprod.cardanoscan.io/transaction/9aa40d4f1364fe47bf71df256bc5f0b062cb32284491635fc24ef4c1fd09332c) |
-| 3 | **Deposit** — lock collateral with `DepositDatumV5 { commitment, timestamp }`; `commitment = Poseidon255(collateral_amount, secret)`; the secret + amount never leave the depositor | [`fd6ace7bd7dc…`](https://preprod.cardanoscan.io/transaction/fd6ace7bd7dcf3e436611fabcfa5dcd087f29f70aa6327624e1ecff3917900b5) |
-| 3b | **Publish set root** — admin `SetGroupRoot` updates the Merkle root of the commitment set (the deposit anonymity set is admin-curated for M3) | [`9737b260bd2f…`](https://preprod.cardanoscan.io/transaction/9737b260bd2fcf0a4bfd583a9e7e5096f0c9e5c077a459b55525aa8b3252de02) |
-| 4 | **Borrow** — `BorrowAnonymous { proof, loan_amount, loan_nullifier }`; the validator runs `groth_verify(vkey, proof, [group_root, nullifier, loan, ratio, ext])` **on-chain**; **no collateral UTxO is referenced**; loan paid out; nullifier recorded | [`8bc3d205f67e…`](https://preprod.cardanoscan.io/transaction/8bc3d205f67eaa6d965e2f59e24210abba4251bbba2ae31e96f13507b5fc45b9) |
-| 5 | **Repay** — `RepayAnonymous { proof, repay_amount, loan_nullifier, repay_nullifier, append_proof }`; re-attests membership + nullifier; pays **principal + interest**; removes the nullifier (settles the loan); **self-appends `R` into `repaid_root`** via an on-chain append proof — permissionless | [`f8756c92addb…`](https://preprod.cardanoscan.io/transaction/f8756c92addb71fae26c6bdf160be3028266825199b5acf53d202bd89d316a38) |
-| 6 | **Unlock** — `UnlockDeposit { proof, pool_ref }`; a settlement proof binds the spent commitment and proves membership of the private `R` in `repaid_root` (read from the pool reference input); collateral freed **with no signature and no borrow-shared value** | [`43f4339ea8aa…`](https://preprod.cardanoscan.io/transaction/43f4339ea8aac1d34bb14581e02aaabcc3f2e23ce15dd2f1c30118a805f02521) |
+| 1 | **Park VKeys** — borrow, repay, settlement and append verification keys on an always-false UTxO | [`7940faba06e3…`](https://preprod.cardanoscan.io/transaction/7940faba06e3dcd236a816c9b11a24916fe14a2f4e8ec8a7690ec383c30118df) |
+| 2 | **Init pool** — `PoolDatumV5` (liquidity, ratio, four vkey refs, loan denomination, empty commitment set, empty repaid set, `next_index = 0`, empty loan set, admin) | [`9d1040c824fe…`](https://preprod.cardanoscan.io/transaction/9d1040c824fec51f99ae2a64a424c26262e78fc98672ee82641293f5e7545d53) |
+| 3 | **Deposit** — lock collateral with `DepositDatumV5 { commitment, timestamp }`; `commitment = Poseidon255(collateral_amount, secret)`; the secret + amount never leave the depositor | [`5c01c374f234…`](https://preprod.cardanoscan.io/transaction/5c01c374f234690ac489e22538b09d0799996b7b026c98522d60b05f751e516c) |
+| 3b | **Publish set root** — admin `SetGroupRoot` updates the Merkle root of the commitment set (the deposit anonymity set is admin-curated for M3) | [`454862e9d7c8…`](https://preprod.cardanoscan.io/transaction/454862e9d7c8251b327d46218760edfdc9191c29969fb899bae205bc229dc2e4) |
+| 4 | **Borrow** — `BorrowAnonymous { proof, loan_amount, loan_nullifier }`; the validator runs `groth_verify(vkey, proof, [group_root, nullifier, loan, ratio, ext])` **on-chain**; **no collateral UTxO is referenced**; loan paid out; nullifier recorded | [`2167979b07ce…`](https://preprod.cardanoscan.io/transaction/2167979b07ce2d56db946b25353aa8a788d0ab66e50051d2a31c6edc9cd3f530) |
+| 5 | **Repay** — `RepayAnonymous { proof, repay_amount, loan_nullifier, repay_nullifier, append_proof }`; the repay proof proves the loan nullifier `N` **and** the repayment nullifier `R` **from the same secret** (binding `R` to this loan); pays **principal + interest**; removes `N` (settles the loan); **self-appends that same `R` into `repaid_root`** via an on-chain append proof — permissionless | [`53ef694c983d…`](https://preprod.cardanoscan.io/transaction/53ef694c983dcf6cc7911dbae6280d46330c5afb3994eade529f8badf90ed8b1) |
+| 6 | **Unlock** — `UnlockDeposit { proof, pool_ref }`; a settlement proof binds the spent commitment and proves membership of the private `R` in `repaid_root` (read from the pool reference input); collateral freed **with no signature and no borrow-shared value** | [`71eb3a5fed1d…`](https://preprod.cardanoscan.io/transaction/71eb3a5fed1da2a20e7754e79394d98e063477c9a3ed1c79d590018f76adb5dc) |
 
 All seven transactions confirmed `valid_contract: true`. Economics: pool 100 → 90 →
 100.5 ADA (principal + 5% interest), collateral released.
@@ -70,10 +73,10 @@ Off-chain drivers (Mesh, Node ESM): `offchain/cli/v5/{1-park-vkey, 2-init-pool,
 
 ## 2. zk-proof generation mechanism
 
-Three BLS12-381 Groth16 circuits (`circuits/`), all hashing with **Poseidon255**
+Four BLS12-381 Groth16 circuits (`circuits/`), all hashing with **Poseidon255**
 (`poseidon-bls12381`) so the in-circuit and on-chain commitment are identical.
 
-### Borrow / repay — `collateral_semaphore.circom`
+### Borrow — `collateral_semaphore.circom`
 
 Proves, in zero knowledge, that a **member** of the commitment set is sufficiently
 collateralized, without revealing which one or by how much.
@@ -84,6 +87,24 @@ collateralized, without revealing which one or by how much.
   membership `leaf ∈ group_merkle_root` (depth 10, Poseidon255 nodes); (3)
   `loan_nullifier = Poseidon255(secret, external_nullifier)`; (4) sufficiency
   `collateral_amount·100 ≥ loan_amount·collateral_ratio`; (5) range checks.
+
+### Repay — `repay_proof.circom`
+
+Authorizes a repayment and **binds the repayment nullifier `R` to the loan being
+repaid** by proving both nullifiers from one secret. Without this binding a repay of
+loan A could insert an `R` for a different deposit D, letting D later unlock while its
+loan stays unpaid; here `N` and `R` share one secret, so a repay can only settle its
+own deposit.
+
+- **Public signals:** `[group_merkle_root, loan_nullifier, repay_nullifier, loan_amount, collateral_ratio, external_nullifier, repay_external_nullifier]`
+- **Private witness:** `secret`, `collateral_amount`, Merkle path (`siblings`, `pathIndices`)
+- **Constraints:** (1) `leaf = Poseidon255(collateral_amount, secret)`; (2) Merkle
+  membership `leaf ∈ group_merkle_root`; (3) `loan_nullifier = Poseidon255(secret,
+  external_nullifier)`; (4) `repay_nullifier = Poseidon255(secret,
+  repay_external_nullifier)` — **the same secret as (3)**; (5) sufficiency; (6) range
+  checks. The validator feeds the redeemer's single `repay_nullifier` to **both** this
+  proof (as `R`) and the append proof (as the inserted leaf), so the `R` written to
+  `repaid_root` is exactly the one this proof binds to `N`'s secret.
 
 ### Unlock — `settlement_proof.circom`
 
@@ -122,24 +143,28 @@ mainnet (see M1 Appendix A).*
 
 - **Generic Groth16 verifier (reused, not rebuilt):** `modulo-p/ak-381` v0.1.1
   provides `groth_verify(vk, proof, public)` for BLS12-381. `contracts/lib/zk.ak`
-  wraps it as `verify_borrow_proof` (5 signals), `verify_settlement_proof` (3 signals)
-  and `verify_append_proof` (4 signals).
-- **VKeys as reference inputs.** All three verification keys live at an always-false
-  address, pinned by `PoolDatumV5.{vkey_ref, settlement_vkey_ref, append_vkey_ref}`,
-  read via `get_vkey`.
+  wraps it as `verify_borrow_proof` (5 signals), `verify_repay_proof` (7 signals),
+  `verify_settlement_proof` (3 signals) and `verify_append_proof` (4 signals).
+- **VKeys as reference inputs.** All four verification keys live at an always-false
+  address, pinned by `PoolDatumV5.{vkey_ref, repay_vkey_ref, settlement_vkey_ref,
+  append_vkey_ref}`, read via `get_vkey`.
 - **Public signals bound to trusted state.** `group_root`, `repaid_root`,
   `collateral_ratio`, `external_nullifier`, `repay_external_nullifier`, `next_index`
   come from the pool datum; redeemer-supplied values (`loan_nullifier`, `loan_amount`,
   `repay_nullifier`) are cross-checked against the `open_loans` set, the pool value
   delta, and the append proof — a spender cannot feed the verifier convenient inputs.
+  On repay the single `repay_nullifier` is bound by the repay proof (to `N`'s secret)
+  **and** is the leaf the append proof inserts, so it cannot be aimed at another deposit.
 - **No signatures on the value-moving paths.** The proof *is* the authorization for
   borrow, repay and unlock. (The admin signs only `SetGroupRoot`, which moves no value.)
-- **Adversarial test suite.** `aiken check` runs 17 checks (0 warnings), including
+- **Adversarial test suite.** `aiken check` runs 22 checks (0 warnings), including
   validator tests with real proofs: borrow-membership, reused-nullifier-fails,
   repay-with-interest, repay-below-interest-fails, **repay-bogus-append-fails**,
+  **repay-append-leaf-mismatch-fails** and **repay-cannot-settle-other-deposit-fails**
+  (the `R`-binding: a repay's `R` must be the one bound to `N`'s secret),
   unlock-when-settled, **unlock-without-repay-fails** (fail-closed), unlock-wrong-
   commitment, a structural check that `UnlockDeposit` carries no `loan_nullifier`, and
-  on-chain proof/tamper checks for all three circuits.
+  on-chain proof/tamper checks for all four circuits.
 
 ---
 
@@ -147,19 +172,19 @@ mainnet (see M1 Appendix A).*
 
 | Component | Value |
 |---|---|
-| `lending_pool_v5` address | `addr_test1wp6nzun848a8mr7tp8rz6dcme7qkp3uer6axvd7zy8ezluscr3cht` |
-| `lending_pool_v5` hash | `75317267a9fa7d8fcb09c62d371bcf8160c7991eba6637c221f22ff2` |
-| `collateral_v5` address | `addr_test1wregz0nke76rrkq26kjsdqhpd4j9ynrvxdetd0hysq8cs8gq9v6zs` |
-| `collateral_v5` hash | `f2813e76cfb431d80ad5a50682e16d64524c6c3372b6bee4800f881d` |
+| `lending_pool_v5` address | `addr_test1wpmv3m7kxxy3yqpr4nwvkkdzy64jhjxj0nj4cdtp6j2l5kcxu8a6c` |
+| `lending_pool_v5` hash | `76c8efd63189120023acdccb59a226ab2bc8d27ce55c3561d495fa5b` |
+| `collateral_v5` address | `addr_test1wple2kau27546d27k0ypque8l4fwhmevftqw6js6t7pew6cu33g44` |
+| `collateral_v5` hash | `7f955bbc57a95d355eb3c8107327fd52ebef2c4ac0ed4a1a5f83976b` |
 | Compiler | Aiken v1.1.15, Plutus V3 |
 | Verifier lib | `modulo-p/ak-381` v0.1.1 |
-| Circuits | BLS12-381, Groth16, Poseidon255; borrow (5 signals), settlement (3 signals), append (4 signals); all depth-10 |
+| Circuits | BLS12-381, Groth16, Poseidon255; borrow (5 signals), repay (7 signals), settlement (3 signals), append (4 signals); all depth-10 |
 
 **ExUnit headroom (Plutus V3 limits: 17,500,000 mem / 10,000,000,000 cpu).** A single
-on-chain `groth_verify` costs on the order of ~2.3–2.5 B cpu. The repay transaction
-runs **two** proofs (membership + append) and measured **508,943 mem / 5,083,199,002
-cpu** live — comfortably within limits (≈3 % mem, ≈51 % cpu). Published fees are an
-upper bound; independent testers reproduced borrow/repay at lower cost.
+on-chain `groth_verify` costs on the order of ~2.3–2.8 B cpu. The repay transaction
+runs **two** proofs (the repay proof + the append proof) and measured **541,369 mem /
+5,355,980,007 cpu** live — comfortably within limits (≈3 % mem, ≈54 % cpu). Published
+fees are an upper bound; independent testers reproduced borrow/repay at lower cost.
 
 ---
 
@@ -183,7 +208,7 @@ moves no value). Three on-chain properties make that trustworthy:
 The system has exactly one privileged bootstrap action and one privileged maintenance
 action — both are censorship-only, never theft:
 
-- **VKey selection at pool init.** Whoever sets the three `*_vkey_ref` fields at
+- **VKey selection at pool init.** Whoever sets the four `*_vkey_ref` fields at
   init defines what a valid proof is. This is the single trust anchor; the keys sit at
   an unspendable address and are read-only thereafter.
 - **Admin-curated deposit set (`group_root`).** The commitment-set root is published by
