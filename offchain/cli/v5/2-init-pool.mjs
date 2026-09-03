@@ -2,7 +2,8 @@
  * Step 2 — Initialize the lending pool with PoolDatumV5 (v6 private model).
  * group_root + repaid_root start as the empty-tree root; next_index = 0;
  * open_loans = []; admin = wallet pkh; vkey_ref -> borrow vkey (#0),
- * settlement_vkey_ref -> settlement vkey (#1), append_vkey_ref -> append vkey (#2).
+ * settlement_vkey_ref -> settlement vkey (#1), append_vkey_ref -> append vkey (#2),
+ * repay_vkey_ref -> repay vkey (#3).
  * Also seeds receipts/repaid.json = { repaidNullifiers: [] }.
  */
 import { deserializeAddress } from "@meshsdk/core";
@@ -34,6 +35,7 @@ const state = {
   interest_rate: INTEREST_RATE,
   collateral_ratio: COLLATERAL_RATIO,
   vkey_ref_tx: vkey.txHash, vkey_ref_idx: vkey.borrowIdx,
+  repay_vkey_ref_tx: vkey.txHash, repay_vkey_ref_idx: vkey.repayIdx,
   settlement_vkey_ref_tx: vkey.txHash, settlement_vkey_ref_idx: vkey.settlementIdx,
   append_vkey_ref_tx: vkey.txHash, append_vkey_ref_idx: vkey.appendIdx,
   group_root: groupRoot,

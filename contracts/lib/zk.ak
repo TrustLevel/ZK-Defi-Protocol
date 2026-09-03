@@ -42,6 +42,38 @@ pub fn verify_borrow_proof(
   )
 }
 
+/// Verify a v6 REPAY proof (membership + BOTH nullifiers + sufficiency), which
+/// binds the repayment nullifier R to the loan being repaid: N and R are proven
+/// from the SAME secret, so a repay can only ever settle its own deposit.
+/// Public-signal order MUST match `circuits/repay_proof.circom`:
+///   [group_merkle_root, loan_nullifier, repay_nullifier, loan_amount,
+///    collateral_ratio, external_nullifier, repay_external_nullifier]
+/// group_merkle_root / collateral_ratio / external_nullifier / repay_external_nullifier
+/// are bound to trusted on-chain state; loan_nullifier / repay_nullifier to the
+/// redeemer, cross-checked by the validator against open_loans and the append proof
+/// (whose inserted leaf is this same repay_nullifier — so R is exactly the one the
+/// proof binds to N's secret).
+pub fn verify_repay_proof(
+  vkey: SnarkVerificationKey,
+  proof: Proof,
+  group_merkle_root: Int,
+  loan_nullifier: Int,
+  repay_nullifier: Int,
+  loan_amount: Int,
+  collateral_ratio: Int,
+  external_nullifier: Int,
+  repay_external_nullifier: Int,
+) -> Bool {
+  groth_verify(
+    vkey,
+    proof,
+    [
+      group_merkle_root, loan_nullifier, repay_nullifier, loan_amount,
+      collateral_ratio, external_nullifier, repay_external_nullifier,
+    ],
+  )
+}
+
 /// Verify a v6 settlement proof, bound to the SPECIFIC collateral UTxO being spent.
 /// Public-signal order MUST match `circuits/settlement_proof.circom`:
 ///   [commitment, repaid_root, repay_external_nullifier]

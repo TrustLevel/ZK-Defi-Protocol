@@ -1,9 +1,12 @@
 /**
  * v6 off-chain shared helpers (Mesh-based, Node ESM) — PRIVATE lending model.
  *
- * Two BLS12-381 circuits:
- *   BORROW/REPAY: collateral_semaphore (Merkle membership + nullifier + sufficiency)
+ * Four BLS12-381 circuits:
+ *   BORROW:       collateral_semaphore (Merkle membership + nullifier + sufficiency)
  *     public [group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier]
+ *   REPAY:        repay_proof (membership + BOTH nullifiers from one secret + sufficiency),
+ *                 binding R to the loan being repaid
+ *     public [group_merkle_root, loan_nullifier, repay_nullifier, loan_amount, collateral_ratio, external_nullifier, repay_external_nullifier]
  *   UNLOCK:       settlement_proof (commitment-bound + Merkle membership of the
  *                 PRIVATE repayment nullifier R in the append-only repaid_root)
  *     public [commitment, repaid_root, repay_external_nullifier]
@@ -13,9 +16,10 @@
  * Aiken encodings (contracts/lib/types_v5.ak) — field order is load-bearing:
  *   DepositDatumV5 = conStr 0 [commitment:int, timestamp:int]
  *   PoolDatumV5    = conStr 0 [total_deposited, total_borrowed, interest_rate,
- *                    collateral_ratio, vkey_ref:OutRef, settlement_vkey_ref:OutRef,
- *                    append_vkey_ref:OutRef, group_root:int, repaid_root:int,
- *                    next_index:int, external_nullifier:int, repay_external_nullifier:int,
+ *                    collateral_ratio, vkey_ref:OutRef, repay_vkey_ref:OutRef,
+ *                    settlement_vkey_ref:OutRef, append_vkey_ref:OutRef,
+ *                    group_root:int, repaid_root:int, next_index:int,
+ *                    external_nullifier:int, repay_external_nullifier:int,
  *                    loan_denomination:int, open_loans:[int], admin:bytes, last_updated:int]
  *   OutputReference= conStr 0 [txHash:bytes, index:int]   (stdlib v2.2.0 flat bytes)
  *   PoolRedeemerV5 : Deposit=0[] · SetGroupRoot=1[int] ·
@@ -57,6 +61,9 @@ export const SETTLEMENT_VKEY = JSON.parse(fs.readFileSync(path.join(CIRCUITS, "k
 export const APPEND_WASM = path.join(CIRCUITS, "append_proof_js/append_proof.wasm");
 export const APPEND_ZKEY = path.join(CIRCUITS, "keys/append_proof_final.zkey");
 export const APPEND_VKEY = JSON.parse(fs.readFileSync(path.join(CIRCUITS, "keys/verification_key_append.json"), "utf8"));
+export const REPAY_WASM = path.join(CIRCUITS, "repay_proof_js/repay_proof.wasm");
+export const REPAY_ZKEY = path.join(CIRCUITS, "keys/repay_proof_final.zkey");
+export const REPAY_VKEY = JSON.parse(fs.readFileSync(path.join(CIRCUITS, "keys/verification_key_repay.json"), "utf8"));
 
 export const RECEIPTS = path.join(__dirname, "receipts");
 
@@ -244,6 +251,33 @@ export async function generateBorrowProof({ commitments, index, secret, collater
   return { proofData: await compressProof(proof), root, nullifier, publicSignals };
 }
 
+// Repay proof: proves BOTH the loan nullifier N and the repayment nullifier R from
+// the SAME secret, binding R to the loan being repaid. Public signals
+// [group_merkle_root, loan_nullifier, repay_nullifier, loan_amount, collateral_ratio,
+// external_nullifier, repay_external_nullifier]. The SAME R is then fed to the append
+// proof, so the R that lands in repaid_root is exactly the one bound to N's secret.
+export async function generateRepayProof({ commitments, index, secret, collateralAmount, loanAmount, ratio, externalNullifier = EXTERNAL_NULLIFIER, repayExternalNullifier = REPAY_EXTERNAL_NULLIFIER }) {
+  const { root, siblings, pathIndices } = merkleProof(commitments, index);
+  const nullifier = computeNullifier(secret, externalNullifier);
+  const R = computeRepayNullifier(secret, repayExternalNullifier);
+  const input = {
+    group_merkle_root: root.toString(),
+    loan_nullifier: nullifier.toString(),
+    repay_nullifier: R.toString(),
+    loan_amount: BigInt(loanAmount).toString(),
+    collateral_ratio: BigInt(ratio).toString(),
+    external_nullifier: BigInt(externalNullifier).toString(),
+    repay_external_nullifier: BigInt(repayExternalNullifier).toString(),
+    secret: BigInt(secret).toString(),
+    collateral_amount: BigInt(collateralAmount).toString(),
+    pathIndices: pathIndices.map(String),
+    siblings: siblings.map((s) => s.toString()),
+  };
+  const { proof, publicSignals } = await snarkjs.groth16.fullProve(input, REPAY_WASM, REPAY_ZKEY);
+  if (!(await snarkjs.groth16.verify(REPAY_VKEY, publicSignals, proof))) throw new Error("repay proof off-chain verify failed");
+  return { proofData: await compressProof(proof), root, nullifier, R, publicSignals };
+}
+
 // Unlock settlement proof: binds to the spent commitment AND proves Merkle
 // membership of the PRIVATE repayment nullifier R in repaid_root. Public signals
 // [commitment, repaid_root, repay_external_nullifier] share nothing with borrow.
@@ -297,6 +331,7 @@ export function poolDatum(d) {
     integer(d.interest_rate),
     integer(d.collateral_ratio),
     outputReference(d.vkey_ref_tx, d.vkey_ref_idx),
+    outputReference(d.repay_vkey_ref_tx, d.repay_vkey_ref_idx),
     outputReference(d.settlement_vkey_ref_tx, d.settlement_vkey_ref_idx),
     outputReference(d.append_vkey_ref_tx, d.append_vkey_ref_idx),
     integer(d.group_root.toString()),
@@ -321,6 +356,7 @@ export function poolDatumFrom(pool, overrides = {}) {
     interest_rate: pool.interest_rate,
     collateral_ratio: pool.collateral_ratio,
     vkey_ref_tx: pool.vkey_ref_tx, vkey_ref_idx: pool.vkey_ref_idx,
+    repay_vkey_ref_tx: pool.repay_vkey_ref_tx, repay_vkey_ref_idx: pool.repay_vkey_ref_idx,
     settlement_vkey_ref_tx: pool.settlement_vkey_ref_tx, settlement_vkey_ref_idx: pool.settlement_vkey_ref_idx,
     append_vkey_ref_tx: pool.append_vkey_ref_tx, append_vkey_ref_idx: pool.append_vkey_ref_idx,
     group_root: BigInt(pool.group_root),

@@ -21,6 +21,9 @@ const SVKEY = JSON.parse(fs.readFileSync(`${BASE}/keys/verification_key_settleme
 const AWASM = `${BASE}/append_proof_js/append_proof.wasm`;
 const AZKEY = `${BASE}/keys/append_proof_final.zkey`;
 const AVKEY = JSON.parse(fs.readFileSync(`${BASE}/keys/verification_key_append.json`, "utf8"));
+const RWASM = `${BASE}/repay_proof_js/repay_proof.wasm`;
+const RZKEY = `${BASE}/keys/repay_proof_final.zkey`;
+const RVKEY = JSON.parse(fs.readFileSync(`${BASE}/keys/verification_key_repay.json`, "utf8"));
 const OUT = path.resolve(__dirname, "../../contracts/lib/semaphore_onchain_test.ak");
 const DEPTH = 10;
 
@@ -131,6 +134,49 @@ async function main() {
   const a = await snarkjs.groth16.fullProve(aInput, AWASM, AZKEY);
   if (!(await snarkjs.groth16.verify(AVKEY, a.publicSignals, a.proof))) throw new Error("append off-chain verify failed");
 
+  // Repay proof for deposit A: proves BOTH the loan nullifier N and the repayment
+  // nullifier R from the SAME secret, binding R to the loan being repaid. Public
+  // [group_root, N, R, loan_amount, collateral_ratio, external_nullifier,
+  // repay_external_nullifier]. This is the exact proof the v6 lending_pool now
+  // verifies at Repay (verify_repay_proof), replacing the plain borrow proof.
+  const rInput = {
+    group_merkle_root: root.toString(),
+    loan_nullifier: nullifier.toString(),
+    repay_nullifier: R.toString(),
+    loan_amount: loan_amount.toString(),
+    collateral_ratio: collateral_ratio.toString(),
+    external_nullifier: external_nullifier.toString(),
+    repay_external_nullifier: repay_external_nullifier.toString(),
+    secret: secret.toString(),
+    collateral_amount: collateral_amount.toString(),
+    pathIndices: pathIndices.map(String),
+    siblings: siblings.map((s) => s.toString()),
+  };
+  const r = await snarkjs.groth16.fullProve(rInput, RWASM, RZKEY);
+  if (!(await snarkjs.groth16.verify(RVKEY, r.publicSignals, r.proof))) throw new Error("repay off-chain verify failed");
+
+  // Deposit D — a DIFFERENT secret — for the R-binding NEGATIVE tests. We compute
+  // its repayment nullifier R_d and an append proof that would insert R_d at index 0.
+  // On-chain the validator feeds ONE `repay_nullifier` to BOTH the repay proof (as
+  // the R signal) and the append proof (as the inserted leaf), so:
+  //   - feeding R (deposit A's, which the repay proof binds) with append_proof_d
+  //     (which attests leaf R_d != R) -> the append proof fails;
+  //   - feeding R_d with A's repay proof (which binds R != R_d) -> the repay proof
+  //     fails.
+  // Either way a repay of loan A cannot smuggle deposit D's R into repaid_root.
+  const secret_d = 11223344556677889900112233445566778899n;
+  const R_d = poseidon2([secret_d, repay_external_nullifier]);
+  const dWitness = merkleWitness(R_d);
+  const adInput = {
+    old_root: emptyRoot.toString(),
+    new_root: dWitness.root.toString(),
+    leaf: R_d.toString(),
+    index: "0",
+    siblings: dWitness.siblings.map((s) => s.toString()),
+  };
+  const ad = await snarkjs.groth16.fullProve(adInput, AWASM, AZKEY);
+  if (!(await snarkjs.groth16.verify(AVKEY, ad.publicSignals, ad.proof))) throw new Error("append-D off-chain verify failed");
+
   const curve = await ff.getCurveFromName("bls12381");
   const cG1 = (p) => compressedG1(curve, p);
   const cG2 = (p) => compressedG2(curve, p);
@@ -148,15 +194,30 @@ async function main() {
   const avkAlpha = cG1(AVKEY.vk_alpha_1), avkBeta = cG2(AVKEY.vk_beta_2);
   const avkGamma = cG2(AVKEY.vk_gamma_2), avkDelta = cG2(AVKEY.vk_delta_2);
   const avkIC = AVKEY.IC.map(cG1);
+  // repay
+  const rPiA = cG1(r.proof.pi_a), rPiB = cG2(r.proof.pi_b), rPiC = cG1(r.proof.pi_c);
+  const rvkAlpha = cG1(RVKEY.vk_alpha_1), rvkBeta = cG2(RVKEY.vk_beta_2);
+  const rvkGamma = cG2(RVKEY.vk_gamma_2), rvkDelta = cG2(RVKEY.vk_delta_2);
+  const rvkIC = RVKEY.IC.map(cG1);
+  // append for deposit D (binding negatives)
+  const adPiA = cG1(ad.proof.pi_a), adPiB = cG2(ad.proof.pi_b), adPiC = cG1(ad.proof.pi_c);
   await curve.terminate();
 
   const icLit = vkIC.map((h) => `#"${h}"`).join(", ");
   const sIcLit = svkIC.map((h) => `#"${h}"`).join(", ");
   const aIcLit = avkIC.map((h) => `#"${h}"`).join(", ");
+  const rIcLit = rvkIC.map((h) => `#"${h}"`).join(", ");
   const [g_root, g_null, g_loan, g_ratio, g_ext] = publicSignals;
   const [s_cmt, s_repaid_root, s_repay_ext] = u.publicSignals;
   const [a_old_root, a_new_root, a_leaf, a_index] = a.publicSignals;
+  const [rp_root, rp_n, rp_r, rp_loan, rp_ratio, rp_ext, rp_rext] = r.publicSignals;
+  const [ad_old, ad_new, ad_leaf, ad_index] = ad.publicSignals;
   const loanTampered = (BigInt(g_loan) + 1n).toString();
+  const repayRTampered = (BigInt(rp_r) + 1n).toString();
+  // Consistency: the repay proof must bind exactly the borrow N and the append R.
+  if (rp_n !== g_null) throw new Error("repay proof N != borrow loan_nullifier — fixture inconsistency");
+  if (rp_r !== a_leaf) throw new Error("repay proof R != append leaf — fixture inconsistency");
+  if (ad_leaf === a_leaf) throw new Error("deposit-D R equals deposit-A R — pick a different secret_d");
 
   const ak = `// AUTO-GENERATED by circuits/tests/gen-semaphore-fixture.cjs — do not edit by hand.
 // Real BLS12-381 Groth16 proof for the v6 privacy circuit (Merkle membership +
@@ -164,7 +225,8 @@ async function main() {
 // v6 lending_pool validator calls. Public signals:
 //   [group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier]
 use ak_381/groth16.{Proof, SnarkVerificationKey}
-use zk.{verify_append_proof, verify_borrow_proof, verify_settlement_proof}
+use zk.{verify_append_proof, verify_borrow_proof, verify_repay_proof,
+  verify_settlement_proof}
 
 // Real public-signal values, exported so validator tests can build fixtures.
 pub const group_root: Int = ${g_root}
@@ -183,6 +245,11 @@ pub const repay_ext: Int = ${s_repay_ext}
 pub const old_repaid_root: Int = ${a_old_root}
 pub const repay_null: Int = ${a_leaf}
 pub const append_index: Int = ${a_index}
+// Deposit D (a DIFFERENT secret) for the R-binding negatives: its repayment
+// nullifier R_d and the root after inserting R_d at index 0. A repay of loan A
+// cannot insert R_d (append leaf != the repay proof's R) nor settle deposit D.
+pub const repay_null_d: Int = ${ad_leaf}
+pub const repaid_root_d: Int = ${ad_new}
 
 pub fn vkey() -> SnarkVerificationKey {
   SnarkVerificationKey {
@@ -232,6 +299,31 @@ pub fn append_proof() -> Proof {
   Proof { piA: #"${aPiA}", piB: #"${aPiB}", piC: #"${aPiC}" }
 }
 
+// The repay circuit's verification key (7 public signals). Proves N AND R from the
+// same secret — the binding the v6 lending_pool checks at Repay.
+pub fn repay_vkey() -> SnarkVerificationKey {
+  SnarkVerificationKey {
+    nPublic: ${RVKEY.nPublic},
+    vkAlpha: #"${rvkAlpha}",
+    vkBeta: #"${rvkBeta}",
+    vkGamma: #"${rvkGamma}",
+    vkDelta: #"${rvkDelta}",
+    vkAlphaBeta: [],
+    vkIC: [${rIcLit}],
+  }
+}
+
+pub fn repay_proof() -> Proof {
+  Proof { piA: #"${rPiA}", piB: #"${rPiB}", piC: #"${rPiC}" }
+}
+
+// Append proof for deposit D (leaf = repay_null_d). Verified by the SAME append vkey
+// — only the inserted leaf differs. Used to show the append leaf cannot diverge from
+// the repay proof's R.
+pub fn append_proof_d() -> Proof {
+  Proof { piA: #"${adPiA}", piB: #"${adPiB}", piC: #"${adPiC}" }
+}
+
 test borrow_proof_verifies_onchain() {
   verify_borrow_proof(vkey(), proof(), ${g_root}, ${g_null}, ${g_loan}, ${g_ratio}, ${g_ext})
 }
@@ -256,6 +348,26 @@ test append_proof_verifies_onchain() {
 test tampered_append_signal_fails_onchain() {
   // Tamper the new_root public signal (+1) -> the claimed insertion no longer holds.
   !verify_append_proof(append_vkey(), append_proof(), ${a_old_root}, ${BigInt(a_new_root) + 1n}, ${a_leaf}, ${a_index})
+}
+
+// Public signals: [group_root, loan_nullifier, repay_nullifier, loan_amount,
+// collateral_ratio, external_nullifier, repay_external_nullifier].
+test repay_proof_verifies_onchain() {
+  verify_repay_proof(repay_vkey(), repay_proof(), ${rp_root}, ${rp_n}, ${rp_r}, ${rp_loan}, ${rp_ratio}, ${rp_ext}, ${rp_rext})
+}
+
+test tampered_repay_signal_fails_onchain() {
+  // Tamper the repay_nullifier (R) public signal (+1) -> proof no longer verifies.
+  // This is the on-chain root of the binding: the validator passes R from the
+  // redeemer, so a redeemer R != the proof's bound R is rejected here.
+  !verify_repay_proof(repay_vkey(), repay_proof(), ${rp_root}, ${rp_n}, ${repayRTampered}, ${rp_loan}, ${rp_ratio}, ${rp_ext}, ${rp_rext})
+}
+
+// Deposit D's append proof verifies on its own terms (it is a real proof) — the
+// binding is enforced at the validator, which passes the redeemer's repay_nullifier
+// as the leaf, so pairing this with A's repay proof is what gets rejected.
+test append_d_verifies_onchain() {
+  verify_append_proof(append_vkey(), append_proof_d(), ${ad_old}, ${ad_new}, ${ad_leaf}, ${ad_index})
 }
 `;
   if (a_new_root !== s_repaid_root) throw new Error("append new_root != settlement repaid_root — fixture inconsistency");

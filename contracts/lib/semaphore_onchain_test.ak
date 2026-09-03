@@ -4,7 +4,8 @@
 // v6 lending_pool validator calls. Public signals:
 //   [group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier]
 use ak_381/groth16.{Proof, SnarkVerificationKey}
-use zk.{verify_append_proof, verify_borrow_proof, verify_settlement_proof}
+use zk.{verify_append_proof, verify_borrow_proof, verify_repay_proof,
+  verify_settlement_proof}
 
 // Real public-signal values, exported so validator tests can build fixtures.
 pub const group_root: Int = 43095192365617529365567206317561372600253908895298921684433365536892715520362
@@ -23,6 +24,11 @@ pub const repay_ext: Int = 8888
 pub const old_repaid_root: Int = 13916937046501108967048154641689659101970478684843793251827738918983778486795
 pub const repay_null: Int = 9472445981325995647574371963878224610329117273100236077350394341168262427685
 pub const append_index: Int = 0
+// Deposit D (a DIFFERENT secret) for the R-binding negatives: its repayment
+// nullifier R_d and the root after inserting R_d at index 0. A repay of loan A
+// cannot insert R_d (append leaf != the repay proof's R) nor settle deposit D.
+pub const repay_null_d: Int = 7105608934630822492929134765106035351468175385450393321332253277479325408771
+pub const repaid_root_d: Int = 10872960336090883658176298111607344105867080973375616068841706623573100676638
 
 pub fn vkey() -> SnarkVerificationKey {
   SnarkVerificationKey {
@@ -37,7 +43,7 @@ pub fn vkey() -> SnarkVerificationKey {
 }
 
 pub fn proof() -> Proof {
-  Proof { piA: #"98557bdc1b9bcbfc394d5c1812f8489f5cfa6bfa529787de568cd534badb36b843e07a6b9423c16cca7de8abc45f6b83", piB: #"80c7e6a060135d7b1b6bccc4e65f9d032ecbe907c46d86d78751cb532bd33ba5e96bae6cfd26446a2e74ea5183101e86112808863b757582a5255a24116c94fe0bca7feeaee4e11b57df1e43aa3293aa2842d63479d214d4f66d91ad3549253b", piC: #"8ffdfa7711846dda207f875fa6701302ec99bc9307237c9d8da71eda1f31530f55f2cdd66db579d876100d8a567af634" }
+  Proof { piA: #"b5d48a66cdceb154653f322dd367da967b972e22c03626a23d565650d0819f27bf2307cfc0af47092c91523ae52eae64", piB: #"b7796a2078cbb34e22f9c82d86518682e1e9599267a24ad2ed6ec33766bc0a041ae22883c0f2a041b1cb75a61199e78a011dff41af68d16ebc9545ec1828d8713edbd101f9d99c5d9d90f41fcc249a54e30bf433f326d972843688cf4020665a", piC: #"af77efcb94093a013cd26750798daf5888e4f451e4a85fa2d0133c010d503a53ac132994e387518edf5a16326a94bb9e" }
 }
 
 pub fn settlement_vkey() -> SnarkVerificationKey {
@@ -53,7 +59,7 @@ pub fn settlement_vkey() -> SnarkVerificationKey {
 }
 
 pub fn settlement_proof() -> Proof {
-  Proof { piA: #"8507778fcf01da076aa2ef38fae3a0e574a051af41c824b1f5c032dbfd19d6baa4627368c695216f932c2532c37c2764", piB: #"98d3d9845205668578a48e9c93fb79cf194cf2bdd1099b1aab1727f8eb96dd603e0b7e1eea1e9023be7689fc363cdd27001c436fb3c443fea0d7775f9e418a2da677d579da836d4002d1715660de98ee66430168234f052df409b48e7b87a555", piC: #"b5a99a56bf89592ee9aca963c1271bd78f3b28c86c10596b9f54380783895c09d7e46e7b8fd1eb570e403c122ada3a9d" }
+  Proof { piA: #"a73ec890e77f3ddfd2cc49fffcd5b3005be9fa9143bc99bd46fa7514604eba896ce321d5bba86cab3bc10f9777a3e185", piB: #"a5372652cd405eaebaa89c72305ebdb819e42925a77b07ff8ba2312f0b3797a8a2e814476619a7e4e16adc5d970616fd089838136afbb8284ab97b04aa9153273464e253f6baa356af341deb2eba653be45fc680c10c3159ecbe20ddc0af8344", piC: #"81fa1ef0400b317b61a849461f151a0bb1634b7f54f291d08cd30bda0cf10ca11560aab9929d391b2db37a1653d23a1e" }
 }
 
 pub fn append_vkey() -> SnarkVerificationKey {
@@ -69,7 +75,32 @@ pub fn append_vkey() -> SnarkVerificationKey {
 }
 
 pub fn append_proof() -> Proof {
-  Proof { piA: #"9830d6a4ae3d8c66c1f52d90047483a6be9882983bf32ee1f57ac676f70611f01324a68a6ce4d96ac88b1895d73eed4e", piB: #"aea7205fdbe587a90d7a668ed7e28977596107d47f774b98cecf04700c5f8830bfbfaa41bef707063eecc469df27ad500aa62477e21608e6a0e1272aa4c82dcfbc4f945509d088206734c95225b6930d0792d3599072912ed5ff1272161a6da2", piC: #"b932253b73f58f80ca102dedf671c19d4beeeb93b3c2f3447a3f5c39f933e6f685d24fce963e1a4b6d10740f63b5f889" }
+  Proof { piA: #"84bef53a7262455ce767fb7de85df6b1fb5895f8ccf757b74ed5f866b6da96601e615af923029e16ffb7774e2d010978", piB: #"8bc58185a7176c5c9224306406d803c4816d01eda80d8b753f4849d3d40eeed4db1a370e416ceac61420599af16225580c9acbd7518b6077a349dbac334d8c394587ebae0299301e045f2f2cad2d20a8bf6572b8bb48ae6213cdabf7e7124053", piC: #"b2aa5792f5f384f90817fc8f2336119b69d2d1a0204af2821b9ec9b7044fa4aa61f3ba916057124d1c8f6ec41d026bd6" }
+}
+
+// The repay circuit's verification key (7 public signals). Proves N AND R from the
+// same secret — the binding the v6 lending_pool checks at Repay.
+pub fn repay_vkey() -> SnarkVerificationKey {
+  SnarkVerificationKey {
+    nPublic: 7,
+    vkAlpha: #"a60114bdb346edf1e6d2286e7bb2982ded2332ed5326b3f5dab7327531d193f5ab9a5ab5ef22c63826524d195fe41838",
+    vkBeta: #"9174da54ce33a9e63f2d8a885e2e6201562f0a876dbed7b3fde9727793d45c1f6d4f63cfc5fec371977dd287fab632540113d8dc95b5f9e3685753b756eafac407a97f47ddf9eb0dbdbcb83f68752fc645c9a5ca22b0c07e6c509582ecfbbb1f",
+    vkGamma: #"93e02b6052719f607dacd3a088274f65596bd0d09920b61ab5da61bbdc7f5049334cf11213945d57e5ac7d055d042b7e024aa2b2f08f0a91260805272dc51051c6e47ad4fa403b02b4510b647ae3d1770bac0326a805bbefd48056c8c121bdb8",
+    vkDelta: #"a2a029ac8cad22948cced5f4b43b7617e9fe16c2ae4fc876feec1af89b00f85860b89c34b6aa67166d2da85a01d860b8177bce8c6d0bf480c048ddb70e61c082b7968de981c475463896a49c0723e8b13ada14284330068176f5c73da7d5aa53",
+    vkAlphaBeta: [],
+    vkIC: [#"92474b03d60f5a0dc31e56630eb1aa2c710a4ed0856e7d9e346f1ff72db9f52a0ab345d06ce6fa1a79f7c9df76adc466", #"8b5be30935e34e3d996aec7247ef28d842183f3df4a0670a08b0f1d3b126033152df2db00669b6b5dc26314f52d1280e", #"9237903443b6095f133e223df758fefa2ecf012e5e02f78ea16bb5f26902f597a3f4469399dc572eb30ca45d084713d4", #"8976aa5b9de280b4ed702ef5d11193fe5de9801cce2337a850b8a0edddf8b3d08ea10971b04065582d41cdf56bd422c4", #"82ae1342500c919b720868e59d5be02316ca3014cd363badee2299a6b1b671ee87548b787655f1802845665b80228c38", #"aee22fdd6f981a9322fa0ab9a1af6d69563aaa8335a25f61eb452cd9c7d0dcc812f795ca05217485a53ab36f8cf68419", #"84b862dbe4630bd6f6da5cb3338ebcb66f8fe48a4a877b56235d2d935fac445f8d82b0116939c0d4f0d2ccd9f2e64cde", #"832da2a3054dfb3147fd3e0b9dcb8053c4f5bc5d33972e2af7c6bd6cc414cd2d4878efc6499f8aaaefae5a8d81d49ada"],
+  }
+}
+
+pub fn repay_proof() -> Proof {
+  Proof { piA: #"a9ee18de6dc8137f37977b7bce062b0afaa84d3a7c02b116ed42771b37b372262aafdc69dcabec85c2630f959b0b99ea", piB: #"a3ab088a12b3be4a81978106594769da0b443a40c0329d7425150f4d8da3646b27ac98bffc77f0d4f448c4ed437db44012d043c9235fb380cb4e69b59a65f379a38f9d4ef9d626ae92d0aa383fbec97f3d72344a6f8dcaf3c02cce5cfbab5374", piC: #"a7ee47edce25528d804fec05b04862efc6c63b244f9b38b981796e48f07de952fd173fff8e1e687d7082c178acdb27a4" }
+}
+
+// Append proof for deposit D (leaf = repay_null_d). Verified by the SAME append vkey
+// — only the inserted leaf differs. Used to show the append leaf cannot diverge from
+// the repay proof's R.
+pub fn append_proof_d() -> Proof {
+  Proof { piA: #"888096c46b5d254c7408564b5e53205e2aeeb9a2423ceb1f0c0e9499996c42ffabbca67be3281dc1d7bf6135971615a3", piB: #"897252b66c45bbc295f034041f06d3b94e5e1cecccbf63edff2a3801873f9e5a82c76c2474d04042dd23f8cf33ae7855130c7e75cc925f050f9c3bfdca0f327e76aeeb80aaa1052d69eb901a2bb5f831b8dfdebf47ec724f7650649f04c5667b", piC: #"adaf6b2a6e3d6e2cadec2a45e7f7c6d497e7c2ab3bc1ce44c10fa2441d0194ebb92ecb68c413bf1e9c233d1405605683" }
 }
 
 test borrow_proof_verifies_onchain() {
@@ -96,4 +127,24 @@ test append_proof_verifies_onchain() {
 test tampered_append_signal_fails_onchain() {
   // Tamper the new_root public signal (+1) -> the claimed insertion no longer holds.
   !verify_append_proof(append_vkey(), append_proof(), 13916937046501108967048154641689659101970478684843793251827738918983778486795, 10970528644157868413072525969450524853830307808784240155480952861955942449148, 9472445981325995647574371963878224610329117273100236077350394341168262427685, 0)
+}
+
+// Public signals: [group_root, loan_nullifier, repay_nullifier, loan_amount,
+// collateral_ratio, external_nullifier, repay_external_nullifier].
+test repay_proof_verifies_onchain() {
+  verify_repay_proof(repay_vkey(), repay_proof(), 43095192365617529365567206317561372600253908895298921684433365536892715520362, 13363567938272564440676172658199675024663324988111273564368569843933911498447, 9472445981325995647574371963878224610329117273100236077350394341168262427685, 10000000, 125, 7777, 8888)
+}
+
+test tampered_repay_signal_fails_onchain() {
+  // Tamper the repay_nullifier (R) public signal (+1) -> proof no longer verifies.
+  // This is the on-chain root of the binding: the validator passes R from the
+  // redeemer, so a redeemer R != the proof's bound R is rejected here.
+  !verify_repay_proof(repay_vkey(), repay_proof(), 43095192365617529365567206317561372600253908895298921684433365536892715520362, 13363567938272564440676172658199675024663324988111273564368569843933911498447, 9472445981325995647574371963878224610329117273100236077350394341168262427686, 10000000, 125, 7777, 8888)
+}
+
+// Deposit D's append proof verifies on its own terms (it is a real proof) — the
+// binding is enforced at the validator, which passes the redeemer's repay_nullifier
+// as the leaf, so pairing this with A's repay proof is what gets rejected.
+test append_d_verifies_onchain() {
+  verify_append_proof(append_vkey(), append_proof_d(), 13916937046501108967048154641689659101970478684843793251827738918983778486795, 10872960336090883658176298111607344105867080973375616068841706623573100676638, 7105608934630822492929134765106035351468175385450393321332253277479325408771, 0)
 }

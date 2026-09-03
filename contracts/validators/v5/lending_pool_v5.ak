@@ -19,7 +19,7 @@ use types_v5.{
   BorrowAnonymous, Deposit, PoolDatumV5, PoolRedeemerV5, RepayAnonymous,
   SetGroupRoot,
 }
-use zk.{get_vkey, verify_append_proof, verify_borrow_proof}
+use zk.{get_vkey, verify_append_proof, verify_borrow_proof, verify_repay_proof}
 
 validator lending_pool_v5 {
   spend(
@@ -103,13 +103,17 @@ validator lending_pool_v5 {
         }
       }
 
-      // RepayAnonymous: re-attest membership + the loan nullifier, pay principal +
-      // interest, remove the loan from the open set, AND insert the repayment
-      // nullifier R into repaid_root via a zero-knowledge append proof. Stays
-      // PERMISSIONLESS (no admin signature): the append proof binds
-      // old_root = repaid_root, new_root = out.repaid_root, leaf = R, index =
-      // next_index — so the borrower grows the settlement set themselves and can
-      // later unlock without any admin step. A bogus R only harms the repayer.
+      // RepayAnonymous: re-attest membership + the loan nullifier N AND the
+      // repayment nullifier R FROM THE SAME SECRET (repay proof), pay principal +
+      // interest, remove the loan from the open set, AND insert R into repaid_root
+      // via a zero-knowledge append proof. Stays PERMISSIONLESS (no admin
+      // signature): the append proof binds old_root = repaid_root,
+      // new_root = out.repaid_root, leaf = R, index = next_index — so the borrower
+      // grows the settlement set themselves and can later unlock without any admin
+      // step. The SAME `repay_nullifier` is fed to BOTH the repay proof (as the R
+      // signal) and the append proof (as the inserted leaf), so the R that lands in
+      // repaid_root is exactly the one the repay proof binds to N's secret — a repay
+      // can only ever settle its own deposit (no zombies / self-griefing).
       RepayAnonymous {
         proof,
         repay_amount,
@@ -119,20 +123,24 @@ validator lending_pool_v5 {
       } -> {
         let outstanding = has_nullifier(pool_datum.open_loans, loan_nullifier)
         let principal = pool_datum.loan_denomination
-        let vkey = get_vkey(tx, pool_datum.vkey_ref)
-        // The proof re-attests membership + the loan nullifier for the (fixed)
-        // loan denomination. repay_amount is enforced by the pool accounting below.
+        let vkey = get_vkey(tx, pool_datum.repay_vkey_ref)
+        // The repay proof re-attests membership + BOTH nullifiers (N and R) from one
+        // secret, for the (fixed) loan denomination. repay_amount is enforced by the
+        // pool accounting below.
         let proof_ok =
-          verify_borrow_proof(
+          verify_repay_proof(
             vkey,
             proof,
             pool_datum.group_root,
             loan_nullifier,
+            repay_nullifier,
             principal,
             pool_datum.collateral_ratio,
             pool_datum.external_nullifier,
+            pool_datum.repay_external_nullifier,
           )
-        // Append proof: R is inserted at next_index, repaid_root -> out.repaid_root.
+        // Append proof: R (the SAME repay_nullifier the proof binds to N's secret) is
+        // inserted at next_index, repaid_root -> out.repaid_root.
         let append_vkey = get_vkey(tx, pool_datum.append_vkey_ref)
         let append_ok =
           verify_append_proof(
@@ -179,6 +187,7 @@ fn pool_static_preserved(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
     new.interest_rate == old.interest_rate,
     new.collateral_ratio == old.collateral_ratio,
     new.vkey_ref == old.vkey_ref,
+    new.repay_vkey_ref == old.repay_vkey_ref,
     new.settlement_vkey_ref == old.settlement_vkey_ref,
     new.append_vkey_ref == old.append_vkey_ref,
     new.external_nullifier == old.external_nullifier,

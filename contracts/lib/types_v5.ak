@@ -32,7 +32,9 @@ pub type DepositDatumV5 {
 }
 
 /// Lending pool datum (v6).
-/// `vkey_ref`            -> borrow/repay membership circuit verification key
+/// `vkey_ref`            -> borrow membership circuit verification key
+/// `repay_vkey_ref`      -> repay circuit verification key (proves N AND R from the
+///                          same secret, binding R to the loan being repaid)
 /// `settlement_vkey_ref` -> unlock settlement circuit verification key
 /// `append_vkey_ref`     -> repay-time append circuit verification key
 /// `group_root`          -> Merkle root of the collateral commitment set
@@ -56,6 +58,7 @@ pub type PoolDatumV5 {
   interest_rate: Int,
   collateral_ratio: Int,
   vkey_ref: OutputReference,
+  repay_vkey_ref: OutputReference,
   settlement_vkey_ref: OutputReference,
   append_vkey_ref: OutputReference,
   group_root: Int,

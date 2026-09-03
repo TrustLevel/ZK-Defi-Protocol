@@ -17,9 +17,10 @@ use types_v5.{
   BorrowAnonymous, DepositDatumV5, PoolDatumV5, RepayAnonymous, UnlockDeposit,
 }
 use semaphore_onchain_test.{
-  append_proof, append_vkey, commitment, ext, group_root, loan_amt, loan_null,
-  old_repaid_root, proof, ratio, repaid_root, repay_ext, repay_null,
-  settlement_proof, settlement_vkey, vkey,
+  append_proof, append_proof_d, append_vkey, commitment, ext, group_root,
+  loan_amt, loan_null, old_repaid_root, proof, ratio, repaid_root, repaid_root_d,
+  repay_ext, repay_null, repay_null_d, repay_proof, repay_vkey, settlement_proof,
+  settlement_vkey, vkey,
 }
 use v5/collateral_v5
 use v5/lending_pool_v5
@@ -35,6 +36,9 @@ const pool_oref: OutputReference =
 
 const vk_oref: OutputReference =
   OutputReference { transaction_id: #"b1", output_index: 0 }
+
+const rvk_oref: OutputReference =
+  OutputReference { transaction_id: #"b5", output_index: 0 }
 
 const svk_oref: OutputReference =
   OutputReference { transaction_id: #"b2", output_index: 0 }
@@ -57,6 +61,7 @@ fn pool_datum(
     interest_rate: 500,
     collateral_ratio: ratio,
     vkey_ref: vk_oref,
+    repay_vkey_ref: rvk_oref,
     settlement_vkey_ref: svk_oref,
     append_vkey_ref: avk_oref,
     group_root,
@@ -78,6 +83,18 @@ fn vk_ref_input() -> Input {
       address: from_script(#"deadbeef"),
       value: from_lovelace(2_000_000),
       datum: InlineDatum(vkey()),
+      reference_script: None,
+    },
+  }
+}
+
+fn rvk_ref_input() -> Input {
+  Input {
+    output_reference: rvk_oref,
+    output: Output {
+      address: from_script(#"deadbeef"),
+      value: from_lovelace(2_000_000),
+      datum: InlineDatum(repay_vkey()),
       reference_script: None,
     },
   }
@@ -183,13 +200,13 @@ test repay_principal_plus_interest_succeeds() {
     Transaction {
       ..placeholder,
       inputs: [pool_input(pd, 90_000_000)],
-      reference_inputs: [vk_ref_input(), avk_ref_input()],
+      reference_inputs: [rvk_ref_input(), avk_ref_input()],
       outputs: [pool_out(out, 90_000_000 + repay)],
     }
   lending_pool_v5.lending_pool_v5.spend(
     Some(pd),
     RepayAnonymous {
-      proof: proof(),
+      proof: repay_proof(),
       repay_amount: repay,
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
@@ -210,13 +227,13 @@ test repay_below_interest_fails() {
     Transaction {
       ..placeholder,
       inputs: [pool_input(pd, 90_000_000)],
-      reference_inputs: [vk_ref_input(), avk_ref_input()],
+      reference_inputs: [rvk_ref_input(), avk_ref_input()],
       outputs: [pool_out(out, 90_000_000 + repay)],
     }
   !lending_pool_v5.lending_pool_v5.spend(
     Some(pd),
     RepayAnonymous {
-      proof: proof(),
+      proof: repay_proof(),
       repay_amount: repay,
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
@@ -239,17 +256,83 @@ test repay_bogus_append_fails() {
     Transaction {
       ..placeholder,
       inputs: [pool_input(pd, 90_000_000)],
-      reference_inputs: [vk_ref_input(), avk_ref_input()],
+      reference_inputs: [rvk_ref_input(), avk_ref_input()],
       outputs: [pool_out(out, 90_000_000 + repay)],
     }
   !lending_pool_v5.lending_pool_v5.spend(
     Some(pd),
     RepayAnonymous {
-      proof: proof(),
+      proof: repay_proof(),
       repay_amount: repay,
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
       append_proof: append_proof(),
+    },
+    pool_oref,
+    tx,
+  )
+}
+
+// ---- Repay (R-binding: R must be the one bound to the loan's secret) --------
+
+// The append proof inserts a leaf DIFFERENT from the redeemer's repay_nullifier.
+// The validator feeds the SAME repay_nullifier to BOTH the repay proof (as R) and
+// the append proof (as leaf). Here repay_nullifier = repay_null (deposit A's, which
+// the repay proof binds), but append_proof_d attests leaf = repay_null_d != repay_null
+// -> the append proof cannot verify against leaf repay_null -> repay is rejected.
+// A repayer cannot grow repaid_root with any R other than the one the proof binds.
+test repay_append_leaf_mismatch_fails() {
+  let loan = loan_null
+  let pd = pool_datum(loan_amt, [loan], old_repaid_root, 0)
+  let out = pool_datum(0, [], repaid_root_d, 1)
+  let repay = 10_500_000
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [pool_input(pd, 90_000_000)],
+      reference_inputs: [rvk_ref_input(), avk_ref_input()],
+      outputs: [pool_out(out, 90_000_000 + repay)],
+    }
+  !lending_pool_v5.lending_pool_v5.spend(
+    Some(pd),
+    RepayAnonymous {
+      proof: repay_proof(),
+      repay_amount: repay,
+      loan_nullifier: loan_null,
+      repay_nullifier: repay_null,
+      append_proof: append_proof_d(),
+    },
+    pool_oref,
+    tx,
+  )
+}
+
+// Repaying loan A (loan_null) cannot settle a DIFFERENT deposit D. Here the append
+// proof correctly inserts D's R (repay_null_d) and the redeemer names it, but the
+// repay proof is A's (it binds repay_null, from A's secret) -> the repay proof does
+// not verify against R = repay_null_d -> rejected. So R landing in repaid_root is
+// always the one bound to the repaid loan's secret; you cannot free someone else's
+// (or an unrepaid) collateral by repaying your own loan.
+test repay_cannot_settle_other_deposit_fails() {
+  let loan = loan_null
+  let pd = pool_datum(loan_amt, [loan], old_repaid_root, 0)
+  let out = pool_datum(0, [], repaid_root_d, 1)
+  let repay = 10_500_000
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [pool_input(pd, 90_000_000)],
+      reference_inputs: [rvk_ref_input(), avk_ref_input()],
+      outputs: [pool_out(out, 90_000_000 + repay)],
+    }
+  !lending_pool_v5.lending_pool_v5.spend(
+    Some(pd),
+    RepayAnonymous {
+      proof: repay_proof(),
+      repay_amount: repay,
+      loan_nullifier: loan_null,
+      repay_nullifier: repay_null_d,
+      append_proof: append_proof_d(),
     },
     pool_oref,
     tx,
