@@ -23,7 +23,7 @@ Return as `MILESTONE3-TESTER-FEEDBACK-<yourname>.md`.
 | `unlock_wrong_commitment_fails` | can't unlock a deposit you don't own | |
 | `tampered_borrow_signal_fails_onchain` / `tampered_unlock_signal_fails_onchain` | a tampered proof is rejected | |
 
-Total checks reported by `aiken check`: ____ (expect 13, 0 failed).
+Total checks reported by `aiken check`: ____ (expect 17, 0 failed).
 
 ---
 
