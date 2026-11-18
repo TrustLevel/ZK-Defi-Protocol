@@ -9,13 +9,14 @@ Aiken validators (see [`../contracts/`](../contracts/)), so everything targets t
 
 | Circuit | Used by | Public signals | Proves |
 |---|---|---|---|
-| `collateral_semaphore.circom` | Borrow, Repay | `[group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier, recipient]` | The commitment `Poseidon255(collateral_amount, secret)` is a member of the commitment set (depth 10); `loan_nullifier = Poseidon255(secret, external_nullifier)`; `collateral_amount·100 ≥ loan_amount·collateral_ratio`; range checks; the proof is bound to `recipient` (payout key hash as an integer, constrained via `recipient²`). |
+| `collateral_semaphore.circom` | Borrow | `[group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier, recipient]` | The commitment `Poseidon255(collateral_amount, secret)` is a member of the commitment set (depth 10); `loan_nullifier = Poseidon255(secret, external_nullifier)`; `collateral_amount·100 ≥ loan_amount·collateral_ratio`; range checks; the proof is bound to `recipient` (payout key hash as an integer, constrained via `recipient²`). |
+| `repay_proof.circom` | Repay | `[group_merkle_root, loan_nullifier, repay_nullifier, loan_amount, collateral_ratio, external_nullifier, repay_external_nullifier]` | Membership and sufficiency as in the borrow circuit, plus `loan_nullifier` **and** `repay_nullifier = Poseidon255(secret, repay_external_nullifier)` from the same secret, so the `R` a repay appends belongs to the loan it settles. Own verification key. |
 | `settlement_proof.circom` | Unlock | `[commitment, repaid_root, repay_external_nullifier]` | Knowledge of the secret behind `commitment`, and membership of the private `R = Poseidon255(secret, repay_external_nullifier)` in the repaid set (depth 10). |
 | `append_proof.circom` | Deposit, Repay | `[old_root, new_root, leaf, index]` | `leaf` was inserted at the empty position `index`, taking the root from `old_root` to `new_root` (depth 10). |
 | `collateral_proof.circom` | none (legacy fixture) | `[commitment, loan_amount, collateral_ratio]` | Commitment opening + sufficiency; kept for the `zk_onchain_test` fixture. |
 
 Private inputs (`secret`, `collateral_amount`, Merkle paths) never touch the chain.
-The borrow circuit has 7,992 constraints.
+The borrow circuit has 7,992 constraints, the repay circuit 8,615.
 
 ## Prerequisites
 
@@ -26,6 +27,7 @@ The borrow circuit has 7,992 constraints.
 
 ```bash
 circom collateral_semaphore.circom --r1cs --wasm --prime bls12381 -l . -l node_modules
+circom repay_proof.circom          --r1cs --wasm --prime bls12381 -l . -l node_modules
 circom settlement_proof.circom     --r1cs --wasm --prime bls12381 -l . -l node_modules
 circom append_proof.circom         --r1cs --wasm --prime bls12381 -l . -l node_modules
 ```
@@ -50,7 +52,8 @@ cd ../offchain/cli && node v5/test-semaphore-proof.mjs   # borrow proof + tamper
 ## Layout
 
 ```
-collateral_semaphore.circom    borrow / repay circuit
+collateral_semaphore.circom    borrow circuit
+repay_proof.circom             repay circuit
 settlement_proof.circom        unlock circuit
 append_proof.circom            append circuit (commitment set + repaid set)
 collateral_proof.circom        legacy circuit (fixture only)

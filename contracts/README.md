@@ -8,7 +8,7 @@ There is no admin and no signature on any path: the proof *is* the authorization
 
 ```sh
 aiken build     # compile -> plutus.json
-aiken check     # on-chain proof + adversarial tests (49/49, 0 warnings)
+aiken check     # on-chain proof + adversarial tests (54/54, 0 warnings)
 ```
 
 ## Scripts
@@ -17,7 +17,8 @@ Three scripts live in `validators/v5/`, linked by their parameters:
 
 ```
 pool_nft(seed) -> collateral_v5(pool_nft_policy, settlement_vkey_ref)
-               -> lending_pool_v5(pool_nft_policy, collateral_hash, vkey_ref, append_vkey_ref)
+               -> lending_pool_v5(pool_nft_policy, collateral_hash, vkey_ref, repay_vkey_ref,
+                                  append_vkey_ref)
 ```
 
 **`pool_nft`** — one-shot minting policy. It mints exactly one token named `POOL`, and
@@ -39,10 +40,12 @@ and finds the continuing output by the NFT at the same address. Redeemer
   nullifier never to have been used, the fixed loan denomination, and a collateral
   denomination that covers it. It records the nullifier in `open_loans` and
   `used_nullifiers`, and pays the loan to `recipient` (output tagged with the nullifier).
-- `RepayAnonymous { proof, recipient, repay_amount, loan_nullifier, repay_nullifier, append_proof }`
-  — re-attests membership, pays exactly principal + interest, removes the nullifier
-  from `open_loans`, and **self-appends** the repayment nullifier `R` into
-  `repaid_root` via an on-chain append proof.
+- `RepayAnonymous { proof, repay_amount, loan_nullifier, repay_nullifier, append_proof }`
+  — verifies a **repay proof** on-chain (`[group_root, N, R, loan, ratio, ext,
+  repay_ext]`) that derives the loan nullifier `N` and the repayment nullifier `R`
+  from one secret; pays exactly principal + interest, removes `N` from `open_loans`,
+  and appends that `R` into `repaid_root` via an on-chain append proof. A borrow proof
+  is not a repay proof (own vkey), so a repay can only release its own deposit.
 
 Datum `PoolDatumV5 { total_deposited, total_borrowed, interest_rate, collateral_ratio,
 group_root, group_next_index, repaid_root, next_index, external_nullifier,
@@ -64,14 +67,14 @@ no on-chain amount.
 
 Shared modules in `lib/`:
 - `types_v5.ak` — datum and redeemer types, `pool_nft_name`
-- `zk.ak` — `verify_borrow_proof`, `verify_settlement_proof`, `verify_append_proof`, `get_vkey`
+- `zk.ak` — `verify_borrow_proof`, `verify_repay_proof`, `verify_settlement_proof`, `verify_append_proof`, `get_vkey`
 - `semaphore_onchain_test.ak`, `zk_onchain_test.ak` — the generated on-chain fixtures
 
 Tests in `validators/tests/` (`v6_validator_test.ak`, `pool_nft_test.ak`).
 
 ## How on-chain verification works
 
-- **Verification keys.** The three keys are parked once as inline datums on an
+- **Verification keys.** The four keys are parked once as inline datums on an
   unspendable reference UTxO. Their references are **script parameters**, and the
   validators read them via read-only reference inputs.
 - **Trusted public signals.** Public signals are reconstructed from trusted on-chain
@@ -82,16 +85,16 @@ Tests in `validators/tests/` (`v6_validator_test.ak`, `pool_nft_test.ak`).
   [`modulo-p/ak-381`](https://github.com/modulo-p/ak-381). No `extra_signatories`
   check anywhere.
 
-See [`../circuits/`](../circuits/) for the three circuits (borrow membership, settlement,
+See [`../circuits/`](../circuits/) for the four circuits (borrow, repay, settlement,
 append) and [`../docs/MILESTONE3.md`](../docs/MILESTONE3.md) for the full design.
 
 ## Deployed (Preprod)
 
 | Script | Hash |
 |-----------|-------------|
-| `pool_nft` | `586a933cb6c1ece99d373e106ff38b4c430d0e606541c8635c0cf049` |
-| `lending_pool_v5` | `d99ee5039b3b4c3792358482404bffc24e7194cf21c7c30028e01ba7` |
-| `collateral_v5`   | `0fb3482637d024566f70fc43ed09a6178a545fa281e55e72082c44fe` |
+| `pool_nft` | `4346c33b38b46f5b34b60b86bc9ba4ea55f392a3c4cc4cafd060c6ce` |
+| `lending_pool_v5` | `8b15840cc3feac88fb000d4ffe25a108aaba37d4786161719d4d25ea` |
+| `collateral_v5`   | `45b1b0147e0e9d3b0c87f53cfd482ad17170ed0654056207b9503c0c` |
 
 The applied hashes are derived with Mesh `applyParamsToScript`
 (`offchain/cli/v5/common.mjs`, `deriveScripts`). `aiken blueprint apply` re-optimises
