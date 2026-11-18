@@ -5,7 +5,8 @@
 //// The borrow does NOT reference a specific collateral UTxO — it proves the
 //// commitment is a member of `group_root` — so deposit<->borrow is unlinkable.
 //// A loan is a `loan_nullifier` recorded in `open_loans`; repayment (principal +
-//// interest) removes it (double-borrow gate). In the SAME repay tx the borrower
+//// interest) removes it. The nullifier also enters `used_nullifiers` for good,
+//// so a deposit backs exactly one loan over its lifetime. In the SAME repay tx the borrower
 //// inserts their repayment nullifier R into the append-only `repaid_root` via a
 //// zero-knowledge append proof — PERMISSIONLESSLY, no admin — which is what lets
 //// them later prove settlement (in ZK) at unlock. `group_root` (the deposit
@@ -49,6 +50,7 @@ validator lending_pool_v5 {
           (out.group_root == pool_datum.group_root)?,
           repaid_frozen(pool_datum, out)?,
           same_open_loans(pool_datum, out)?,
+          same_used_nullifiers(pool_datum, out)?,
           pool_static_preserved(pool_datum, out)?,
         }
       }
@@ -66,11 +68,14 @@ validator lending_pool_v5 {
           (out.total_deposited == pool_datum.total_deposited)?,
           (out.total_borrowed == pool_datum.total_borrowed)?,
           same_open_loans(pool_datum, out)?,
+          same_used_nullifiers(pool_datum, out)?,
           pool_static_preserved(pool_datum, out)?,
         }
 
       // BorrowAnonymous: membership proof authorizes the loan. The nullifier is
-      // recorded; no collateral UTxO is referenced (unlinkable).
+      // recorded as open AND as used; no collateral UTxO is referenced (unlinkable).
+      // A nullifier that was EVER used cannot borrow again — not even after its
+      // loan was repaid — so a repaid deposit's R never covers a later loan.
       BorrowAnonymous { proof, loan_amount, loan_nullifier } -> {
         let vkey = get_vkey(tx, pool_datum.vkey_ref)
         let proof_ok =
@@ -83,7 +88,7 @@ validator lending_pool_v5 {
             pool_datum.collateral_ratio,
             pool_datum.external_nullifier,
           )
-        let fresh = !has_nullifier(pool_datum.open_loans, loan_nullifier)
+        let fresh = !has_nullifier(pool_datum.used_nullifiers, loan_nullifier)
         let liquidity = loan_amount <= bal_in - pool_datum.total_borrowed
         // Fixed denomination: every loan is exactly loan_denomination, so loan
         // amounts are uniform and carry no per-loan information.
@@ -94,6 +99,7 @@ validator lending_pool_v5 {
           liquidity?,
           denominated?,
           (out.open_loans == [loan_nullifier, ..pool_datum.open_loans])?,
+          (out.used_nullifiers == [loan_nullifier, ..pool_datum.used_nullifiers])?,
           (out.total_borrowed == pool_datum.total_borrowed + loan_amount)?,
           (out.total_deposited == pool_datum.total_deposited)?,
           (bal_out == bal_in - loan_amount)?,
@@ -150,6 +156,7 @@ validator lending_pool_v5 {
           outstanding?,
           (repay_amount >= due)?,
           (out.open_loans == remove_loan(pool_datum.open_loans, loan_nullifier))?,
+          same_used_nullifiers(pool_datum, out)?,
           (out.total_borrowed == pool_datum.total_borrowed - principal)?,
           (out.total_deposited == pool_datum.total_deposited)?,
           (bal_out == bal_in + repay_amount)?,
@@ -198,6 +205,11 @@ fn repaid_frozen(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
 
 fn same_open_loans(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
   new.open_loans == old.open_loans
+}
+
+/// The used-nullifier set only grows, and only on Borrow.
+fn same_used_nullifiers(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
+  new.used_nullifiers == old.used_nullifiers
 }
 
 fn has_nullifier(loans: List<Int>, n: Int) -> Bool {

@@ -50,6 +50,7 @@ fn pool_datum(
   open_loans: List<Int>,
   repaid: Int,
   nidx: Int,
+  used: List<Int>,
 ) -> PoolDatumV5 {
   PoolDatumV5 {
     total_deposited: 100_000_000,
@@ -66,6 +67,7 @@ fn pool_datum(
     repay_external_nullifier: repay_ext,
     loan_denomination: loan_amt,
     open_loans,
+    used_nullifiers: used,
     admin: admin_pkh,
     last_updated: 0,
   }
@@ -131,9 +133,9 @@ fn pool_out(pd: PoolDatumV5, lovelace: Int) -> Output {
 // ---- Borrow ----------------------------------------------------------------
 
 test borrow_membership_succeeds() {
-  let pd = pool_datum(0, [], old_repaid_root, 0)
+  let pd = pool_datum(0, [], old_repaid_root, 0, [])
   let new_loan = loan_null
-  let out = pool_datum(loan_amt, [new_loan], old_repaid_root, 0)
+  let out = pool_datum(loan_amt, [new_loan], old_repaid_root, 0, [new_loan])
   let tx =
     Transaction {
       ..placeholder,
@@ -152,8 +154,50 @@ test borrow_membership_succeeds() {
 test borrow_reused_nullifier_fails() {
   // The loan nullifier is already outstanding -> no second loan on it.
   let existing = loan_null
-  let pd = pool_datum(loan_amt, [existing], old_repaid_root, 0)
-  let out = pool_datum(loan_amt * 2, [existing, existing], old_repaid_root, 0)
+  let pd = pool_datum(loan_amt, [existing], old_repaid_root, 0, [existing])
+  let out =
+    pool_datum(loan_amt * 2, [existing, existing], old_repaid_root, 0, [existing, existing])
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [pool_input(pd, 100_000_000)],
+      reference_inputs: [vk_ref_input()],
+      outputs: [pool_out(out, 100_000_000 - loan_amt)],
+    }
+  !lending_pool_v5.lending_pool_v5.spend(
+    Some(pd),
+    BorrowAnonymous { proof: proof(), loan_amount: loan_amt, loan_nullifier: loan_null },
+    pool_oref,
+    tx,
+  )
+}
+
+test borrow_after_repay_same_secret_fails() {
+  // One deposit backs exactly ONE loan. After the loan is repaid (nullifier out
+  // of open_loans, R in repaid_root) the same secret must not borrow again —
+  // otherwise the stale R would let it unlock while the new loan stays open.
+  let pd = pool_datum(0, [], repaid_root, 1, [loan_null])
+  let out = pool_datum(loan_amt, [loan_null], repaid_root, 1, [loan_null, loan_null])
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [pool_input(pd, 100_500_000)],
+      reference_inputs: [vk_ref_input()],
+      outputs: [pool_out(out, 100_500_000 - loan_amt)],
+    }
+  !lending_pool_v5.lending_pool_v5.spend(
+    Some(pd),
+    BorrowAnonymous { proof: proof(), loan_amount: loan_amt, loan_nullifier: loan_null },
+    pool_oref,
+    tx,
+  )
+}
+
+test borrow_not_recorded_as_used_fails() {
+  // Borrow must add the nullifier to used_nullifiers; leaving it out would make
+  // the nullifier reusable after repay.
+  let pd = pool_datum(0, [], old_repaid_root, 0, [])
+  let out = pool_datum(loan_amt, [loan_null], old_repaid_root, 0, [])
   let tx =
     Transaction {
       ..placeholder,
@@ -176,8 +220,8 @@ test borrow_reused_nullifier_fails() {
 // R-inclusive (repaid_root, index 1), attested by the append proof (no admin).
 test repay_principal_plus_interest_succeeds() {
   let loan = loan_null
-  let pd = pool_datum(loan_amt, [loan], old_repaid_root, 0)
-  let out = pool_datum(0, [], repaid_root, 1)
+  let pd = pool_datum(loan_amt, [loan], old_repaid_root, 0, [loan])
+  let out = pool_datum(0, [], repaid_root, 1, [loan])
   let repay = 10_500_000
   let tx =
     Transaction {
@@ -200,10 +244,38 @@ test repay_principal_plus_interest_succeeds() {
   )
 }
 
+test repay_clearing_used_nullifier_fails() {
+  // Repay settles the open loan but must NOT drop the nullifier from
+  // used_nullifiers — that would re-enable a second loan on the same deposit.
+  let loan = loan_null
+  let pd = pool_datum(loan_amt, [loan], old_repaid_root, 0, [loan])
+  let out = pool_datum(0, [], repaid_root, 1, [])
+  let repay = 10_500_000
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [pool_input(pd, 90_000_000)],
+      reference_inputs: [vk_ref_input(), avk_ref_input()],
+      outputs: [pool_out(out, 90_000_000 + repay)],
+    }
+  !lending_pool_v5.lending_pool_v5.spend(
+    Some(pd),
+    RepayAnonymous {
+      proof: proof(),
+      repay_amount: repay,
+      loan_nullifier: loan_null,
+      repay_nullifier: repay_null,
+      append_proof: append_proof(),
+    },
+    pool_oref,
+    tx,
+  )
+}
+
 test repay_below_interest_fails() {
   let loan = loan_null
-  let pd = pool_datum(loan_amt, [loan], old_repaid_root, 0)
-  let out = pool_datum(0, [], repaid_root, 1)
+  let pd = pool_datum(loan_amt, [loan], old_repaid_root, 0, [loan])
+  let out = pool_datum(0, [], repaid_root, 1, [loan])
   let repay = 10_000_000
   // pays only principal, no interest -> due is 10_500_000
   let tx =
@@ -232,8 +304,8 @@ test repay_bogus_append_fails() {
   // datum claims a repaid_root the append proof does NOT attest, repay fails —
   // a repayer cannot fake growth of the settlement set.
   let loan = loan_null
-  let pd = pool_datum(loan_amt, [loan], old_repaid_root, 0)
-  let out = pool_datum(0, [], repaid_root + 1, 1)
+  let pd = pool_datum(loan_amt, [loan], old_repaid_root, 0, [loan])
+  let out = pool_datum(0, [], repaid_root + 1, 1, [loan])
   let repay = 10_500_000
   let tx =
     Transaction {
@@ -280,7 +352,7 @@ fn pool_ref_input(repaid: Int, nidx: Int) -> Input {
     output: Output {
       address: from_script(pool_hash),
       value: from_lovelace(90_000_000),
-      datum: InlineDatum(pool_datum(loan_amt, [], repaid, nidx)),
+      datum: InlineDatum(pool_datum(loan_amt, [], repaid, nidx, [loan_null])),
       reference_script: None,
     },
   }

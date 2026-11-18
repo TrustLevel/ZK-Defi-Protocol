@@ -8,7 +8,8 @@
 ////   - Borrow proves MEMBERSHIP of the commitment in `group_root` (Merkle) — it
 ////     does not reference a specific deposit UTxO, so deposit<->borrow is unlinkable.
 ////   - A loan is tracked by a `loan_nullifier` = Poseidon255(secret, external_nullifier)
-////     in the pool's `open_loans`; repayment removes it (double-borrow gate).
+////     in the pool's `open_loans`; repayment removes it. The nullifier also enters
+////     the never-shrinking `used_nullifiers`, so one deposit backs exactly one loan.
 //// Unlock binds to the SPECIFIC deposit (commitment public) so nobody can unlock
 //// another user's collateral, and proves loan-settlement in ZERO KNOWLEDGE: it
 //// proves Merkle membership of a PRIVATE repayment nullifier
@@ -48,7 +49,10 @@ pub type DepositDatumV5 {
 /// `loan_denomination`   -> every loan is exactly this size, so loan amounts are
 ///                          uniform (carry no per-loan information) and open_loans
 ///                          need only store nullifiers, not principals.
-/// `open_loans`          -> outstanding loan nullifiers (double-borrow gate)
+/// `open_loans`          -> outstanding loan nullifiers (what Repay may settle)
+/// `used_nullifiers`     -> every loan nullifier ever borrowed against; never
+///                          shrinks, so one deposit backs exactly ONE loan and a
+///                          repaid deposit's R can never cover a later loan
 /// `admin`               -> may update the published group_root (SetGroupRoot)
 pub type PoolDatumV5 {
   total_deposited: Int,
@@ -65,6 +69,7 @@ pub type PoolDatumV5 {
   repay_external_nullifier: Int,
   loan_denomination: Int,
   open_loans: List<Int>,
+  used_nullifiers: List<Int>,
   admin: ByteArray,
   last_updated: Int,
 }
