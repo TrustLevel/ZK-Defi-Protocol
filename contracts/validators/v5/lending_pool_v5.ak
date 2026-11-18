@@ -154,7 +154,9 @@ validator lending_pool_v5 {
           proof_ok?,
           append_ok?,
           outstanding?,
-          (repay_amount >= due)?,
+          // Fixed repayment: exactly principal + interest, so every repay tx
+          // carries the same amount (no per-borrower fingerprint).
+          (repay_amount == due)?,
           (out.open_loans == remove_loan(pool_datum.open_loans, loan_nullifier))?,
           same_used_nullifiers(pool_datum, out)?,
           (out.total_borrowed == pool_datum.total_borrowed - principal)?,

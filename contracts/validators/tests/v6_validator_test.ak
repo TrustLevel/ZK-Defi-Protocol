@@ -299,6 +299,34 @@ test repay_below_interest_fails() {
   )
 }
 
+test repay_overpay_fails() {
+  // Repayments are a fixed amount (exactly principal + interest), so every
+  // repay tx looks the same — an odd over-payment would fingerprint the borrower.
+  let loan = loan_null
+  let pd = pool_datum(loan_amt, [loan], old_repaid_root, 0, [loan])
+  let out = pool_datum(0, [], repaid_root, 1, [loan])
+  let repay = 10_700_000
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [pool_input(pd, 90_000_000)],
+      reference_inputs: [vk_ref_input(), avk_ref_input()],
+      outputs: [pool_out(out, 90_000_000 + repay)],
+    }
+  !lending_pool_v5.lending_pool_v5.spend(
+    Some(pd),
+    RepayAnonymous {
+      proof: proof(),
+      repay_amount: repay,
+      loan_nullifier: loan_null,
+      repay_nullifier: repay_null,
+      append_proof: append_proof(),
+    },
+    pool_oref,
+    tx,
+  )
+}
+
 test repay_bogus_append_fails() {
   // The append proof attests old->new for repaid_root at next_index. If the out
   // datum claims a repaid_root the append proof does NOT attest, repay fails —
