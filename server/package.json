@@ -1,0 +1,23 @@
+{
+  "name": "@zk-defi/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "M4 backend: chain state for the web app, transaction evaluation and submission, relayer for borrow and unlock.",
+  "type": "module",
+  "scripts": {
+    "start": "node --env-file=../.env src/index.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@fastify/rate-limit": "^11.2.2",
+    "@meshsdk/core": "^1.9.1",
+    "@zk-defi/protocol": "file:../packages/protocol",
+    "fastify": "^5.12.8",
+    "ffjavascript": "^0.2.63",
+    "snarkjs": "^0.7.6"
+  },
+  "overrides": {
+    "libsodium-wrappers-sumo": "0.8.2",
+    "libsodium-sumo": "0.8.2"
+  }
+}
