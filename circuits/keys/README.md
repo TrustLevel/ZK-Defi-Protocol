@@ -1,57 +1,60 @@
 # ZK Circuit Keys (BLS12-381)
 
-Groth16 keys for `collateral_proof.circom`. Because the proof is verified
-**on-chain** by the Aiken validators, everything targets the **BLS12-381** curve
-(Cardano's on-chain pairing builtins) — not BN254.
+Groth16 keys for the protocol circuits. Because the proofs are verified **on-chain**
+by the Aiken validators, everything targets the **BLS12-381** curve (Cardano's
+on-chain pairing builtins), not BN254.
 
 ## Files
 
 | File | Committed | Purpose |
 |------|-----------|---------|
-| `verification_key.json` | yes | Public verification key. This is what the on-chain validator checks against (and what the deployed VKey reference UTxO holds). |
-| `collateral_proof_final.zkey` | yes — committed (~788 KB, via `!` negation in `.gitignore`) | Proving key, committed for turnkey testing so reviewers can reproduce proofs without a fresh setup. |
-| `pot12_final.ptau` | no — gitignored | BLS12-381 Powers of Tau. Regenerate locally. |
+| `collateral_semaphore_final.zkey` / `verification_key_semaphore.json` | yes | Borrow / repay circuit (6 public signals) |
+| `settlement_proof_final.zkey` / `verification_key_settlement.json` | yes | Unlock circuit (3 public signals) |
+| `append_proof_final.zkey` / `verification_key_append.json` | yes | Append circuit (4 public signals) |
+| `collateral_proof_final.zkey` / `verification_key.json` | yes | Legacy fixture circuit |
+| `pot14b_final.ptau` | no (gitignored) | BLS12-381 Powers of Tau (large enough for the 7,992-constraint borrow circuit) |
 
-> **Important:** the committed `verification_key.json` corresponds to a specific
-> proving key. If you run a fresh trusted setup you get a *new* key pair, whose
-> proofs will **not** verify against the committed `verification_key.json` or the
-> deployed contract. To reproduce proofs that match the deployment you need the
-> original `collateral_proof_final.zkey` (ask the maintainers, or commit it).
+The `verification_key_*.json` files are what the deployed vkey reference UTxOs hold.
+The proving keys are committed so testers can reproduce proofs that verify against the
+deployment without a fresh setup.
+
+> **Important:** a fresh trusted setup gives a *new* key pair whose proofs do **not**
+> verify against the committed verification keys or the deployed vkey UTxOs. After a
+> new setup, the vkeys must be parked again and a new pool initialised.
 
 ## Regenerate the keys
 
-The circuit is small (~1,100 constraints), so a power-12 BLS12-381 setup is enough.
+Example for the borrow circuit (7,992 constraints, so power 14). The other circuits
+work the same way with their own `.r1cs`.
 
 ```bash
-# Compile the circuit first (from circuits/):
-#   circom collateral_proof.circom --r1cs --prime bls12381 -l . -l node_modules
+# Compile first (from circuits/):
+#   circom collateral_semaphore.circom --r1cs --wasm --prime bls12381 -l . -l node_modules
 cd circuits/keys/
 SNARKJS="npx snarkjs"
 
-# 1. Powers of Tau — BLS12-381, phase 1
-$SNARKJS powersoftau new bls12-381 12 pot12_0000.ptau
-$SNARKJS powersoftau contribute pot12_0000.ptau pot12_0001.ptau --name="dev" -e="<random entropy>"
-$SNARKJS powersoftau prepare phase2 pot12_0001.ptau pot12_final.ptau
+# 1. Powers of Tau — BLS12-381, phase 1 (once)
+$SNARKJS powersoftau new bls12-381 14 pot14_0000.ptau
+$SNARKJS powersoftau contribute pot14_0000.ptau pot14_0001.ptau --name="dev" -e="<random entropy>"
+$SNARKJS powersoftau prepare phase2 pot14_0001.ptau pot14b_final.ptau
 
 # 2. Circuit-specific setup — phase 2
-$SNARKJS groth16 setup ../collateral_proof.r1cs pot12_final.ptau collateral_proof_0000.zkey
-$SNARKJS zkey contribute collateral_proof_0000.zkey collateral_proof_final.zkey --name="dev-phase2" -e="<random entropy>"
-$SNARKJS zkey export verificationkey collateral_proof_final.zkey verification_key.json
+$SNARKJS groth16 setup ../collateral_semaphore.r1cs pot14b_final.ptau sem_0000.zkey
+$SNARKJS zkey contribute sem_0000.zkey collateral_semaphore_final.zkey --name="dev-phase2" -e="<random entropy>"
+$SNARKJS zkey verify ../collateral_semaphore.r1cs pot14b_final.ptau collateral_semaphore_final.zkey
+$SNARKJS zkey export verificationkey collateral_semaphore_final.zkey verification_key_semaphore.json
 ```
 
-Verify the keys work:
-
-```bash
-cd .. && node tests/gate-bls12381.cjs      # 9/9 checks pass
-```
+Check the ptau curve: `groth16 setup` refuses a ptau of another curve
+(`r1cs curve does not match powers of tau ceremony curve`).
 
 ## Trusted-setup note
 
-The committed key pair was produced with a **single-contributor development
-ceremony** (fixed entropy) — acceptable for Preprod/testing, **not** for mainnet.
-For production run a real multi-party Powers-of-Tau ceremony (security holds as
-long as one participant is honest and destroys their toxic waste), or move to a
-setup-free proving system (PLONK / STARK).
+The committed key pairs come from a **single-contributor development ceremony**.
+That is acceptable for Preprod and testing, **not** for mainnet. For production, run a
+real multi-party Powers-of-Tau and phase-2 ceremony (security holds as long as one
+participant is honest and destroys their toxic waste), or move to a setup-free proving
+system (PLONK / STARK).
 
 ## References
 

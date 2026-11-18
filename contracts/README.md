@@ -1,75 +1,102 @@
 # On-Chain Contracts (v6 private model)
 
-Aiken validators for the ZK Private-Lending Protocol. Groth16 proofs (BLS12-381) are
-verified **on-chain** to authorize private borrowing, repayment and unlock — no owner
-or admin signature on any value-moving path. The proof *is* the authorization.
+Aiken scripts for the ZK Private-Lending Protocol. Groth16 proofs (BLS12-381) are
+verified **on-chain** to authorize private deposits, borrowing, repayment and unlock.
+There is no admin and no signature on any path: the proof *is* the authorization.
 
 ## Build & test
 
 ```sh
-aiken build     # compile validators -> plutus.json
-aiken check     # on-chain proof + adversarial tests (17/17, 0 warnings)
+aiken build     # compile -> plutus.json
+aiken check     # on-chain proof + adversarial tests (49/49, 0 warnings)
 ```
 
-## Validators
+## Scripts
 
-Two spend validators live in `validators/v5/`.
+Three scripts live in `validators/v5/`, linked by their parameters:
 
-**`lending_pool_v5`** — the shared liquidity pool. Redeemer `PoolRedeemerV5`:
+```
+pool_nft(seed) -> collateral_v5(pool_nft_policy, settlement_vkey_ref)
+               -> lending_pool_v5(pool_nft_policy, collateral_hash, vkey_ref, append_vkey_ref)
+```
 
-- `Deposit` — anyone may add liquidity (pool value must increase; datum continues).
-- `SetGroupRoot { new_root }` — admin-only: publishes the Merkle root of the deposit
-  commitment set (the deposit anonymity set is admin-curated for M3). Moves no value.
-- `BorrowAnonymous { proof, loan_amount, loan_nullifier }` — verifies a membership proof
-  on-chain (`[group_root, nullifier, loan, ratio, ext]`); no collateral UTxO is
-  referenced (deposit↔borrow unlinkable); records the nullifier; releases the loan.
-- `RepayAnonymous { proof, repay_amount, loan_nullifier, repay_nullifier, append_proof }`
-  — re-attests membership, pays principal + interest, removes the nullifier, and
-  **self-appends** the repayment nullifier `R` into `repaid_root` via an on-chain append
-  proof (permissionless — no admin).
+**`pool_nft`** — one-shot minting policy. It mints exactly one token named `POOL`, and
+only in the transaction that spends the `seed` UTxO, so exactly one pool NFT can ever
+exist. It can never be burned. The pool UTxO carries it.
+
+**`lending_pool_v5`** — the shared pool. It spends only the input holding the pool NFT
+and finds the continuing output by the NFT at the same address. Redeemer
+`PoolRedeemerV5`:
+
+- `AddLiquidity` — anyone may add liquidity (pool value increases; sets and config frozen).
+- `DepositCollateral { commitment, append_proof }` — the tx pays exactly
+  `collateral_denomination` with `DepositDatumV5 { commitment, … }` to the collateral
+  script, and the append proof inserts `commitment` into `group_root` at
+  `group_next_index`. Permissionless; the pool value is unchanged.
+- `BorrowAnonymous { proof, loan_amount, loan_nullifier, recipient }` — verifies a
+  membership proof on-chain (`[group_root, nullifier, loan, ratio, ext, recipient]`).
+  No collateral UTxO is referenced (deposit ↔ borrow unlinkable). It requires the
+  nullifier never to have been used, the fixed loan denomination, and a collateral
+  denomination that covers it. It records the nullifier in `open_loans` and
+  `used_nullifiers`, and pays the loan to `recipient` (output tagged with the nullifier).
+- `RepayAnonymous { proof, recipient, repay_amount, loan_nullifier, repay_nullifier, append_proof }`
+  — re-attests membership, pays exactly principal + interest, removes the nullifier
+  from `open_loans`, and **self-appends** the repayment nullifier `R` into
+  `repaid_root` via an on-chain append proof.
 
 Datum `PoolDatumV5 { total_deposited, total_borrowed, interest_rate, collateral_ratio,
-vkey_ref, settlement_vkey_ref, append_vkey_ref, group_root, repaid_root, next_index,
-external_nullifier, repay_external_nullifier, loan_denomination, open_loans, admin,
-last_updated }`.
+group_root, group_next_index, repaid_root, next_index, external_nullifier,
+repay_external_nullifier, collateral_denomination, loan_denomination, open_loans,
+used_nullifiers, last_updated }`.
 
-**`collateral_v5`** (parameterised by the pool script hash) — holds one user deposit and
-its Poseidon commitment. Redeemer `CollateralRedeemerV5`:
+**`collateral_v5`** — holds one deposit and its Poseidon commitment. Redeemer
+`CollateralRedeemerV5`:
 
-- `UnlockDeposit { proof, pool_ref }` — unlock via a **settlement proof**: binds the
-  spent commitment and proves membership of the private `R` in the pool's `repaid_root`
-  (read from `pool_ref`). No signature, and no value shared with the borrow.
+- `UnlockDeposit { proof, pool_ref }` — unlock via a **settlement proof**. It binds the
+  spent commitment and proves membership of the private `R` in the `repaid_root` of
+  the pool reference input, which must carry the pool NFT. The collateral is paid to
+  the deposit's `unlock_to` address, in an output tagged with the deposit's reference.
+  No signature, and no value shared with the borrow.
 
-Datum `DepositDatumV5 { commitment, timestamp }` — `commitment` is a BLS12-381 field
-element (Poseidon255 of amount + secret) stored as an `Int`. No owner, no on-chain amount.
+Datum `DepositDatumV5 { commitment, timestamp, unlock_to }`. `commitment` is a
+BLS12-381 field element (Poseidon255 of amount + secret) stored as an `Int`; there is
+no on-chain amount.
 
-Shared modules in `lib/`: `types_v5.ak` (datum/redeemer types), `zk.ak`
-(`verify_borrow_proof` / `verify_settlement_proof` / `verify_append_proof` + `get_vkey`),
-and the generated on-chain fixtures `semaphore_onchain_test.ak` / `zk_onchain_test.ak`.
+Shared modules in `lib/`:
+- `types_v5.ak` — datum and redeemer types, `pool_nft_name`
+- `zk.ak` — `verify_borrow_proof`, `verify_settlement_proof`, `verify_append_proof`, `get_vkey`
+- `semaphore_onchain_test.ak`, `zk_onchain_test.ak` — the generated on-chain fixtures
+
+Tests in `validators/tests/` (`v6_validator_test.ak`, `pool_nft_test.ak`).
 
 ## How on-chain verification works
 
-- The three verification keys are parked once as inline datums on an unspendable
-  reference UTxO and pinned in the pool datum (`vkey_ref`, `settlement_vkey_ref`,
-  `append_vkey_ref`); the validator reads them via read-only reference inputs.
-- Public signals are reconstructed from **trusted on-chain state** (the pool datum) and
-  redeemer-supplied values are cross-checked against the loan set, the pool value delta,
-  and (on repay) the append proof — a spender cannot feed the verifier convenient inputs.
-- Verification calls `groth_verify(vkey, proof, public)` from
-  [`modulo-p/ak-381`](https://github.com/modulo-p/ak-381). No `extra_signatories` check on
-  borrow / repay / unlock; the admin signs only `SetGroupRoot`.
+- **Verification keys.** The three keys are parked once as inline datums on an
+  unspendable reference UTxO. Their references are **script parameters**, and the
+  validators read them via read-only reference inputs.
+- **Trusted public signals.** Public signals are reconstructed from trusted on-chain
+  state: the NFT-bearing pool datum. Redeemer-supplied values are cross-checked against
+  the nullifier sets, the fixed amounts, the pool value delta, the append proofs and
+  the payout outputs. A spender cannot feed the verifier convenient inputs.
+- **Verifier.** `groth_verify(vkey, proof, public)` from
+  [`modulo-p/ak-381`](https://github.com/modulo-p/ak-381). No `extra_signatories`
+  check anywhere.
 
 See [`../circuits/`](../circuits/) for the three circuits (borrow membership, settlement,
 append) and [`../docs/MILESTONE3.md`](../docs/MILESTONE3.md) for the full design.
 
 ## Deployed (Preprod)
 
-| Validator | Script hash |
+| Script | Hash |
 |-----------|-------------|
-| `lending_pool_v5` | `75317267a9fa7d8fcb09c62d371bcf8160c7991eba6637c221f22ff2` |
-| `collateral_v5`   | `f2813e76cfb431d80ad5a50682e16d64524c6c3372b6bee4800f881d` |
+| `pool_nft` | `586a933cb6c1ece99d373e106ff38b4c430d0e606541c8635c0cf049` |
+| `lending_pool_v5` | `d99ee5039b3b4c3792358482404bffc24e7194cf21c7c30028e01ba7` |
+| `collateral_v5`   | `0fb3482637d024566f70fc43ed09a6178a545fa281e55e72082c44fe` |
 
-A full deposit → borrow → repay → unlock cycle is confirmed live on Preprod — see
+The applied hashes are derived with Mesh `applyParamsToScript`
+(`offchain/cli/v5/common.mjs`, `deriveScripts`). `aiken blueprint apply` re-optimises
+the applied program and yields different (equivalent) hashes. A full deposit →
+borrow → repay → unlock cycle is confirmed live on Preprod; see
 [`../docs/MILESTONE3-EVIDENCE.md`](../docs/MILESTONE3-EVIDENCE.md).
 
 ## Implementation note

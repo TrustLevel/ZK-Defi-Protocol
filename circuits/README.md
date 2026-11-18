@@ -1,27 +1,21 @@
-# ZK Circuit — Collateral Proof (BLS12-381)
+# ZK Circuits (BLS12-381)
 
-Groth16 circuit for private borrowing. The proof is verified **on-chain** by the
-Aiken v5 validators (see [`../contracts/`](../contracts/)), so it targets the
-**BLS12-381** scalar field.
+Groth16 circuits for private lending. The proofs are verified **on-chain** by the
+Aiken validators (see [`../contracts/`](../contracts/)), so everything targets the
+**BLS12-381** scalar field, and all circuits hash with Poseidon255
+(`lib/poseidon255.circom`, from `poseidon-bls12381-circom`).
 
-## What it proves
+## Circuits
 
-For a hidden `secret` and `collateral_amount`, the borrower proves:
+| Circuit | Used by | Public signals | Proves |
+|---|---|---|---|
+| `collateral_semaphore.circom` | Borrow, Repay | `[group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier, recipient]` | The commitment `Poseidon255(collateral_amount, secret)` is a member of the commitment set (depth 10); `loan_nullifier = Poseidon255(secret, external_nullifier)`; `collateral_amount·100 ≥ loan_amount·collateral_ratio`; range checks; the proof is bound to `recipient` (payout key hash as an integer, constrained via `recipient²`). |
+| `settlement_proof.circom` | Unlock | `[commitment, repaid_root, repay_external_nullifier]` | Knowledge of the secret behind `commitment`, and membership of the private `R = Poseidon255(secret, repay_external_nullifier)` in the repaid set (depth 10). |
+| `append_proof.circom` | Deposit, Repay | `[old_root, new_root, leaf, index]` | `leaf` was inserted at the empty position `index`, taking the root from `old_root` to `new_root` (depth 10). |
+| `collateral_proof.circom` | none (legacy fixture) | `[commitment, loan_amount, collateral_ratio]` | Commitment opening + sufficiency; kept for the `zk_onchain_test` fixture. |
 
-1. `commitment == Poseidon255(collateral_amount, secret)`
-2. `collateral_amount * 100 >= loan_amount * collateral_ratio`
-3. the inputs are range-bounded (no field overflow)
-
-- **Public inputs** (learned by the verifier): `commitment`, `loan_amount`, `collateral_ratio`
-- **Private inputs** (witness): `secret`, `collateral_amount`
-
-The proof reveals nothing about the `secret` — a private witness that never touches the chain. Poseidon over
-BLS12-381 comes from `lib/poseidon255.circom` (from `poseidon-bls12381-circom`);
-the comparators/range-checks come from circomlib.
-
-**Size / performance:** ~1,100 constraints; proof generation ~0.4–0.7 s; on-chain
-verification is well within Plutus V3 limits (exact ExUnits in
-[`../docs/MILESTONE3-TEST-RESULTS.md`](../docs/MILESTONE3-TEST-RESULTS.md)).
+Private inputs (`secret`, `collateral_amount`, Merkle paths) never touch the chain.
+The borrow circuit has 7,992 constraints.
 
 ## Prerequisites
 
@@ -31,46 +25,44 @@ verification is well within Plutus V3 limits (exact ExUnits in
 ## Compile
 
 ```bash
-circom collateral_proof.circom --r1cs --wasm --sym --prime bls12381 -l . -l node_modules
+circom collateral_semaphore.circom --r1cs --wasm --prime bls12381 -l . -l node_modules
+circom settlement_proof.circom     --r1cs --wasm --prime bls12381 -l . -l node_modules
+circom append_proof.circom         --r1cs --wasm --prime bls12381 -l . -l node_modules
 ```
 
-This produces `collateral_proof.r1cs` and `collateral_proof_js/collateral_proof.wasm`
-(both gitignored).
+The `*_js/*.wasm` witness generators are committed; the `.r1cs` files are not.
 
 ## Keys
 
-`keys/verification_key.json` is committed; the proving key and Powers-of-Tau file
-are gitignored. See [`keys/README.md`](keys/README.md) to regenerate them (and an
-important note: a fresh setup produces a new key pair that will not match the
-committed verification key / deployment).
+The proving keys (`keys/*_final.zkey`) and verification keys
+(`keys/verification_key_*.json`) are committed for turnkey reproduction. See
+[`keys/README.md`](keys/README.md) to regenerate them. A fresh setup produces new keys
+that do not match the deployed vkey UTxOs.
 
 ## Test
 
 ```bash
-npm test        # -> node tests/gate-bls12381.cjs  ->  9/9 checks pass
+node tests/gen-semaphore-fixture.cjs   # real proofs for all circuits -> ../contracts/lib/semaphore_onchain_test.ak
+cd ../contracts && aiken check         # verifies them on-chain (+ tampered signals)
+cd ../offchain/cli && node v5/test-semaphore-proof.mjs   # borrow proof + tampered loan / recipient
 ```
-
-The gate proves a valid case, checks the three public signals + the BLS12-381
-curve + determinism, and confirms that a tampered public signal fails and an
-under-collateralized input is rejected. `tests/gen-onchain-fixture.cjs`
-regenerates the Aiken on-chain proof fixture (`../contracts/lib/zk_onchain_test.ak`).
-
-> The gate reads the compiled `collateral_proof_js/collateral_proof.wasm` and
-> `keys/collateral_proof_final.zkey`, both gitignored — compile the circuit and
-> regenerate the keys first (or obtain the committed artifacts from the maintainers).
 
 ## Layout
 
 ```
-collateral_proof.circom        circuit source
-lib/poseidon255*.circom        BLS12-381 Poseidon (committed)
-keys/verification_key.json     committed vkey (proving key + ptau gitignored)
-tests/                         gate test + on-chain fixture generator
+collateral_semaphore.circom    borrow / repay circuit
+settlement_proof.circom        unlock circuit
+append_proof.circom            append circuit (commitment set + repaid set)
+collateral_proof.circom        legacy circuit (fixture only)
+*_js/                          compiled witness generators (wasm)
+lib/poseidon255*.circom        BLS12-381 Poseidon
+keys/                          proving + verification keys
+tests/                         fixture generators + gate test
 ```
 
 ## Security
 
-Groth16 requires a trusted setup; the committed keys use a dev-only
+Groth16 requires a trusted setup. The committed keys come from a dev-only
 single-contributor ceremony (see [`keys/README.md`](keys/README.md)) and are not
 suitable for mainnet. A professional circuit audit is recommended before mainnet.
 
