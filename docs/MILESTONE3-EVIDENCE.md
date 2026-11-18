@@ -105,5 +105,5 @@ Economics: pool 100 → 90 → 100.5 ADA; collateral (20 ADA) released to the de
 
 ## Immutable evidence
 
-This POA corresponds to the stand tagged **`m3-poa-v5`**. Cite the tagged tree, not
+This POA corresponds to the stand tagged **`m3-poa-v5.1`**. Cite the tagged tree, not
 `main`.
