@@ -16,14 +16,17 @@ include "./lib/poseidon255.circom";
  *      witness and the on-chain UTxO uses a fixed denomination);
  *   3. a loan nullifier derived from the same secret, scoped to a loan context
  *      (external_nullifier), preventing the same collateral from backing two
- *      loans and gating unlock on repayment.
+ *      loans and gating unlock on repayment;
+ *   4. the proof is bound to a `recipient` (the payout key hash, as an integer):
+ *      the validator pays the loan only to that key, so a proof copied from the
+ *      mempool cannot redirect the loan (front-running).
  *
  * BLS12-381 / Poseidon255 (poseidon-bls12381), so the in-circuit and on-chain
  * commitment hash are identical. Compile with:  circom --prime bls12381 -l .
  *
  * Public signals (order is load-bearing — mirrored in contracts/lib/zk.ak and
  * offchain/cli/v5/common.mjs):
- *   [ group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier ]
+ *   [ group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier, recipient ]
  * Private witness:
  *   secret, collateral_amount, pathIndices[depth], siblings[depth]
  */
@@ -68,6 +71,7 @@ template CollateralSemaphore(depth) {
     signal input loan_amount;
     signal input collateral_ratio;
     signal input external_nullifier;
+    signal input recipient;
 
     // ---- private witness ----
     signal input secret;
@@ -115,8 +119,14 @@ template CollateralSemaphore(depth) {
     rc_secret.in <== secret;
     component rc_ratio = Num2Bits(16);
     rc_ratio.in <== collateral_ratio;
+
+    // 6. Recipient binding. A public input that no constraint uses could be
+    //    changed without invalidating the proof; squaring it puts it into the
+    //    constraint system (as Tornado Cash does for its recipient).
+    signal recipient_sq;
+    recipient_sq <== recipient * recipient;
 }
 
 component main {
-    public [group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier]
+    public [group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier, recipient]
 } = CollateralSemaphore(10);
