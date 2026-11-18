@@ -1,0 +1,36 @@
+// CIP-30 browser wallet (Eternl, Lace, …) via Mesh's BrowserWallet. One
+// connection is one account; the user switches accounts in the wallet and the
+// app reconnects to read the new one.
+import { BrowserWallet, deserializeAddress } from "@meshsdk/core";
+
+export async function availableWallets() {
+  return BrowserWallet.getAvailableWallets();
+}
+
+function keyHashOf(address) {
+  try {
+    return deserializeAddress(address).pubKeyHash || null;
+  } catch {
+    return null;
+  }
+}
+
+// Connect (or reconnect after an account switch) and describe the account.
+export async function connectWallet(name) {
+  const wallet = await BrowserWallet.enable(name);
+  if ((await wallet.getNetworkId()) !== 0) throw new Error("Switch your wallet to a testnet (Preprod).");
+  const address = await wallet.getChangeAddress();
+  const used = await wallet.getUsedAddresses();
+  const keyHashes = [...new Set([address, ...used].map(keyHashOf).filter(Boolean))];
+  return { name, wallet, address, keyHashes };
+}
+
+// What a transaction builder needs from the account: its UTxOs and, if the
+// wallet designates one, its collateral.
+export async function payerOf(account) {
+  const utxos = await account.wallet.getUtxos();
+  const collateral = (await account.wallet.getCollateral())[0];
+  return { address: account.address, utxos, ...(collateral ? { collateral } : {}) };
+}
+
+export const shortAddress = (a) => (a ? `${a.slice(0, 12)}…${a.slice(-6)}` : "");
