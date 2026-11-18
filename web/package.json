@@ -1,0 +1,29 @@
+{
+  "name": "@zk-defi/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "M4 web app: private lending on Cardano with in-browser zk-SNARK proofs.",
+  "scripts": {
+    "circuits": "node scripts/copy-circuits.mjs",
+    "dev": "npm run circuits && next dev -p 3100",
+    "build": "npm run circuits && next build",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@meshsdk/core": "^1.9.1",
+    "@zk-defi/protocol": "file:../packages/protocol",
+    "ffjavascript": "^0.2.63",
+    "next": "15.5.22",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "snarkjs": "^0.7.6"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "tailwindcss": "^4"
+  },
+  "overrides": {
+    "libsodium-wrappers-sumo": "0.8.2",
+    "libsodium-sumo": "0.8.2"
+  }
+}

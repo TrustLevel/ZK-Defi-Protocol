@@ -105,15 +105,17 @@ the append proof used by deposit and repay). Circuit `.wasm` and `.zkey` files
 (1–8 MB each) are loaded on demand and cached. Proving runs in a Web Worker so the page
 stays responsive, and each proof is verified locally before the transaction is built.
 
-Measured in Chrome on a laptop (8 cores), including the local verification:
+Measured with the app's browser check (`/check`) in Chrome on a laptop (8 cores),
+witness + proving + local verification, files cached:
 
 | Proof | Time |
 |---|---|
-| Append (deposit) | 6.3 s |
-| Borrow | 3.4 s |
-| Repay | 3.9 s |
-| Append (repay) | 5.2 s |
-| Settlement (unlock) | 3.5 s |
+| Append (deposit, repay) | 1.4 s |
+| Borrow | 0.7 s |
+| Repay | 1.0 s |
+| Settlement (unlock) | 0.8 s |
+
+The page stays responsive while proving.
 
 ### 3.4 Server
 
