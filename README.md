@@ -1,10 +1,10 @@
 # ZK Private-Lending Protocol
 
-A zero-knowledge lending/borrowing protocol on Cardano. Each loan, repayment and
-collateral unlock is authorized by a Groth16 zk-SNARK proof verified **on-chain** by
-Aiken validators — the borrower proves, in zero knowledge, that they know the secret
-behind a sufficiently-collateralized deposit, **without exposing that secret** and
-without a signature.
+A zero-knowledge lending/borrowing protocol on Cardano. Each deposit, loan, repayment
+and collateral unlock is authorized by a Groth16 zk-SNARK proof verified **on-chain**
+by Aiken validators. The borrower proves, in zero knowledge, that they know the secret
+behind a sufficiently-collateralized deposit, **without exposing that secret**, and
+there is no admin and no signature on any path.
 
 ## Milestone 3 status
 
@@ -12,7 +12,7 @@ Milestone 3 is **complete and live on Cardano Preprod**:
 
 - On-chain Groth16 (BLS12-381) verification working inside the Aiken validators.
 - The full lifecycle runs end-to-end on Preprod:
-  **park verification keys → init pool → deposit → set group root → borrow → repay → unlock**.
+  **park verification keys → init pool (mint pool NFT) → deposit → borrow → repay → unlock**.
 
 Evidence and details:
 
@@ -21,43 +21,48 @@ Evidence and details:
 - [docs/MILESTONE3-TEST-RESULTS.md](docs/MILESTONE3-TEST-RESULTS.md)
 - [docs/Tester-Feedback/](docs/Tester-Feedback/)
 
-### Deployed validators (Preprod)
+### Deployed scripts (Preprod)
 
-| Validator | Script hash |
+| Script | Hash |
 |-----------|-------------|
-| `lending_pool_v5` | `75317267a9fa7d8fcb09c62d371bcf8160c7991eba6637c221f22ff2` |
-| `collateral_v5`   | `f2813e76cfb431d80ad5a50682e16d64524c6c3372b6bee4800f881d` |
+| `pool_nft` (minting policy) | `586a933cb6c1ece99d373e106ff38b4c430d0e606541c8635c0cf049` |
+| `lending_pool_v5` | `d99ee5039b3b4c3792358482404bffc24e7194cf21c7c30028e01ba7` |
+| `collateral_v5`   | `0fb3482637d024566f70fc43ed09a6178a545fa281e55e72082c44fe` |
 
 ### On-chain transactions (Cardanoscan, Preprod) — all `valid_contract: true`
 
 | Step | Transaction |
 |------|-------------|
-| Park verification keys | [880446043ab5…](https://preprod.cardanoscan.io/transaction/880446043ab5345038b03f31705082d8dbeb8b5929a31bfe92bbeae9caddc211) |
-| Init pool | [9aa40d4f1364…](https://preprod.cardanoscan.io/transaction/9aa40d4f1364fe47bf71df256bc5f0b062cb32284491635fc24ef4c1fd09332c) |
-| Deposit collateral | [fd6ace7bd7dc…](https://preprod.cardanoscan.io/transaction/fd6ace7bd7dcf3e436611fabcfa5dcd087f29f70aa6327624e1ecff3917900b5) |
-| Set group root (admin) | [9737b260bd2f…](https://preprod.cardanoscan.io/transaction/9737b260bd2fcf0a4bfd583a9e7e5096f0c9e5c077a459b55525aa8b3252de02) |
-| Borrow (ZK membership proof verified on-chain) | [8bc3d205f67e…](https://preprod.cardanoscan.io/transaction/8bc3d205f67eaa6d965e2f59e24210abba4251bbba2ae31e96f13507b5fc45b9) |
-| Repay (self-appends R to repaid set) | [f8756c92addb…](https://preprod.cardanoscan.io/transaction/f8756c92addb71fae26c6bdf160be3028266825199b5acf53d202bd89d316a38) |
-| Unlock collateral (settlement proof) | [43f4339ea8aa…](https://preprod.cardanoscan.io/transaction/43f4339ea8aac1d34bb14581e02aaabcc3f2e23ce15dd2f1c30118a805f02521) |
+| Park verification keys | [3e018c9063f1…](https://preprod.cardanoscan.io/transaction/3e018c9063f1c37954079b79285be7bd534efb12dc98f77ad025dffc28790316) |
+| Init pool + mint pool NFT | [5702c1512ad0…](https://preprod.cardanoscan.io/transaction/5702c1512ad0cf4b19009da3995d21675df6b9920ed047af9631382713ac0d30) |
+| Deposit collateral (append proof into the commitment set) | [7fa28e7d56fd…](https://preprod.cardanoscan.io/transaction/7fa28e7d56fd7e6060f97d6b9504a7da7dc35bebb5a275e902f5b3b794e6f556) |
+| Borrow (ZK membership proof verified on-chain, recipient-bound) | [d16503550d1c…](https://preprod.cardanoscan.io/transaction/d16503550d1c822f5a6adaa832c69db4c4f0abfdb0eab1676e4635e89eb2a501) |
+| Repay (self-appends R to repaid set) | [8fafa79d6bc4…](https://preprod.cardanoscan.io/transaction/8fafa79d6bc47e6ce215704a5690bae18efcf89c59d3abc1bf8b4110021ea983) |
+| Unlock collateral (settlement proof) | [046baceaccbe…](https://preprod.cardanoscan.io/transaction/046baceaccbe8a7ac9e426655a5cfe5b997fd0ddc430cc6c5033f99e5f021b4a) |
 
 ## How it works
 
-1. **Deposit** — the borrower locks collateral and records a Poseidon
-   commitment `commitment = Poseidon255(collateral_amount, secret)`. The commitment
-   joins an on-chain anonymity set (a Merkle root).
+0. **Init** — the pool is created together with a one-shot NFT; the validators
+   recognise the real pool by it.
+1. **Deposit** — the depositor locks exactly one collateral unit (20 ADA) through the
+   pool with a Poseidon commitment `commitment = Poseidon255(collateral_amount, secret)`
+   and a ZK append proof that inserts it into the on-chain anonymity set (a Merkle
+   root). Permissionless, no admin.
 2. **Borrow** — the borrower generates a Groth16 proof that their commitment is a
    **member** of the set and is sufficiently collateralized
    (`collateral_amount·100 ≥ loan_amount·collateral_ratio`) — without revealing which
-   deposit it is. The lending-pool validator verifies the proof on-chain and releases
-   the loan. Public signals: `[group_root, loan_nullifier, loan_amount, collateral_ratio,
-   external_nullifier]`.
-3. **Repay** — the borrower repays principal + interest, settles the loan nullifier, and
+   deposit it is. The lending-pool validator verifies the proof on-chain and pays the
+   fixed loan to the recipient key the proof is bound to. Each deposit backs exactly
+   one loan. Public signals: `[group_root, loan_nullifier, loan_amount,
+   collateral_ratio, external_nullifier, recipient]`.
+3. **Repay** — the borrower repays exactly principal + interest, settles the loan nullifier, and
    self-appends a distinct repayment nullifier `R` into an append-only repaid set (a ZK
    append proof — permissionless, no admin).
 4. **Unlock** — the borrower proves, in zero knowledge, membership of the private `R` in
    the repaid set (settlement proof). Its public signals `[commitment, repaid_root,
    repay_external_nullifier]` share nothing with the borrow, so borrow ↔ unlock cannot be
-   linked. The secret is never revealed on any path.
+   linked. The collateral is paid to the address fixed at deposit. The secret is never
+   revealed on any path.
 
 ## Tech stack
 
@@ -70,10 +75,10 @@ Evidence and details:
 ## Repository layout
 
 ```
-circuits/            circom circuit + proving/verification keys + gate tests
-contracts/           Aiken v5 validators, on-chain ZK verification + tests
+circuits/            circom circuits + proving/verification keys + fixture/gate tests
+contracts/           Aiken validators (pool NFT, pool, collateral), on-chain ZK verification + tests
 offchain/cli/v5/     Mesh scripts driving the full Preprod lifecycle
-docs/                Milestone 3 evidence and tester-feedback template
+docs/                Milestone 3 documentation, evidence, tester reports
 ```
 
 ## Build & test
@@ -83,17 +88,16 @@ Node.js 18+, and (to recompile circuits) circom + snarkjs.
 
 ```bash
 # On-chain: compile validators and run the ZK on-chain tests
-cd contracts && aiken build && aiken check      # 2/2 tests pass
+cd contracts && aiken build && aiken check      # 49/49 tests pass
 
-# Circuits: end-to-end Groth16 proof gate
-node circuits/tests/gate-bls12381.cjs           # 9/9 checks pass
+# Borrow circuit: proof + tampered-signal checks
+cd offchain/cli && node v5/test-semaphore-proof.mjs
 ```
 
-> The proving key (`circuits/keys/collateral_proof_final.zkey`, ~788 KB) **is
-> committed** for turnkey testing (via a `!` negation in `.gitignore`); the large
-> Powers-of-Tau file is gitignored — see `circuits/keys/README.md` to regenerate
-> it. The committed `verification_key.json` is what the on-chain validators check
-> against and must correspond to the committed `.zkey`.
+> The proving keys (`circuits/keys/*_final.zkey`) **are committed** for turnkey
+> testing, together with the `verification_key_*.json` files the deployed vkey UTxOs
+> hold. A fresh trusted setup produces new keys whose proofs do not verify against
+> the deployed ones — see `circuits/keys/README.md`.
 
 ## Run the protocol (Preprod)
 
@@ -102,13 +106,17 @@ cd offchain
 cp ../.env.example ../.env      # then fill in your Blockfrost key + wallet seed
 npm install
 
-node cli/v5/1-park-vkey.mjs     # park the verification key
-node cli/v5/2-init-pool.mjs     # initialize the lending pool
-node cli/v5/3-deposit.mjs       # deposit collateral
+node cli/v5/1-park-vkey.mjs     # park the three verification keys
+node cli/v5/2-init-pool.mjs     # initialize the pool + mint the pool NFT
+node cli/v5/3-deposit.mjs       # deposit collateral through the pool
 node cli/v5/4-borrow.mjs        # borrow (ZK proof verified on-chain)
 node cli/v5/5-repay.mjs         # repay the loan
 node cli/v5/6-unlock.mjs        # unlock the collateral
+# between steps: node cli/v5/wait.mjs <txHash>
 ```
 
-Each step reads `PREPROD_BLOCKFROST_API_KEY` and `ADMIN_WALLET_SEED` from `.env`
-and writes a receipt (with the tx hash) under `offchain/cli/v5/receipts/`.
+Each step reads `PREPROD_BLOCKFROST_API_KEY` and `ADMIN_WALLET_SEED` (the wallet seed)
+from `.env` and writes a receipt (with the tx hash) under `offchain/cli/v5/receipts/`;
+`2-init-pool` writes `deployment.json`, from which every later step derives the
+scripts. Optional: `RECIPIENT_ADDRESS` (loan payout) and `UNLOCK_TO_ADDRESS`
+(collateral payout) — key addresses, default the wallet.
