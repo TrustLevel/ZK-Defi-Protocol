@@ -40,6 +40,8 @@ export async function getState() {
     deployment: s.deployment,
     pool: { utxo: s.pool.utxo, datum },
     leaves: { commitments: s.leaves.commitments.map(BigInt), repaid: s.leaves.repaid.map(BigInt) },
+    // unspent deposits as "txHash#index"
+    deposits: new Set(s.deposits),
     indexedAt: s.indexedAt,
   };
 }

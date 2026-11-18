@@ -8,6 +8,7 @@ const snapshot = {
   at: 1,
   pool: { utxo: { input: { txHash: "ab", outputIndex: 0 } }, datum: { group_root: 2n ** 254n, open_loans: [5n] } },
   leaves: { commitments: [7n], repaid: [] },
+  deposits: [`${"cd".repeat(32)}#1`],
 };
 const okChain = { state: async () => snapshot };
 const txService = { evaluate: async () => [{ index: 0, budget: { mem: 1n, steps: 2n } }], submit: async () => "cafe" };
@@ -20,6 +21,7 @@ test("GET /api/state returns pool and leaves with integers as strings", async ()
   assert.equal(body.pool.datum.group_root, (2n ** 254n).toString());
   assert.deepEqual(body.pool.datum.open_loans, ["5"]);
   assert.deepEqual(body.leaves.commitments, ["7"]);
+  assert.deepEqual(body.deposits, [`${"cd".repeat(32)}#1`]);
   assert.equal(body.deployment.poolAddress, "addr_pool");
 });
 

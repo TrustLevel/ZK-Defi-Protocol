@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "M4 web app: private lending on Cardano with in-browser zk-SNARK proofs.",
+  "type": "module",
   "scripts": {
     "circuits": "node scripts/copy-circuits.mjs",
     "dev": "npm run circuits && next dev -p 3100",

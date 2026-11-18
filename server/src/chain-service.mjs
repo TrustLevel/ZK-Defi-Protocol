@@ -38,8 +38,12 @@ export function createChainService({ provider, bf, S, maxAgeMs = 10_000 }) {
       // The pool moved further than the history Blockfrost has indexed.
       throw new IndexLagError();
     }
+    // Deposits still locked at the collateral script (a note whose deposit is
+    // gone from here, after its repayment, has been unlocked).
+    const deposits = (await provider.fetchAddressUTxOs(S.COLLATERAL_ADDRESS))
+      .map((u) => `${u.input.txHash}#${u.input.outputIndex}`);
     snapshot = {
-      ref, pool, at: Date.now(),
+      ref, pool, deposits, at: Date.now(),
       leaves: { commitments: [...leaves.commitments], repaid: [...leaves.repaid] },
     };
     return snapshot;
