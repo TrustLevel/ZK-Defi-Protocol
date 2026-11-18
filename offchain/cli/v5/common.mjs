@@ -160,6 +160,26 @@ export function loadScripts() {
   return deriveScripts(dep.seed, dep.vkeys);
 }
 
+// The live pool UTxO: the one at the pool address that carries the pool NFT.
+export async function fetchPool(provider, S) {
+  const utxos = await provider.fetchAddressUTxOs(S.POOL_ADDRESS);
+  const pool = utxos.filter((u) => u.output.amount.some((a) => a.unit === S.POOL_NFT_UNIT && a.quantity === "1"));
+  if (pool.length !== 1) throw new Error(`expected exactly one pool UTxO with the NFT, found ${pool.length}`);
+  const utxo = pool[0];
+  const lovelace = Number(utxo.output.amount.find((a) => a.unit === "lovelace").quantity);
+  return { utxo, lovelace };
+}
+// Value of the continuing pool output: lovelace + the pool NFT.
+export function poolAmount(S, lovelace) {
+  return [{ unit: "lovelace", quantity: String(lovelace) }, { unit: S.POOL_NFT_UNIT, quantity: "1" }];
+}
+// A pure-ADA wallet UTxO (>= 5 ADA) to post as script collateral.
+export function pickCollateral(utxos) {
+  const c = utxos.find((u) => u.output.amount.length === 1 && Number(u.output.amount[0].quantity) >= 5_000_000);
+  if (!c) throw new Error("no pure-ADA UTxO >= 5 ADA for collateral");
+  return c;
+}
+
 // always-false park for VKey UTxOs (read-only reference inputs only).
 export const ALWAYS_FALSE_ADDRESS =
   "addr_test1wzl94ddu5xplr7p8f55ldtxjvw6cqqsh57jkj4vndwthtkgdw2fq8";
