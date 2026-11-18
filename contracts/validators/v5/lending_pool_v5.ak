@@ -9,25 +9,33 @@
 //// so a deposit backs exactly one loan over its lifetime. In the SAME repay tx the borrower
 //// inserts their repayment nullifier R into the append-only `repaid_root` via a
 //// zero-knowledge append proof — PERMISSIONLESSLY, no admin — which is what lets
-//// them later prove settlement (in ZK) at unlock. `group_root` (the deposit
-//// anonymity set) stays admin-curated via SetGroupRoot.
+//// them later prove settlement (in ZK) at unlock.
+////
+//// Collateral enters through the pool too (DepositCollateral): the tx must pay
+//// exactly `collateral_denomination` with the commitment to the collateral
+//// script, and an append proof inserts the commitment into `group_root`. So the
+//// deposit anonymity set grows PERMISSIONLESSLY and only from real deposits —
+//// there is no admin and no signature on any path.
 ////
 //// The pool is the UTxO that carries the one-shot pool NFT: the validator only
 //// spends an input holding it and finds the continuing output by it (at the same
 //// address). The borrow and append verification keys are validator parameters.
 
 use aiken/collection/list
+use aiken/crypto.{ScriptHash}
+use cardano/address.{Script}
 use cardano/assets.{PolicyId, lovelace_of, quantity_of}
 use cardano/script_context.{ScriptContext}
 use cardano/transaction.{InlineDatum, Output, OutputReference, Transaction}
 use types_v5.{
-  BorrowAnonymous, Deposit, PoolDatumV5, PoolRedeemerV5, RepayAnonymous,
-  SetGroupRoot, pool_nft_name,
+  AddLiquidity, BorrowAnonymous, DepositCollateral, DepositDatumV5, PoolDatumV5,
+  PoolRedeemerV5, RepayAnonymous, pool_nft_name,
 }
 use zk.{get_vkey, verify_append_proof, verify_borrow_proof}
 
 validator lending_pool_v5(
   pool_nft_policy: PolicyId,
+  collateral_hash: ScriptHash,
   vkey_ref: OutputReference,
   append_vkey_ref: OutputReference,
 ) {
@@ -52,14 +60,15 @@ validator lending_pool_v5(
     let bal_out = lovelace_of(pool_output.value)
 
     when redeemer is {
-      // Deposit: add liquidity. Only total_deposited grows; loans/config frozen.
-      Deposit -> {
+      // AddLiquidity: a lender adds lovelace. Only total_deposited grows;
+      // loans, both sets and config are frozen.
+      AddLiquidity -> {
         let delta = bal_out - bal_in
         and {
           (delta > 0)?,
           (out.total_deposited == pool_datum.total_deposited + delta)?,
           (out.total_borrowed == pool_datum.total_borrowed)?,
-          (out.group_root == pool_datum.group_root)?,
+          group_frozen(pool_datum, out)?,
           repaid_frozen(pool_datum, out)?,
           same_open_loans(pool_datum, out)?,
           same_used_nullifiers(pool_datum, out)?,
@@ -67,22 +76,40 @@ validator lending_pool_v5(
         }
       }
 
-      // SetGroupRoot: the protocol admin publishes the updated commitment-set root
-      // (the deposit anonymity set is admin-curated for M3). repaid_root is NOT
-      // admin-settable — it only grows via the permissionless append on Repay.
-      // Nothing else may move.
-      SetGroupRoot { new_root } ->
+      // DepositCollateral: the tx pays exactly collateral_denomination with this
+      // commitment to the collateral script, and the append proof inserts the
+      // commitment at group_next_index, taking group_root -> out.group_root.
+      // Permissionless: the commitment set only grows from real, fixed-size
+      // deposits. The pool's own value and everything else stay unchanged.
+      DepositCollateral { commitment, append_proof } -> {
+        let append_vkey = get_vkey(tx, append_vkey_ref)
+        let append_ok =
+          verify_append_proof(
+            append_vkey,
+            append_proof,
+            pool_datum.group_root,
+            out.group_root,
+            commitment,
+            pool_datum.group_next_index,
+          )
         and {
-          list.has(tx.extra_signatories, pool_datum.admin)?,
-          (out.group_root == new_root)?,
-          repaid_frozen(pool_datum, out)?,
+          append_ok?,
+          (out.group_next_index == pool_datum.group_next_index + 1)?,
+          pays_collateral(
+            tx,
+            collateral_hash,
+            commitment,
+            pool_datum.collateral_denomination,
+          )?,
           (bal_out == bal_in)?,
           (out.total_deposited == pool_datum.total_deposited)?,
           (out.total_borrowed == pool_datum.total_borrowed)?,
+          repaid_frozen(pool_datum, out)?,
           same_open_loans(pool_datum, out)?,
           same_used_nullifiers(pool_datum, out)?,
           pool_static_preserved(pool_datum, out)?,
         }
+      }
 
       // BorrowAnonymous: membership proof authorizes the loan. The nullifier is
       // recorded as open AND as used; no collateral UTxO is referenced (unlinkable).
@@ -105,17 +132,22 @@ validator lending_pool_v5(
         // Fixed denomination: every loan is exactly loan_denomination, so loan
         // amounts are uniform and carry no per-loan information.
         let denominated = loan_amount == pool_datum.loan_denomination
+        // The fixed collateral denomination must cover the loan at the ratio
+        // (the deposit amount itself is enforced on-chain at DepositCollateral).
+        let covered =
+          loan_amount * pool_datum.collateral_ratio <= pool_datum.collateral_denomination * 100
         and {
           proof_ok?,
           fresh?,
           liquidity?,
           denominated?,
+          covered?,
           (out.open_loans == [loan_nullifier, ..pool_datum.open_loans])?,
           (out.used_nullifiers == [loan_nullifier, ..pool_datum.used_nullifiers])?,
           (out.total_borrowed == pool_datum.total_borrowed + loan_amount)?,
           (out.total_deposited == pool_datum.total_deposited)?,
           (bal_out == bal_in - loan_amount)?,
-          (out.group_root == pool_datum.group_root)?,
+          group_frozen(pool_datum, out)?,
           repaid_frozen(pool_datum, out)?,
           pool_static_preserved(pool_datum, out)?,
         }
@@ -174,7 +206,7 @@ validator lending_pool_v5(
           (out.total_borrowed == pool_datum.total_borrowed - principal)?,
           (out.total_deposited == pool_datum.total_deposited)?,
           (bal_out == bal_in + repay_amount)?,
-          (out.group_root == pool_datum.group_root)?,
+          group_frozen(pool_datum, out)?,
           (out.next_index == pool_datum.next_index + 1)?,
           pool_static_preserved(pool_datum, out)?,
         }
@@ -193,16 +225,25 @@ fn interest_of(principal: Int, interest_rate: Int) -> Int {
 }
 
 /// Every non-financial config field must survive any pool spend unchanged.
-/// (group_root is checked per-branch: frozen everywhere except SetGroupRoot;
-/// repaid_root + next_index are frozen everywhere except Repay via repaid_frozen.)
+/// (group_root + group_next_index are frozen everywhere except DepositCollateral;
+/// repaid_root + next_index are frozen everywhere except Repay.)
 fn pool_static_preserved(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
   and {
     new.interest_rate == old.interest_rate,
     new.collateral_ratio == old.collateral_ratio,
     new.external_nullifier == old.external_nullifier,
     new.repay_external_nullifier == old.repay_external_nullifier,
+    new.collateral_denomination == old.collateral_denomination,
     new.loan_denomination == old.loan_denomination,
-    new.admin == old.admin,
+  }
+}
+
+/// The append-only commitment set (root + next position) may only move on
+/// DepositCollateral.
+fn group_frozen(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
+  and {
+    new.group_root == old.group_root,
+    new.group_next_index == old.group_next_index,
   }
 }
 
@@ -229,6 +270,34 @@ fn has_nullifier(loans: List<Int>, n: Int) -> Bool {
 
 fn remove_loan(loans: List<Int>, n: Int) -> List<Int> {
   list.filter(loans, fn(x) { x != n })
+}
+
+/// Some output pays exactly `denomination` lovelace to the collateral script
+/// with an inline deposit datum carrying `commitment`.
+fn pays_collateral(
+  tx: Transaction,
+  collateral_hash: ScriptHash,
+  commitment: Int,
+  denomination: Int,
+) -> Bool {
+  list.any(
+    tx.outputs,
+    fn(output) {
+      when output.datum is {
+        InlineDatum(data) ->
+          if data is DepositDatumV5 {
+            and {
+              output.address.payment_credential == Script(collateral_hash),
+              lovelace_of(output.value) == denomination,
+              data.commitment == commitment,
+            }
+          } else {
+            False
+          }
+        _ -> False
+      }
+    },
+  )
 }
 
 fn has_pool_nft(output: Output, policy: PolicyId) -> Bool {

@@ -14,11 +14,12 @@ use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, placeholder,
 }
 use types_v5.{
-  BorrowAnonymous, DepositDatumV5, PoolDatumV5, RepayAnonymous, UnlockDeposit,
-  pool_nft_name,
+  AddLiquidity, BorrowAnonymous, DepositCollateral, DepositDatumV5, PoolDatumV5,
+  RepayAnonymous, UnlockDeposit, pool_nft_name,
 }
 use semaphore_onchain_test.{
-  append_proof, append_vkey, commitment, ext, group_root, loan_amt, loan_null,
+  append_proof, append_vkey, commitment, ext, group_append_proof, group_root,
+  loan_amt, loan_null,
   old_repaid_root, proof, ratio, repaid_root, repay_ext, repay_null,
   settlement_proof, settlement_vkey, vkey,
 }
@@ -35,8 +36,6 @@ fn pool_value(lovelace: Int) -> Value {
 }
 
 const coll_hash: ByteArray = #"c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0"
-
-const admin_pkh: ByteArray = #"0011223344556677889900112233445566778899001122334455667788"
 
 const pool_oref: OutputReference =
   OutputReference { transaction_id: #"b0", output_index: 0 }
@@ -66,14 +65,15 @@ fn pool_datum(
     interest_rate: 500,
     collateral_ratio: ratio,
     group_root,
+    group_next_index: 1,
     repaid_root: repaid,
     next_index: nidx,
     external_nullifier: ext,
     repay_external_nullifier: repay_ext,
+    collateral_denomination: 20_000_000,
     loan_denomination: loan_amt,
     open_loans,
     used_nullifiers: used,
-    admin: admin_pkh,
     last_updated: 0,
   }
 }
@@ -150,6 +150,7 @@ test borrow_membership_succeeds() {
     }
   lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
+    coll_hash,
     vk_oref,
     avk_oref,
     Some(pd),
@@ -174,6 +175,7 @@ test borrow_reused_nullifier_fails() {
     }
   !lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
+    coll_hash,
     vk_oref,
     avk_oref,
     Some(pd),
@@ -198,6 +200,7 @@ test borrow_after_repay_same_secret_fails() {
     }
   !lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
+    coll_hash,
     vk_oref,
     avk_oref,
     Some(pd),
@@ -221,6 +224,7 @@ test borrow_not_recorded_as_used_fails() {
     }
   !lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
+    coll_hash,
     vk_oref,
     avk_oref,
     Some(pd),
@@ -249,6 +253,7 @@ test repay_principal_plus_interest_succeeds() {
     }
   lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
+    coll_hash,
     vk_oref,
     avk_oref,
     Some(pd),
@@ -280,6 +285,7 @@ test repay_clearing_used_nullifier_fails() {
     }
   !lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
+    coll_hash,
     vk_oref,
     avk_oref,
     Some(pd),
@@ -310,6 +316,7 @@ test repay_below_interest_fails() {
     }
   !lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
+    coll_hash,
     vk_oref,
     avk_oref,
     Some(pd),
@@ -341,6 +348,7 @@ test repay_overpay_fails() {
     }
   !lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
+    coll_hash,
     vk_oref,
     avk_oref,
     Some(pd),
@@ -373,6 +381,7 @@ test repay_bogus_append_fails() {
     }
   !lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
+    coll_hash,
     vk_oref,
     avk_oref,
     Some(pd),
@@ -567,6 +576,7 @@ test spend_pool_without_nft_fails() fail {
     }
   lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
+    coll_hash,
     vk_oref,
     avk_oref,
     Some(pd),
@@ -604,6 +614,7 @@ test continuing_output_without_nft_fails() fail {
     }
   lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
+    coll_hash,
     vk_oref,
     avk_oref,
     Some(pd),
@@ -633,6 +644,7 @@ test continuing_output_other_address_fails() fail {
     }
   lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
+    coll_hash,
     vk_oref,
     avk_oref,
     Some(pd),
@@ -666,6 +678,157 @@ test borrow_with_vkey_at_other_ref_fails() fail {
     }
   lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
+    coll_hash,
+    vk_oref,
+    avk_oref,
+    Some(pd),
+    BorrowAnonymous { proof: proof(), loan_amount: loan_amt, loan_nullifier: loan_null },
+    pool_oref,
+    tx,
+  )
+}
+
+test group_root_change_without_append_fails() {
+  // There is no admin path: group_root can only grow through DepositCollateral
+  // with a valid append proof. Any other spend that rewrites it is rejected —
+  // so nobody can insert commitments that have no deposit behind them.
+  let pd = pool_datum(0, [], old_repaid_root, 0, [])
+  let out =
+    PoolDatumV5 {
+      ..pd,
+      group_root: 12345,
+      total_deposited: pd.total_deposited + 1_000_000,
+    }
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [pool_input(pd, 100_000_000)],
+      outputs: [pool_out(out, 101_000_000)],
+    }
+  !lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    coll_hash,
+    vk_oref,
+    avk_oref,
+    Some(pd),
+    AddLiquidity,
+    pool_oref,
+    tx,
+  )
+}
+
+// ---- DepositCollateral (permissionless commitment set) ---------------------
+
+/// Pool state before the first collateral deposit: empty commitment set.
+fn empty_group_pool() -> PoolDatumV5 {
+  PoolDatumV5 {
+    ..pool_datum(0, [], old_repaid_root, 0, []),
+    group_root: old_repaid_root,
+    group_next_index: 0,
+  }
+}
+
+fn collateral_out(cmt: Int, lovelace: Int, script: ByteArray) -> Output {
+  Output {
+    address: from_script(script),
+    value: from_lovelace(lovelace),
+    datum: InlineDatum(deposit_datum(cmt)),
+    reference_script: None,
+  }
+}
+
+fn deposit_tx(out_pool: PoolDatumV5, coll: Output) -> Transaction {
+  Transaction {
+    ..placeholder,
+    inputs: [pool_input(empty_group_pool(), 100_000_000)],
+    reference_inputs: [avk_ref_input()],
+    outputs: [pool_out(out_pool, 100_000_000), coll],
+  }
+}
+
+fn run_deposit(tx: Transaction) -> Bool {
+  lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    coll_hash,
+    vk_oref,
+    avk_oref,
+    Some(empty_group_pool()),
+    DepositCollateral { commitment, append_proof: group_append_proof() },
+    pool_oref,
+    tx,
+  )
+}
+
+fn deposited_pool() -> PoolDatumV5 {
+  PoolDatumV5 { ..empty_group_pool(), group_root, group_next_index: 1 }
+}
+
+test deposit_collateral_succeeds() {
+  // Exactly 20 ADA with the commitment to the collateral script, and the append
+  // proof takes the empty commitment set to group_root (commitment at index 0).
+  run_deposit(
+    deposit_tx(deposited_pool(), collateral_out(commitment, 20_000_000, coll_hash)),
+  )
+}
+
+test deposit_collateral_wrong_amount_fails() {
+  // 19 ADA instead of the fixed 20 ADA denomination.
+  !run_deposit(
+    deposit_tx(deposited_pool(), collateral_out(commitment, 19_000_000, coll_hash)),
+  )
+}
+
+test deposit_collateral_wrong_address_fails() {
+  // The collateral is paid somewhere other than the collateral script.
+  !run_deposit(
+    deposit_tx(deposited_pool(), collateral_out(commitment, 20_000_000, #"7e1f7e1f")),
+  )
+}
+
+test deposit_collateral_commitment_mismatch_fails() {
+  // The appended commitment must be the one locked in the collateral output.
+  !run_deposit(
+    deposit_tx(
+      deposited_pool(),
+      collateral_out(commitment + 1, 20_000_000, coll_hash),
+    ),
+  )
+}
+
+test deposit_collateral_bogus_append_fails() {
+  // The out datum claims a group_root the append proof does not attest.
+  let out = PoolDatumV5 { ..deposited_pool(), group_root: group_root + 1 }
+  !run_deposit(deposit_tx(out, collateral_out(commitment, 20_000_000, coll_hash)))
+}
+
+test deposit_collateral_index_not_advanced_fails() {
+  let out = PoolDatumV5 { ..deposited_pool(), group_next_index: 0 }
+  !run_deposit(deposit_tx(out, collateral_out(commitment, 20_000_000, coll_hash)))
+}
+
+test borrow_collateral_denomination_too_small_fails() {
+  // A pool configured with collateral (10 ADA) that does not cover the 10 ADA
+  // loan at 125 % must refuse to lend.
+  let pd =
+    PoolDatumV5 {
+      ..pool_datum(0, [], old_repaid_root, 0, []),
+      collateral_denomination: 10_000_000,
+    }
+  let out =
+    PoolDatumV5 {
+      ..pool_datum(loan_amt, [loan_null], old_repaid_root, 0, [loan_null]),
+      collateral_denomination: 10_000_000,
+    }
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [pool_input(pd, 100_000_000)],
+      reference_inputs: [vk_ref_input()],
+      outputs: [pool_out(out, 100_000_000 - loan_amt)],
+    }
+  !lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    coll_hash,
     vk_oref,
     avk_oref,
     Some(pd),

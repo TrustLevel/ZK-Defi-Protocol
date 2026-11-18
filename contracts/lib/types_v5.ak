@@ -1,10 +1,13 @@
 //// ============================================
 //// V6 TYPES — Private on-chain ZK lending (Milestone 3)
 //// ============================================
-//// The proof is the authorization: no admin signature / extra_signatories on the
-//// anonymous paths. Privacy model:
+//// The proof is the authorization: there is no admin and no signature on any
+//// path. Privacy model:
 ////   - collateral_amount is NEVER on-chain (private circuit witness; the UTxO uses
 ////     a fixed denomination), so amounts are confidential.
+////   - A collateral deposit goes through the pool (DepositCollateral): the pool
+////     checks the fixed collateral denomination on-chain and appends the
+////     commitment to `group_root` via a ZK append proof — permissionless.
 ////   - Borrow proves MEMBERSHIP of the commitment in `group_root` (Merkle) — it
 ////     does not reference a specific deposit UTxO, so deposit<->borrow is unlinkable.
 ////   - A loan is tracked by a `loan_nullifier` = Poseidon255(secret, external_nullifier)
@@ -20,7 +23,7 @@
 //// borrow-time loan_nullifier).
 //// Repay inserts R into `repaid_root` ITSELF via a zero-knowledge append proof
 //// (permissionless — no admin), so the whole borrow/repay/unlock path needs no
-//// signature. `group_root` (the deposit anonymity set) stays admin-curated.
+//// signature.
 
 use ak_381/groth16.{Proof}
 use cardano/transaction.{OutputReference}
@@ -38,8 +41,10 @@ pub type DepositDatumV5 {
 
 /// Lending pool datum (v6). The pool UTxO carries the one-shot pool NFT; the
 /// verification keys are validator parameters, not datum fields.
-/// `group_root`          -> Merkle root of the collateral commitment set
-///                          (admin-curated for M3, via SetGroupRoot)
+/// `group_root`          -> append-only Merkle root of the collateral commitment
+///                          set; grown PERMISSIONLESSLY by DepositCollateral via
+///                          a ZK append proof (no admin)
+/// `group_next_index`    -> next free leaf position in the group_root tree
 /// `repaid_root`         -> append-only Merkle root of repayment nullifiers R;
 ///                          grown PERMISSIONLESSLY by Repay via a ZK append proof
 ///                          (no admin), so unlock can prove settlement in zero knowledge
@@ -48,6 +53,9 @@ pub type DepositDatumV5 {
 /// `repay_external_nullifier` -> DISTINCT protocol constant scoping repayment
 ///                          nullifiers, so R cannot be correlated with the
 ///                          borrow-time loan_nullifier
+/// `collateral_denomination` -> every collateral deposit is exactly this many
+///                          lovelace (checked on-chain at DepositCollateral);
+///                          Borrow checks it covers loan_denomination at the ratio
 /// `loan_denomination`   -> every loan is exactly this size, so loan amounts are
 ///                          uniform (carry no per-loan information) and open_loans
 ///                          need only store nullifiers, not principals.
@@ -55,31 +63,35 @@ pub type DepositDatumV5 {
 /// `used_nullifiers`     -> every loan nullifier ever borrowed against; never
 ///                          shrinks, so one deposit backs exactly ONE loan and a
 ///                          repaid deposit's R can never cover a later loan
-/// `admin`               -> may update the published group_root (SetGroupRoot)
 pub type PoolDatumV5 {
   total_deposited: Int,
   total_borrowed: Int,
   interest_rate: Int,
   collateral_ratio: Int,
   group_root: Int,
+  group_next_index: Int,
   repaid_root: Int,
   next_index: Int,
   external_nullifier: Int,
   repay_external_nullifier: Int,
+  collateral_denomination: Int,
   loan_denomination: Int,
   open_loans: List<Int>,
   used_nullifiers: List<Int>,
-  admin: ByteArray,
   last_updated: Int,
 }
 
 /// Lending pool redeemer (v6).
+/// `AddLiquidity`: lender adds lovelace to the pool.
+/// `DepositCollateral`: a collateral output of exactly `collateral_denomination`
+/// with this `commitment` is created, and `append_proof` attests the commitment
+/// is appended at `group_next_index`, taking group_root -> out.group_root.
 /// `RepayAnonymous`: `repay_nullifier` = R = Poseidon255(secret, repay_external_nullifier);
 /// `append_proof` attests R is appended at `next_index`, taking repaid_root ->
 /// out.repaid_root (permissionless — no admin signature on repay).
 pub type PoolRedeemerV5 {
-  Deposit
-  SetGroupRoot { new_root: Int }
+  AddLiquidity
+  DepositCollateral { commitment: Int, append_proof: Proof }
   BorrowAnonymous { proof: Proof, loan_amount: Int, loan_nullifier: Int }
   RepayAnonymous {
     proof: Proof,
