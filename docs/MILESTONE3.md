@@ -71,6 +71,14 @@ builder evaluates every transaction (ExUnits) before it is submitted.
 Three BLS12-381 Groth16 circuits (`circuits/`) all hash with **Poseidon255**
 (`poseidon-bls12381`), so the in-circuit and on-chain commitment are identical.
 
+The protocol uses Groth16 because:
+
+- **It is the most mature option on Cardano.** Plutus V3's BLS12-381 builtins and the
+  open-source `modulo-p/ak-381` verifier verify Groth16 proofs on-chain today.
+- **It has the best cost profile.** It has very small proofs and very cheap
+  verification (M1 §1.2). Every step fits in one transaction, including repay, which
+  verifies two proofs (§4).
+
 ### Borrow / repay — `collateral_semaphore.circom`
 
 Proves, in zero knowledge, that a **member** of the commitment set is sufficiently
