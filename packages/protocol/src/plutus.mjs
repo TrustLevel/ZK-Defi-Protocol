@@ -19,7 +19,7 @@
  *   OutputReference= Constr 0 [txHash, index]
  */
 import {
-  conStr, integer, byteString, list, pubKeyAddress, deserializeAddress, deserializeDatum,
+  conStr, integer, byteString, list, pubKeyAddress, deserializeAddress, deserializeDatum, serializeAddressObj,
 } from "@meshsdk/core";
 import { compressG1, compressG2 } from "./crypto.mjs";
 
@@ -130,6 +130,11 @@ export function decodePoolRedeemer(cbor) {
     };
     default: throw new Error(`unknown pool redeemer constructor ${constrOf(d)}`);
   }
+}
+// A decoded Aiken `Address` (e.g. DepositDatumV5.unlock_to) back to bech32.
+export function addressFromData(addressData, networkId = 0) {
+  const plain = JSON.parse(JSON.stringify(addressData, (_k, v) => (typeof v === "bigint" ? Number(v) : v)));
+  return serializeAddressObj(plain, networkId);
 }
 export function decodeUnlockRedeemer(cbor) {
   const d = deserializeDatum(cbor);

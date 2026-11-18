@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { resolveDataHash } from "@meshsdk/core";
 import {
   decodePoolDatum, decodePoolRedeemer, decodeDepositDatum, decodeUnlockRedeemer,
-  poolDatum, depositDatum, outputReference, loanTag,
+  poolDatum, depositDatum, outputReference, loanTag, addressFromData,
   R_DepositCollateral, R_Borrow, R_Repay, R_Unlock,
 } from "../src/plutus.mjs";
 
@@ -34,6 +34,11 @@ test("deposit datum re-encodes to its on-chain hash", () => {
   const { hash, cbor } = cycle.deposit.datums[1];
   const d = decodeDepositDatum(cbor);
   assert.equal(hashOf(depositDatum(d.commitment, d.timestamp, cycle.unlockTo)), hash);
+});
+
+test("the deposit datum's unlock_to decodes to its bech32 address", () => {
+  const d = decodeDepositDatum(cycle.deposit.datums[1].cbor);
+  assert.equal(addressFromData(d.unlockTo), cycle.unlockTo);
 });
 
 test("pool redeemers re-encode to their on-chain hashes", () => {
