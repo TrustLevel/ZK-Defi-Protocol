@@ -1,4 +1,8 @@
-/** Poll Blockfrost until a tx is confirmed (appears on-chain). */
+/**
+ * Poll Blockfrost until a tx is confirmed (appears on-chain) AND its outputs are
+ * indexed — address UTxO queries lag behind tx confirmation, and the next step
+ * must see the new pool UTxO, not the spent one.
+ */
 import { loadEnv, makeProvider } from "./common.mjs";
 
 const txHash = process.argv[2];
@@ -12,8 +16,11 @@ for (let i = 0; i < maxTries; i++) {
   try {
     const info = await provider.fetchTxInfo(txHash);
     if (info && info.block) {
-      console.log(`confirmed in block ${info.block} (try ${i + 1}). fee: ${info.fees ?? "?"}`);
-      process.exit(0);
+      const outs = await provider.fetchUTxOs(txHash);
+      if (outs && outs.length) {
+        console.log(`confirmed in block ${info.block} (try ${i + 1}). fee: ${info.fees ?? "?"}`);
+        process.exit(0);
+      }
     }
   } catch (_e) { /* not yet indexed */ }
   await new Promise((r) => setTimeout(r, 5000));

@@ -6,11 +6,15 @@
  * repaid_root, new_root = out.repaid_root, leaf = R, index = next_index, so the
  * borrower grows the settlement set themselves and can later unlock with no admin
  * step. On-chain: groth_verify for both the membership proof and the append proof.
+ * The repayment is a fixed amount (exactly principal + interest). The membership
+ * proof is re-made with the borrow's recipient (passed through; nothing is paid
+ * to it). used_nullifiers is unchanged — the deposit can never borrow again.
  */
 import {
   loadEnv, makeProvider, makeWallet, walletAddress, makeTxBuilder,
+  loadScripts, fetchPool, poolAmount, pickCollateral,
   poolDatumFrom, generateBorrowProof, generateAppendProof, R_Repay, LOAN_DENOMINATION,
-  POOL_ADDRESS, POOL_CBOR, loadReceipt, saveReceipt, scanLink,
+  loadReceipt, saveReceipt, scanLink,
 } from "./common.mjs";
 
 const env = loadEnv();
@@ -18,6 +22,8 @@ const provider = makeProvider(env);
 const wallet = await makeWallet(env, provider);
 const addr = await walletAddress(wallet);
 const utxos = await provider.fetchAddressUTxOs(addr);
+const S = loadScripts();
+const dep = loadReceipt("deployment.json");
 
 const pool = loadReceipt("pool.json");
 const deposit = loadReceipt("deposit.json");
@@ -31,20 +37,18 @@ const interest = Math.floor((principal * pool.interest_rate) / 10000);
 const repay = principal + interest;
 console.log("principal:", principal / 1e6, "ADA | interest:", interest / 1e6, "| due:", repay / 1e6);
 
-const poolUtxos = await provider.fetchAddressUTxOs(POOL_ADDRESS);
-const poolUtxo = poolUtxos.find((u) => u.input.txHash === pool.txHash && u.input.outputIndex === pool.outputIndex);
-if (!poolUtxo) throw new Error(`pool UTxO ${pool.txHash}#${pool.outputIndex} not found`);
-const poolBalance = Number(poolUtxo.output.amount.find((a) => a.unit === "lovelace").quantity);
+const { utxo: poolUtxo, lovelace: poolBalance } = await fetchPool(provider, S);
 
 const { proofData, nullifier } = await generateBorrowProof({
   commitments, index: deposit.index, secret: BigInt(deposit.secret),
   collateralAmount: deposit.collateralAmount, loanAmount: principal, ratio: pool.collateral_ratio,
+  recipientPkh: borrow.recipientPkh,
 });
 // Self-append R into repaid_root at next_index (permissionless, ZK-attested).
 const repaidBefore = repaid.repaidNullifiers;
 if (repaidBefore.length !== pool.next_index) throw new Error(`repaid.json size ${repaidBefore.length} != pool.next_index ${pool.next_index}`);
 const { proofData: appendProofData, R, newRoot } = await generateAppendProof({
-  secret: BigInt(deposit.secret), repaidBefore, index: pool.next_index,
+  secret: BigInt(deposit.secret), repaidBefore,
 });
 console.log("append proof ok | repaid_root", BigInt(pool.repaid_root).toString().slice(0, 12) + "... ->", newRoot.toString().slice(0, 12) + "... | index", pool.next_index);
 
@@ -57,19 +61,19 @@ const contDatum = poolDatumFrom(pool, {
   repaid_root: newRoot, next_index: newNextIndex, last_updated: now,
 });
 
-const collateralUtxo = utxos.find((u) => u.output.amount.length === 1 && Number(u.output.amount[0].quantity) >= 5_000_000) || utxos[0];
+const collateralUtxo = pickCollateral(utxos);
 
 const tx = makeTxBuilder(provider);
 const unsigned = await tx
   .setNetwork("preprod")
   .spendingPlutusScriptV3()
-  .txIn(poolUtxo.input.txHash, poolUtxo.input.outputIndex, poolUtxo.output.amount, POOL_ADDRESS)
-  .txInScript(POOL_CBOR)
+  .txIn(poolUtxo.input.txHash, poolUtxo.input.outputIndex, poolUtxo.output.amount, S.POOL_ADDRESS)
+  .txInScript(S.POOL_CBOR)
   .txInInlineDatumPresent()
-  .txInRedeemerValue(R_Repay(proofData, repay, nullifier, R, appendProofData), "JSON")
-  .readOnlyTxInReference(pool.vkey_ref_tx, pool.vkey_ref_idx)
-  .readOnlyTxInReference(pool.append_vkey_ref_tx, pool.append_vkey_ref_idx)
-  .txOut(POOL_ADDRESS, [{ unit: "lovelace", quantity: String(poolBalance + repay) }])
+  .txInRedeemerValue(R_Repay(proofData, borrow.recipientPkh, repay, nullifier, R, appendProofData), "JSON")
+  .readOnlyTxInReference(dep.vkeys.txHash, dep.vkeys.borrowIdx)
+  .readOnlyTxInReference(dep.vkeys.txHash, dep.vkeys.appendIdx)
+  .txOut(S.POOL_ADDRESS, poolAmount(S, poolBalance + repay))
   .txOutInlineDatumValue(contDatum, "JSON")
   .txInCollateral(collateralUtxo.input.txHash, collateralUtxo.input.outputIndex, collateralUtxo.output.amount, addr)
   .changeAddress(addr)
