@@ -25,6 +25,10 @@
 use ak_381/groth16.{Proof}
 use cardano/transaction.{OutputReference}
 
+/// Asset name of the one-shot pool NFT (see validators/v5/pool_nft.ak). The
+/// pool UTxO carries it; the validators use it to recognise the real pool.
+pub const pool_nft_name: ByteArray = "POOL"
+
 /// Collateral deposit datum (v6). No owner, no amount — only the commitment
 /// (Merkle leaf = Poseidon255(collateral_amount, secret)) and a timestamp.
 pub type DepositDatumV5 {
