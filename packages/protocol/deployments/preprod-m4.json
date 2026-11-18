@@ -1,0 +1,22 @@
+{
+  "network": "preprod",
+  "description": "M4 pool (v5 contracts, M3 verification keys). Created by 2-init-pool on 2026-11-18.",
+  "seed": {
+    "txHash": "046baceaccbe8a7ac9e426655a5cfe5b997fd0ddc430cc6c5033f99e5f021b4a",
+    "outputIndex": 1
+  },
+  "vkeys": {
+    "txHash": "edbfae0e6704086b0f9feddf30c83544c10406faf729792ba57bbdc4b2be1132",
+    "borrowIdx": 0,
+    "settlementIdx": 1,
+    "appendIdx": 2,
+    "repayIdx": 3
+  },
+  "vkeyParkAddress": "addr_test1wzl94ddu5xplr7p8f55ldtxjvw6cqqsh57jkj4vndwthtkgdw2fq8",
+  "initTx": "9f917a1ea3b0860ab8474dc75351674a83bcc7abd5c76b2eb39bd6b1e63268e1",
+  "policyId": "e59c25d2e075dda30ea62bacd34ad14c751af463bdf647f7ba2b7d8b",
+  "poolHash": "845c797c51ab278cd5f94c2461deac3c4a64cb82a0b4b820484dddda",
+  "poolAddress": "addr_test1wzz9c7tu2x4j0rx4l9xzgcw74s7y5exts2stfwpqfpxamksgfmdd4",
+  "collateralHash": "f07969632284d6acf69a162440454e1bf5889d77ce5ffbb47c1f0092",
+  "collateralAddress": "addr_test1wrc8j6try2zddt8kngtzgsz9fcdltzyawl89l7a50s0spysukdu33"
+}

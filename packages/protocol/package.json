@@ -6,7 +6,9 @@
   "type": "module",
   "exports": {
     "./crypto": "./src/crypto.mjs",
-    "./plutus": "./src/plutus.mjs"
+    "./plutus": "./src/plutus.mjs",
+    "./scripts": "./src/scripts.mjs",
+    "./deployments/preprod-m4.json": "./deployments/preprod-m4.json"
   },
   "scripts": {
     "test": "node --test"
