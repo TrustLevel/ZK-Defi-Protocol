@@ -65,7 +65,7 @@ export default function BorrowView({ account }) {
       {error && <p className="text-sm text-warn">{error}</p>}
       {notes.length === 0 && <p className="text-sm text-muted">No positions yet. Start one with “New position”.</p>}
       {[...notes].reverse().map((n) => (
-        <PositionCard key={n.id} note={n} status={status(n)} account={account} onChange={refresh} />
+        <PositionCard key={n.id} note={n} status={status(n)} state={state} account={account} onChange={refresh} />
       ))}
     </section>
   );

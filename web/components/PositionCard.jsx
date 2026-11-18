@@ -7,6 +7,7 @@ import { downloadNote, saveNote, removeNote } from "../lib/notes";
 import { STEPS, linkageWarnings } from "../lib/position";
 import { shortAddress } from "../lib/wallet";
 import Progress from "./Progress";
+import Lenses from "./Lenses";
 
 const LABEL = { deposited: "Deposited", borrowed: "Borrowed", repaid: "Repaid", unlocked: "Unlocked" };
 
@@ -30,7 +31,7 @@ function Warning({ children }) {
 }
 
 // One position (one note): the next step, which account it needs, and progress.
-export default function PositionCard({ note, status, account, onChange }) {
+export default function PositionCard({ note, status, state, account, onChange }) {
   const [events, setEvents] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -63,6 +64,9 @@ export default function PositionCard({ note, status, account, onChange }) {
         <div className="font-mono text-sm">Position {note.id}</div>
         <Stepper status={status} />
       </header>
+
+      <Lenses note={note} status={status} state={state} account={account} recipient={recipientPkh ? recipient : ""}
+        warnings={status === "deposited" ? recipientWarnings : status === "borrowed" ? accountWarnings : []} />
 
       {status === "new" && (
         <div className="space-y-3">

@@ -42,6 +42,8 @@ export async function getState() {
     leaves: { commitments: s.leaves.commitments.map(BigInt), repaid: s.leaves.repaid.map(BigInt) },
     // unspent deposits as "txHash#index"
     deposits: new Set(s.deposits),
+    // recent protocol transactions as the chain shows them (newest first)
+    activity: s.activity || [],
     indexedAt: s.indexedAt,
   };
 }

@@ -32,12 +32,13 @@ export async function buildApp({ chain, txService, relayer, deployment, logger =
   app.get("/api/health", async () => ({ ok: true }));
 
   app.get("/api/state", async () => {
-    const { pool, leaves, deposits, at } = await chain.state();
+    const { pool, leaves, deposits, activity = [], at } = await chain.state();
     return toJson({
       deployment: { network: deployment.network, policyId: deployment.policyId, poolAddress: deployment.poolAddress, collateralAddress: deployment.collateralAddress },
       pool: { utxo: pool.utxo, datum: pool.datum },
       leaves,
       deposits,
+      activity,
       indexedAt: at,
     });
   });

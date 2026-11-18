@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node --env-file=../.env src/index.mjs",
-    "test": "node --test"
+    "test": "node --test",
+    "test:live": "node --env-file=../.env --test"
   },
   "dependencies": {
     "@fastify/rate-limit": "^11.2.2",

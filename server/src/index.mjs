@@ -75,5 +75,8 @@ if (seed) {
   console.log("relayer off (no relayer seed configured)");
 }
 
+// Build the index now, so the first visitor does not wait for it.
+chain.state().catch((e) => console.log(`initial index: ${e.message}`));
+
 const app = await buildApp({ chain, txService, relayer, deployment, logger: { level: "info" } });
 await app.listen({ host: process.env.HOST || "127.0.0.1", port: Number(process.env.PORT || 3001) });

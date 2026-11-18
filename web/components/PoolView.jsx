@@ -16,6 +16,59 @@ function Stat({ label, value, hint }) {
 }
 
 // Public pool state as anyone can read it from the chain; no wallet needed.
+const hex = (v) => "0x" + BigInt(v).toString(16).slice(0, 8) + "…";
+const ago = (t) => {
+  const s = Math.max(0, Math.round(Date.now() / 1000 - t));
+  return s < 90 ? `${s}s ago` : s < 5400 ? `${Math.round(s / 60)} min ago` : s < 129600 ? `${Math.round(s / 3600)} h ago` : `${Math.round(s / 86400)} d ago`;
+};
+// What each transaction reveals: amounts are fixed, so only the kind and the
+// public tags differ; nothing says which deposit a loan or an unlock belongs to.
+const SHOWS = {
+  deposit: (a) => `20 ADA locked · commitment ${hex(a.commitment)}`,
+  borrow: (a) => `10 ADA out · nullifier ${hex(a.nullifier)} · deposit hidden`,
+  repay: (a) => `10.5 ADA in · nullifier ${hex(a.nullifier)} · marker ${hex(a.marker)}`,
+  unlock: () => "20 ADA returned · which repayment: hidden",
+  liquidity: () => "liquidity added",
+};
+
+// The commitment tree as a grid. No leaf is highlighted: the chain does not
+// know which one is yours, and neither does this page.
+function AnonymitySet({ count }) {
+  return (
+    <div className="rounded-lg border border-line bg-surface p-4">
+      <div className="flex items-baseline justify-between">
+        <div className="text-xs uppercase tracking-wide text-muted">Anonymity set</div>
+        <div className="text-xs text-muted">{count} of 1024 slots</div>
+      </div>
+      <div className="mt-3 grid grid-cols-[repeat(32,minmax(0,1fr))] gap-[3px]">
+        {Array.from({ length: Math.min(1024, Math.max(128, Math.ceil(count / 32) * 32)) }, (_, i) => (
+          <span key={i} className={`aspect-square rounded-[2px] ${i < count ? "bg-accent" : "bg-canvas"}`} />
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-muted">
+        Every deposit is one leaf. A loan proves it is backed by one of them, without saying which.
+      </p>
+    </div>
+  );
+}
+
+function Activity({ items }) {
+  return (
+    <div className="rounded-lg border border-line bg-surface p-4">
+      <div className="text-xs uppercase tracking-wide text-muted">What the chain sees</div>
+      <ul className="mt-2 divide-y divide-line">
+        {items.map((a) => (
+          <li key={a.txHash} className="flex flex-wrap items-baseline gap-x-3 py-2 text-xs">
+            <span className="w-16 font-semibold capitalize">{a.type}</span>
+            <span className="flex-1 font-mono text-muted">{SHOWS[a.type]?.(a)}</span>
+            <a className="text-muted underline" href={`https://preprod.cardanoscan.io/transaction/${a.txHash}`} target="_blank" rel="noreferrer">{ago(a.time)}</a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function PoolView() {
   const [state, setState] = useState(null);
   const [error, setError] = useState(null);
@@ -46,8 +99,10 @@ export default function PoolView() {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Stat label="Collateral unit" value={`${ada(d.collateral_denomination)} ADA`} hint="every deposit has this size" />
         <Stat label="Loan unit" value={`${ada(d.loan_denomination)} ADA`} hint="every loan has this size" />
-        <Stat label="Anonymity set" value={state.leaves.commitments.length} hint="deposits your loan could come from" />
+        <Stat label="Locked deposits" value={state.deposits.size} hint="collateral currently held" />
       </div>
+      <AnonymitySet count={state.leaves.commitments.length} />
+      <Activity items={state.activity} />
     </section>
   );
 }
