@@ -126,7 +126,7 @@ Fresh cycle up to `4-borrow` (loan open, not repaid).
    that contains your `R`: in a scratch script use
    `poolDatumFrom(pool, { repaid_root: merkleRoot([computeRepayNullifier(secret)]), next_index: 1 })`.
 2. In `6-unlock.mjs`, use that UTxO instead of `fetchPool(...)` as the pool reference,
-   and `[R]` as `repaidNullifiers`.
+   and `[R]` as `repaidNullifiers` with index `0` (there is no `repay.json` yet).
 - Expected: **rejected** (the pool reference must carry the pool NFT).
 - Result: rejected? ____
 
