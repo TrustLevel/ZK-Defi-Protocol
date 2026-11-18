@@ -20,8 +20,8 @@ PASS (note which one you saw).
 
 ```bash
 git clone <repo> && cd ZK-Defi-Protocol
-git checkout m3-poa-v4
-cd contracts && aiken check          # aiken v1.1.19 — expect 49 tests, 0 failed
+git checkout m3-poa-v5
+cd contracts && aiken check          # aiken v1.1.19 — expect 54 tests, 0 failed
 cd ../offchain && npm install
 cp ../.env.example ../.env           # Blockfrost Preprod key + YOUR wallet mnemonic
 ```
@@ -34,7 +34,7 @@ with a self-payment first if necessary.
 `node cli/v5/wait.mjs <txHash>`):
 
 ```bash
-node cli/v5/1-park-vkey.mjs    # three vkeys on an always-false address
+node cli/v5/1-park-vkey.mjs    # four vkeys on an always-false address
 node cli/v5/2-init-pool.mjs    # your own pool + its one-shot NFT
 node cli/v5/3-deposit.mjs      # 20 ADA collateral through the pool
 node cli/v5/4-borrow.mjs       # 10 ADA loan (ZK proof verified on-chain)
@@ -72,8 +72,9 @@ one proves an attack fails *closed* with real proofs:
 | `group_root_change_without_append_fails` | nobody can rewrite the commitment set | |
 | `repay_below_interest_fails` / `repay_overpay_fails` | repay is exactly principal + interest | |
 | `tampered_borrow_signal_fails_onchain` / `tampered_recipient_signal_fails_onchain` | a tampered proof is rejected | |
+| `repay_with_foreign_repay_nullifier_fails` / `repay_with_copied_borrow_proof_fails` | a repay can only append the `R` of the loan it settles; a borrow proof is not a repay proof | |
 
-Total reported by `aiken check`: ____ (expect 49, 0 failed).
+Total reported by `aiken check`: ____ (expect 54, 0 failed).
 
 ---
 
@@ -142,7 +143,20 @@ output.
 - Expected: **rejected** (a deposit must be exactly the denomination).
 - Result: rejected? ____
 
-### Attack 9 — Free-form
+### Attack 9 — Repay with a foreign R (own deposits and third party)
+- (a) Two own deposits B and C, both borrowed. Repay loan B, but append C's `R`
+  (`computeRepayNullifier(secretC)`) with a matching append proof; then try to unlock C.
+- (b) From a second wallet with **no deposit**: take a victim's open loan, build
+  `RepayAnonymous` with the victim's **borrow** proof (public in the borrow tx's
+  redeemer), pay 10.5 ADA and append a random `R`.
+- (c) Same as (b), but with a valid **repay** proof for the victim's loan and a random
+  `R` in the redeemer.
+- Expected: all **rejected**. The repay proof derives the loan nullifier and `R` from
+  one secret, and a borrow proof is not a repay proof (own vkey). Run the honest
+  `5-repay.mjs` on the same state as control: it must succeed.
+- Result: rejected (a / b / c)? ____ / ____ / ____ · control ok? ____
+
+### Attack 10 — Free-form
 Anything else: replay a proof in another tx, spend two deposits with one payout,
 move the NFT, change a frozen datum field, deposit directly to the collateral address
 and try to borrow against it, … Describe what you tried and what happened:
@@ -151,7 +165,8 @@ and try to borrow against it, … Describe what you tried and what happened:
 
 ## Part C — Checklist
 
-- [ ] Collateral **cannot** be unlocked before the loan is fully repaid (Attack 1)
+- [ ] Collateral **cannot** be unlocked before **its own** loan is fully repaid (Attacks 1, 9a)
+- [ ] Nobody can repay someone else's loan in a way that locks their collateral (Attack 9b, 9c)
 - [ ] **Interest** is charged and the repayment is a fixed amount (Attack 2)
 - [ ] A deposit backs **exactly one** loan, so no loan without collateral (Attack 3)
 - [ ] Copied proofs **cannot** redirect a loan or collateral (Attacks 4, 5)
@@ -161,7 +176,7 @@ and try to borrow against it, … Describe what you tried and what happened:
 - [ ] Loan and repay amounts carry no per-loan info; the collateral amount is not in the datum (the locked UTxO value is public)
 - [ ] Borrow does **not** reveal which deposit backs it (no collateral reference)
 - [ ] Adversarial **validator tests** exist and pass (Part A)
-- [ ] Evidence is on an **immutable tag** (`m3-poa-v4`), not `main`
+- [ ] Evidence is on an **immutable tag** (`m3-poa-v5`), not `main`
 
 ---
 
