@@ -25,20 +25,20 @@ Evidence and details:
 
 | Script | Hash |
 |-----------|-------------|
-| `pool_nft` (minting policy) | `586a933cb6c1ece99d373e106ff38b4c430d0e606541c8635c0cf049` |
-| `lending_pool_v5` | `d99ee5039b3b4c3792358482404bffc24e7194cf21c7c30028e01ba7` |
-| `collateral_v5`   | `0fb3482637d024566f70fc43ed09a6178a545fa281e55e72082c44fe` |
+| `pool_nft` (minting policy) | `4346c33b38b46f5b34b60b86bc9ba4ea55f392a3c4cc4cafd060c6ce` |
+| `lending_pool_v5` | `8b15840cc3feac88fb000d4ffe25a108aaba37d4786161719d4d25ea` |
+| `collateral_v5`   | `45b1b0147e0e9d3b0c87f53cfd482ad17170ed0654056207b9503c0c` |
 
 ### On-chain transactions (Cardanoscan, Preprod) — all `valid_contract: true`
 
 | Step | Transaction |
 |------|-------------|
-| Park verification keys | [3e018c9063f1…](https://preprod.cardanoscan.io/transaction/3e018c9063f1c37954079b79285be7bd534efb12dc98f77ad025dffc28790316) |
-| Init pool + mint pool NFT | [5702c1512ad0…](https://preprod.cardanoscan.io/transaction/5702c1512ad0cf4b19009da3995d21675df6b9920ed047af9631382713ac0d30) |
-| Deposit collateral (append proof into the commitment set) | [7fa28e7d56fd…](https://preprod.cardanoscan.io/transaction/7fa28e7d56fd7e6060f97d6b9504a7da7dc35bebb5a275e902f5b3b794e6f556) |
-| Borrow (ZK membership proof verified on-chain, recipient-bound) | [d16503550d1c…](https://preprod.cardanoscan.io/transaction/d16503550d1c822f5a6adaa832c69db4c4f0abfdb0eab1676e4635e89eb2a501) |
-| Repay (self-appends R to repaid set) | [8fafa79d6bc4…](https://preprod.cardanoscan.io/transaction/8fafa79d6bc47e6ce215704a5690bae18efcf89c59d3abc1bf8b4110021ea983) |
-| Unlock collateral (settlement proof) | [046baceaccbe…](https://preprod.cardanoscan.io/transaction/046baceaccbe8a7ac9e426655a5cfe5b997fd0ddc430cc6c5033f99e5f021b4a) |
+| Park verification keys | [edbfae0e6704…](https://preprod.cardanoscan.io/transaction/edbfae0e6704086b0f9feddf30c83544c10406faf729792ba57bbdc4b2be1132) |
+| Init pool + mint pool NFT | [e2ecaa36399f…](https://preprod.cardanoscan.io/transaction/e2ecaa36399f9732f6c56b76489ae58d7b5beaa6aa69a0150ce6ef26b1b5390e) |
+| Deposit collateral (append proof into the commitment set) | [e63eeaab7526…](https://preprod.cardanoscan.io/transaction/e63eeaab75266f138bf283a705ce741da3c2e805104e2fe18889668be4b7fbc1) |
+| Borrow (ZK membership proof verified on-chain, recipient-bound) | [8be8d71a2950…](https://preprod.cardanoscan.io/transaction/8be8d71a29509f9446aff7d668181470a92e5741af9a8d966cdeee232a468bf1) |
+| Repay (repay proof binds R; appends R to repaid set) | [fad24d65ede8…](https://preprod.cardanoscan.io/transaction/fad24d65ede8b625ebe6a7f22684fcdb33803f50b5445c1d72ee857ca869cf60) |
+| Unlock collateral (settlement proof) | [64f9e36847b7…](https://preprod.cardanoscan.io/transaction/64f9e36847b7774a69714f944f448c0496795eaa2621c80c83e02324b48584b9) |
 
 ## How it works
 
@@ -55,8 +55,9 @@ Evidence and details:
    fixed loan to the recipient key the proof is bound to. Each deposit backs exactly
    one loan. Public signals: `[group_root, loan_nullifier, loan_amount,
    collateral_ratio, external_nullifier, recipient]`.
-3. **Repay** — the borrower repays exactly principal + interest, settles the loan nullifier, and
-   self-appends a distinct repayment nullifier `R` into an append-only repaid set (a ZK
+3. **Repay** — the borrower repays exactly principal + interest with a repay proof that
+   derives the loan nullifier and a distinct repayment nullifier `R` from the same
+   secret, settles the loan, and appends that `R` into an append-only repaid set (a ZK
    append proof — permissionless, no admin).
 4. **Unlock** — the borrower proves, in zero knowledge, membership of the private `R` in
    the repaid set (settlement proof). Its public signals `[commitment, repaid_root,
@@ -88,7 +89,7 @@ Node.js 18+, and (to recompile circuits) circom + snarkjs.
 
 ```bash
 # On-chain: compile validators and run the ZK on-chain tests
-cd contracts && aiken build && aiken check      # 49/49 tests pass
+cd contracts && aiken build && aiken check      # 54/54 tests pass
 
 # Borrow circuit: proof + tampered-signal checks
 cd offchain/cli && node v5/test-semaphore-proof.mjs
@@ -106,7 +107,7 @@ cd offchain
 cp ../.env.example ../.env      # then fill in your Blockfrost key + wallet seed
 npm install
 
-node cli/v5/1-park-vkey.mjs     # park the three verification keys
+node cli/v5/1-park-vkey.mjs     # park the four verification keys
 node cli/v5/2-init-pool.mjs     # initialize the pool + mint the pool NFT
 node cli/v5/3-deposit.mjs       # deposit collateral through the pool
 node cli/v5/4-borrow.mjs        # borrow (ZK proof verified on-chain)
