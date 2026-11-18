@@ -22,8 +22,9 @@
 //// address). The borrow and append verification keys are validator parameters.
 
 use aiken/collection/list
-use aiken/crypto.{ScriptHash}
-use cardano/address.{Script}
+use aiken/crypto.{ScriptHash, VerificationKeyHash}
+use aiken/primitive/bytearray
+use cardano/address.{Script, VerificationKey}
 use cardano/assets.{PolicyId, lovelace_of, quantity_of}
 use cardano/script_context.{ScriptContext}
 use cardano/transaction.{InlineDatum, Output, OutputReference, Transaction}
@@ -115,7 +116,7 @@ validator lending_pool_v5(
       // recorded as open AND as used; no collateral UTxO is referenced (unlinkable).
       // A nullifier that was EVER used cannot borrow again — not even after its
       // loan was repaid — so a repaid deposit's R never covers a later loan.
-      BorrowAnonymous { proof, loan_amount, loan_nullifier } -> {
+      BorrowAnonymous { proof, loan_amount, loan_nullifier, recipient } -> {
         let vkey = get_vkey(tx, vkey_ref)
         let proof_ok =
           verify_borrow_proof(
@@ -126,6 +127,7 @@ validator lending_pool_v5(
             loan_amount,
             pool_datum.collateral_ratio,
             pool_datum.external_nullifier,
+            bytearray.to_int_big_endian(recipient),
           )
         let fresh = !has_nullifier(pool_datum.used_nullifiers, loan_nullifier)
         let liquidity = loan_amount <= bal_in - pool_datum.total_borrowed
@@ -142,6 +144,8 @@ validator lending_pool_v5(
           liquidity?,
           denominated?,
           covered?,
+          // The loan goes to the key the proof is bound to (front-running).
+          pays_loan(tx, recipient, loan_amount, loan_nullifier)?,
           (out.open_loans == [loan_nullifier, ..pool_datum.open_loans])?,
           (out.used_nullifiers == [loan_nullifier, ..pool_datum.used_nullifiers])?,
           (out.total_borrowed == pool_datum.total_borrowed + loan_amount)?,
@@ -162,6 +166,7 @@ validator lending_pool_v5(
       // later unlock without any admin step. A bogus R only harms the repayer.
       RepayAnonymous {
         proof,
+        recipient,
         repay_amount,
         loan_nullifier,
         repay_nullifier,
@@ -181,6 +186,7 @@ validator lending_pool_v5(
             principal,
             pool_datum.collateral_ratio,
             pool_datum.external_nullifier,
+            bytearray.to_int_big_endian(recipient),
           )
         // Append proof: R is inserted at next_index, repaid_root -> out.repaid_root.
         let append_vkey = get_vkey(tx, append_vkey_ref)
@@ -295,6 +301,26 @@ fn pays_collateral(
             False
           }
         _ -> False
+      }
+    },
+  )
+}
+
+/// Some output pays at least `amount` lovelace to the `recipient` key, tagged
+/// with the loan nullifier as inline datum.
+fn pays_loan(
+  tx: Transaction,
+  recipient: VerificationKeyHash,
+  amount: Int,
+  loan_nullifier: Int,
+) -> Bool {
+  list.any(
+    tx.outputs,
+    fn(output) {
+      and {
+        output.address.payment_credential == VerificationKey(recipient),
+        lovelace_of(output.value) >= amount,
+        output.datum == InlineDatum(loan_nullifier),
       }
     },
   )

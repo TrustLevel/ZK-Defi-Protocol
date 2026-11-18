@@ -78,6 +78,9 @@ async function main() {
   const collateral_amount = 20_000_000n, loan_amount = 10_000_000n, collateral_ratio = 125n;
   const external_nullifier = 7777n;
   const repay_external_nullifier = 8888n;
+  // Borrow payout key hash (28 bytes); the proof is bound to it as an integer.
+  const RECIPIENT_PKH = "be".repeat(28);
+  const recipient = BigInt("0x" + RECIPIENT_PKH);
 
   const leaf = poseidon2([collateral_amount, secret]);
   const { root, siblings, pathIndices } = merkleWitness(leaf);
@@ -89,6 +92,7 @@ async function main() {
     loan_amount: loan_amount.toString(),
     collateral_ratio: collateral_ratio.toString(),
     external_nullifier: external_nullifier.toString(),
+    recipient: recipient.toString(),
     secret: secret.toString(),
     collateral_amount: collateral_amount.toString(),
     pathIndices: pathIndices.map(String),
@@ -168,7 +172,8 @@ async function main() {
   const icLit = vkIC.map((h) => `#"${h}"`).join(", ");
   const sIcLit = svkIC.map((h) => `#"${h}"`).join(", ");
   const aIcLit = avkIC.map((h) => `#"${h}"`).join(", ");
-  const [g_root, g_null, g_loan, g_ratio, g_ext] = publicSignals;
+  const [g_root, g_null, g_loan, g_ratio, g_ext, g_recipient] = publicSignals;
+  if (g_recipient !== recipient.toString()) throw new Error("recipient public signal mismatch");
   const [s_cmt, s_repaid_root, s_repay_ext] = u.publicSignals;
   const [a_old_root, a_new_root, a_leaf, a_index] = a.publicSignals;
   const loanTampered = (BigInt(g_loan) + 1n).toString();
@@ -177,7 +182,7 @@ async function main() {
 // Real BLS12-381 Groth16 proof for the v6 privacy circuit (Merkle membership +
 // nullifier), verified ON-CHAIN via zk.verify_borrow_proof — the exact helper the
 // v6 lending_pool validator calls. Public signals:
-//   [group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier]
+//   [group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier, recipient]
 use ak_381/groth16.{Proof, SnarkVerificationKey}
 use zk.{verify_append_proof, verify_borrow_proof, verify_settlement_proof}
 
@@ -187,6 +192,9 @@ pub const loan_null: Int = ${g_null}
 pub const loan_amt: Int = ${g_loan}
 pub const ratio: Int = ${g_ratio}
 pub const ext: Int = ${g_ext}
+// Borrow payout key hash; the proof's recipient signal is its big-endian integer.
+pub const recipient_pkh: ByteArray = #"${RECIPIENT_PKH}"
+pub const recipient: Int = ${g_recipient}
 pub const commitment: Int = ${s_cmt}
 // Settlement public signals: [commitment, repaid_root, repay_external_nullifier].
 // repaid_root here is the root of a size-1 repaid-set containing the private R.
@@ -254,11 +262,16 @@ pub fn group_append_proof() -> Proof {
 }
 
 test borrow_proof_verifies_onchain() {
-  verify_borrow_proof(vkey(), proof(), ${g_root}, ${g_null}, ${g_loan}, ${g_ratio}, ${g_ext})
+  verify_borrow_proof(vkey(), proof(), ${g_root}, ${g_null}, ${g_loan}, ${g_ratio}, ${g_ext}, ${g_recipient})
 }
 
 test tampered_borrow_signal_fails_onchain() {
-  !verify_borrow_proof(vkey(), proof(), ${g_root}, ${g_null}, ${loanTampered}, ${g_ratio}, ${g_ext})
+  !verify_borrow_proof(vkey(), proof(), ${g_root}, ${g_null}, ${loanTampered}, ${g_ratio}, ${g_ext}, ${g_recipient})
+}
+
+test tampered_recipient_signal_fails_onchain() {
+  // A copied proof re-targeted at another payout key no longer verifies.
+  !verify_borrow_proof(vkey(), proof(), ${g_root}, ${g_null}, ${g_loan}, ${g_ratio}, ${g_ext}, ${BigInt(g_recipient) + 1n})
 }
 
 test settlement_proof_verifies_onchain() {
