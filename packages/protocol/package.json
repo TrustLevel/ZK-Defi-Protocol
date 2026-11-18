@@ -8,10 +8,13 @@
     "./crypto": "./src/crypto.mjs",
     "./plutus": "./src/plutus.mjs",
     "./scripts": "./src/scripts.mjs",
-    "./deployments/preprod-m4.json": "./deployments/preprod-m4.json"
+    "./deployments/preprod-m4.json": "./deployments/preprod-m4.json",
+    "./tx": "./src/tx.mjs",
+    "./chain": "./src/chain.mjs"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test",
+    "test:live": "node --env-file=../../.env --test"
   },
   "dependencies": {
     "@meshsdk/core": "^1.9.1",
