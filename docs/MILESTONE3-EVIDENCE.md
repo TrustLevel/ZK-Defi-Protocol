@@ -51,7 +51,7 @@ Tallies: aiken **49/49** (0 warnings), live cycle **6/6** `valid_contract: true`
 | Protocol + privacy model + zk mechanism + on-chain design + trust assumptions + non-goals + privacy boundary | `docs/MILESTONE3.md` |
 | Test results | `docs/MILESTONE3-TEST-RESULTS.md` |
 | This evidence index | `docs/MILESTONE3-EVIDENCE.md` |
-| Break-it runbook for testers | `docs/Tester-Feedback/MILESTONE3-TESTER-RUNBOOK-2-breakit.md` |
+| Break-it runbook for testers | `docs/Tester-Feedback/MILESTONE3-TESTER-RUNBOOK-3-breakit.md` |
 | Approved M1 / M2 POAs (re-published) | `docs/poa/M1-POA.pdf`, `docs/poa/M2-POA.pdf` |
 
 ### Independent tester reports
@@ -59,11 +59,13 @@ Tallies: aiken **49/49** (0 warnings), live cycle **6/6** `valid_contract: true`
 Each report is published as written by its tester and dated; it covers the
 protocol stand that was current on that date.
 
-| Tester | Date | Report |
-|---|---|---|
-| pinusch100 | 2026-08-26 | [`MILESTONE3-TESTER-FEEDBACK-pinusch100.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pinusch100.md) |
-| pumbiii | 2026-08-26 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii.md) |
-| pumbiii (break-it) | 2026-09-01 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii-v6.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-v6.md) |
+| Tester | Date | Report | Guided by |
+|---|---|---|---|
+| pinusch100 | 2026-08-26 | [`MILESTONE3-TESTER-FEEDBACK-pinusch100.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pinusch100.md) | feedback template |
+| pumbiii | 2026-08-26 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii.md) | feedback template |
+| pumbiii (break-it) | 2026-09-01 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii-v6.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-v6.md) | [archived runbook 2](Tester-Feedback/archive/MILESTONE3-TESTER-RUNBOOK-2-breakit.md) |
+
+Earlier runbooks are kept in [`Tester-Feedback/archive/`](Tester-Feedback/archive/).
 
 ---
 

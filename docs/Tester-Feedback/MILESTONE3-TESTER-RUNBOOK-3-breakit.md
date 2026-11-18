@@ -1,4 +1,4 @@
-# M3 Tester Runbook 2 — Break it (pumbiii)
+# M3 Tester Runbook 3 — Break it (pumbiii)
 
 **Your role:** try to **break** the protocol, on your **own** pool with your **own**
 wallet. Run each attack below and record whether the protocol **correctly rejected**

@@ -1,5 +1,8 @@
 # M3 Tester Runbook 1 — Reproduce & verify (pinusch)
 
+> **Archived runbook.** Reproduce runbook as issued on 2026-08-31 (last edited 2026-09-02) for the stand tagged `m3-poa-v3`. No tester report was produced from it. The current tester runbook is [`../MILESTONE3-TESTER-RUNBOOK-3-breakit.md`](../MILESTONE3-TESTER-RUNBOOK-3-breakit.md).
+
+
 **Your role:** confirm the published evidence is real, and independently run the whole
 private lending flow yourself from scratch. You are checking *reproducibility*, not
 trying to break it (that's Runbook 2). Fill in every box and return this file as
