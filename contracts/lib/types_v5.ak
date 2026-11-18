@@ -26,17 +26,22 @@
 //// signature.
 
 use ak_381/groth16.{Proof}
+use cardano/address.{Address}
 use cardano/transaction.{OutputReference}
 
 /// Asset name of the one-shot pool NFT (see validators/v5/pool_nft.ak). The
 /// pool UTxO carries it; the validators use it to recognise the real pool.
 pub const pool_nft_name: ByteArray = "POOL"
 
-/// Collateral deposit datum (v6). No owner, no amount — only the commitment
-/// (Merkle leaf = Poseidon255(collateral_amount, secret)) and a timestamp.
+/// Collateral deposit datum (v6). No amount — the commitment (Merkle leaf =
+/// Poseidon255(collateral_amount, secret)), a timestamp, and `unlock_to`: the
+/// address the collateral is paid to on unlock. Fixing the recipient at deposit
+/// means a copied unlock proof cannot redirect the collateral (front-running);
+/// it reveals nothing new, since unlock spends this very deposit anyway.
 pub type DepositDatumV5 {
   commitment: Int,
   timestamp: Int,
+  unlock_to: Address,
 }
 
 /// Lending pool datum (v6). The pool UTxO carries the one-shot pool NFT; the

@@ -8,7 +8,7 @@
 //// Reviewer-2 "no unlock without repayment" guarantee. Unlock also no longer
 //// carries the borrow-time loan_nullifier (Leak-2 fix), enforced structurally.
 
-use cardano/address.{from_script}
+use cardano/address.{Address, from_script, from_verification_key}
 use cardano/assets.{Value, from_asset, from_lovelace, merge}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, placeholder,
@@ -399,8 +399,23 @@ test repay_bogus_append_fails() {
 
 // ---- Unlock (settlement proof, private model) ------------------------------
 
+/// The depositor's chosen unlock recipient (a fresh key address).
+fn owner_addr() -> Address {
+  from_verification_key(#"0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e")
+}
+
 fn deposit_datum(cmt: Int) -> DepositDatumV5 {
-  DepositDatumV5 { commitment: cmt, timestamp: 100 }
+  DepositDatumV5 { commitment: cmt, timestamp: 100, unlock_to: owner_addr() }
+}
+
+/// The unlock payout: full collateral to the recipient, tagged with the deposit.
+fn payout(to: Address, lovelace: Int, tag: OutputReference) -> Output {
+  Output {
+    address: to,
+    value: from_lovelace(lovelace),
+    datum: InlineDatum(tag),
+    reference_script: None,
+  }
 }
 
 fn coll_input(cmt: Int) -> Input {
@@ -428,12 +443,14 @@ fn pool_ref_input(repaid: Int, nidx: Int) -> Input {
 }
 
 test unlock_when_settled_succeeds() {
-  // repaid_root contains R (self-appended at repay) -> settlement proof verifies.
+  // repaid_root contains R (self-appended at repay) -> settlement proof verifies,
+  // and the full collateral goes to the recipient fixed at deposit.
   let tx =
     Transaction {
       ..placeholder,
       inputs: [coll_input(commitment)],
       reference_inputs: [pool_ref_input(repaid_root, 1), svk_ref_input()],
+      outputs: [payout(owner_addr(), 20_000_000, coll_oref)],
     }
   collateral_v5.collateral_v5.spend(
     nft_policy,
@@ -453,6 +470,7 @@ test unlock_without_repay_fails() {
       ..placeholder,
       inputs: [coll_input(commitment)],
       reference_inputs: [pool_ref_input(old_repaid_root, 0), svk_ref_input()],
+      outputs: [payout(owner_addr(), 20_000_000, coll_oref)],
     }
   !collateral_v5.collateral_v5.spend(
     nft_policy,
@@ -471,6 +489,7 @@ test unlock_wrong_commitment_fails() {
       ..placeholder,
       inputs: [coll_input(commitment + 1)],
       reference_inputs: [pool_ref_input(repaid_root, 1), svk_ref_input()],
+      outputs: [payout(owner_addr(), 20_000_000, coll_oref)],
     }
   !collateral_v5.collateral_v5.spend(
     nft_policy,
@@ -834,6 +853,75 @@ test borrow_collateral_denomination_too_small_fails() {
     Some(pd),
     BorrowAnonymous { proof: proof(), loan_amount: loan_amt, loan_nullifier: loan_null },
     pool_oref,
+    tx,
+  )
+}
+
+// ---- Unlock recipient (front-running) ---------------------------------------
+
+test unlock_to_other_address_fails() {
+  // A mempool observer copies a valid unlock proof and pays the collateral to
+  // themselves. The collateral must only go to the recipient fixed at deposit.
+  let thief =
+    Output {
+      address: from_script(#"7e1f7e1f"),
+      value: from_lovelace(20_000_000),
+      datum: InlineDatum(coll_oref),
+      reference_script: None,
+    }
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [coll_input(commitment)],
+      reference_inputs: [pool_ref_input(repaid_root, 1), svk_ref_input()],
+      outputs: [thief],
+    }
+  !collateral_v5.collateral_v5.spend(
+    nft_policy,
+    svk_oref,
+    Some(deposit_datum(commitment)),
+    UnlockDeposit { proof: settlement_proof(), pool_ref: pool_oref },
+    coll_oref,
+    tx,
+  )
+}
+
+test unlock_underpays_recipient_fails() {
+  // The recipient output carries less than the collateral (rest siphoned off).
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [coll_input(commitment)],
+      reference_inputs: [pool_ref_input(repaid_root, 1), svk_ref_input()],
+      outputs: [payout(owner_addr(), 19_000_000, coll_oref)],
+    }
+  !collateral_v5.collateral_v5.spend(
+    nft_policy,
+    svk_oref,
+    Some(deposit_datum(commitment)),
+    UnlockDeposit { proof: settlement_proof(), pool_ref: pool_oref },
+    coll_oref,
+    tx,
+  )
+}
+
+test unlock_payout_tagged_for_other_deposit_fails() {
+  // Double satisfaction: the only recipient output is tagged for ANOTHER deposit
+  // of the same owner, so it cannot also count as this deposit's payout.
+  let other = OutputReference { transaction_id: #"b9", output_index: 0 }
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [coll_input(commitment)],
+      reference_inputs: [pool_ref_input(repaid_root, 1), svk_ref_input()],
+      outputs: [payout(owner_addr(), 20_000_000, other)],
+    }
+  !collateral_v5.collateral_v5.spend(
+    nft_policy,
+    svk_oref,
+    Some(deposit_datum(commitment)),
+    UnlockDeposit { proof: settlement_proof(), pool_ref: pool_oref },
+    coll_oref,
     tx,
   )
 }
