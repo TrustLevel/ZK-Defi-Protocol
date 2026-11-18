@@ -18,10 +18,10 @@ scripts implement it (`contracts/validators/v5/`):
 | Script | Role |
 |---|---|
 | `pool_nft` (minting policy, parameterised by a seed UTxO) | Mints exactly one `POOL` token, once, in the transaction that spends the seed. The pool UTxO carries it, so the validators can tell the real pool from any UTxO someone pays to the pool address. |
-| `lending_pool_v5` (parameterised by the NFT policy, the collateral script hash and the borrow / append vkey refs) | Pool liquidity and state. Authorizes `DepositCollateral`, `BorrowAnonymous`, `RepayAnonymous` and `AddLiquidity`. Keeps the commitment set (`group_root`), the open and used loan nullifiers, and the append-only repaid set (`repaid_root`). |
+| `lending_pool_v5` (parameterised by the NFT policy, the collateral script hash and the borrow / repay / append vkey refs) | Pool liquidity and state. Authorizes `DepositCollateral`, `BorrowAnonymous`, `RepayAnonymous` and `AddLiquidity`. Keeps the commitment set (`group_root`), the open and used loan nullifiers, and the append-only repaid set (`repaid_root`). |
 | `collateral_v5` (parameterised by the NFT policy and the settlement vkey ref) | Holds collateral (fixed denomination) under a commitment. Authorizes `UnlockDeposit` via a settlement proof against the NFT-bearing pool. |
 
-The three verification keys (borrow, settlement, append) are parked once as inline
+The four verification keys (borrow, repay, settlement, append) are parked once as inline
 datums on an **unspendable (always-false) address**. The validators read them as
 **reference inputs at fixed references given as script parameters**, never from a datum.
 
@@ -37,9 +37,10 @@ datums on an **unspendable (always-false) address**. The validators read them as
    **member of the on-chain commitment set** (a Merkle root). It does **not** reference
    a specific deposit UTxO, so nobody can tell which deposit backs a loan.
 3. **Settlement-gated, unlinkable unlock.** Repaying a loan settles its
-   `loan_nullifier`. In the same transaction the borrower inserts a distinct
+   `loan_nullifier`. In the same transaction the repayer inserts a distinct
    **repayment nullifier** `R = Poseidon255(secret, repay_external_nullifier)` into the
-   append-only `repaid_root`, with a zero-knowledge append proof. Unlock then proves,
+   append-only `repaid_root`, with a zero-knowledge append proof. The repay proof
+   binds this `R` to the loan being repaid (same secret). Unlock then proves,
    in zero knowledge, **membership of the private `R` in `repaid_root`**. Its public
    signals are `[commitment, repaid_root, repay_external_nullifier]`, and none of them
    is shared with the borrow. So a deposit can only be unlocked after it was repaid,
@@ -49,12 +50,12 @@ datums on an **unspendable (always-false) address**. The validators read them as
 
 | # | Step | Preprod tx |
 |---|------|-----------|
-| 1 | **Park VKeys.** Borrow, settlement and append verification keys go on an always-false address. | [`3e018c9063f1…`](https://preprod.cardanoscan.io/transaction/3e018c9063f1c37954079b79285be7bd534efb12dc98f77ad025dffc28790316) |
-| 2 | **Init pool + mint the pool NFT.** The tx spends the seed UTxO, mints the single `POOL` token, and locks it with the liquidity and the initial `PoolDatumV5` (empty commitment set, empty repaid set, no open or used nullifiers). | [`5702c1512ad0…`](https://preprod.cardanoscan.io/transaction/5702c1512ad0cf4b19009da3995d21675df6b9920ed047af9631382713ac0d30) |
-| 3 | **Deposit collateral (through the pool).** `DepositCollateral { commitment, append_proof }` locks exactly 20 ADA at the collateral script with `DepositDatumV5 { commitment, timestamp, unlock_to }`, where `commitment = Poseidon255(collateral_amount, secret)`. The append proof, verified **on-chain**, inserts the commitment into `group_root`. Permissionless, and the secret never leaves the depositor. | [`7fa28e7d56fd…`](https://preprod.cardanoscan.io/transaction/7fa28e7d56fd7e6060f97d6b9504a7da7dc35bebb5a275e902f5b3b794e6f556) |
-| 4 | **Borrow.** `BorrowAnonymous { proof, loan_amount, loan_nullifier, recipient }`. The validator runs `groth_verify(vkey, proof, [group_root, nullifier, loan, ratio, ext, recipient])` **on-chain**, and **no collateral UTxO is referenced**. The 10 ADA loan is paid to the recipient key the proof is bound to, and the nullifier is recorded as open and as used. | [`d16503550d1c…`](https://preprod.cardanoscan.io/transaction/d16503550d1c822f5a6adaa832c69db4c4f0abfdb0eab1676e4635e89eb2a501) |
-| 5 | **Repay.** `RepayAnonymous { proof, recipient, repay_amount, loan_nullifier, repay_nullifier, append_proof }` re-attests membership and the nullifier, and pays **exactly principal + interest** (10.5 ADA). It settles the loan and **self-appends `R` into `repaid_root`** via an on-chain append proof. Permissionless. | [`8fafa79d6bc4…`](https://preprod.cardanoscan.io/transaction/8fafa79d6bc47e6ce215704a5690bae18efcf89c59d3abc1bf8b4110021ea983) |
-| 6 | **Unlock.** `UnlockDeposit { proof, pool_ref }`: a settlement proof binds the spent commitment and proves membership of the private `R` in the `repaid_root` of the NFT-bearing pool. The 20 ADA collateral goes to the deposit's `unlock_to` address, **with no signature and no borrow-shared value**. | [`046baceaccbe…`](https://preprod.cardanoscan.io/transaction/046baceaccbe8a7ac9e426655a5cfe5b997fd0ddc430cc6c5033f99e5f021b4a) |
+| 1 | **Park VKeys.** Borrow, repay, settlement and append verification keys go on an always-false address. | [`edbfae0e6704…`](https://preprod.cardanoscan.io/transaction/edbfae0e6704086b0f9feddf30c83544c10406faf729792ba57bbdc4b2be1132) |
+| 2 | **Init pool + mint the pool NFT.** The tx spends the seed UTxO, mints the single `POOL` token, and locks it with the liquidity and the initial `PoolDatumV5` (empty commitment set, empty repaid set, no open or used nullifiers). | [`e2ecaa36399f…`](https://preprod.cardanoscan.io/transaction/e2ecaa36399f9732f6c56b76489ae58d7b5beaa6aa69a0150ce6ef26b1b5390e) |
+| 3 | **Deposit collateral (through the pool).** `DepositCollateral { commitment, append_proof }` locks exactly 20 ADA at the collateral script with `DepositDatumV5 { commitment, timestamp, unlock_to }`, where `commitment = Poseidon255(collateral_amount, secret)`. The append proof, verified **on-chain**, inserts the commitment into `group_root`. Permissionless, and the secret never leaves the depositor. | [`e63eeaab7526…`](https://preprod.cardanoscan.io/transaction/e63eeaab75266f138bf283a705ce741da3c2e805104e2fe18889668be4b7fbc1) |
+| 4 | **Borrow.** `BorrowAnonymous { proof, loan_amount, loan_nullifier, recipient }`. The validator runs `groth_verify(vkey, proof, [group_root, nullifier, loan, ratio, ext, recipient])` **on-chain**, and **no collateral UTxO is referenced**. The 10 ADA loan is paid to the recipient key the proof is bound to, and the nullifier is recorded as open and as used. | [`8be8d71a2950…`](https://preprod.cardanoscan.io/transaction/8be8d71a29509f9446aff7d668181470a92e5741af9a8d966cdeee232a468bf1) |
+| 5 | **Repay.** `RepayAnonymous { proof, repay_amount, loan_nullifier, repay_nullifier, append_proof }`: a repay proof attests membership, the loan nullifier **and `R` from the same secret**, verified **on-chain**. It pays **exactly principal + interest** (10.5 ADA), settles the loan and **appends that `R` into `repaid_root`** via an on-chain append proof. Permissionless. | [`fad24d65ede8…`](https://preprod.cardanoscan.io/transaction/fad24d65ede8b625ebe6a7f22684fcdb33803f50b5445c1d72ee857ca869cf60) |
+| 6 | **Unlock.** `UnlockDeposit { proof, pool_ref }`: a settlement proof binds the spent commitment and proves membership of the private `R` in the `repaid_root` of the NFT-bearing pool. The 20 ADA collateral goes to the deposit's `unlock_to` address, **with no signature and no borrow-shared value**. | [`64f9e36847b7…`](https://preprod.cardanoscan.io/transaction/64f9e36847b7774a69714f944f448c0496795eaa2621c80c83e02324b48584b9) |
 
 All six transactions confirmed `valid_contract: true`. Economics: pool 100 → 90 →
 100.5 ADA (principal + 5 % interest), collateral released.
@@ -68,7 +69,7 @@ builder evaluates every transaction (ExUnits) before it is submitted.
 
 ## 2. zk-proof generation mechanism
 
-Three BLS12-381 Groth16 circuits (`circuits/`) all hash with **Poseidon255**
+Four BLS12-381 Groth16 circuits (`circuits/`) all hash with **Poseidon255**
 (`poseidon-bls12381`), so the in-circuit and on-chain commitment are identical.
 
 The protocol uses Groth16 because:
@@ -79,7 +80,7 @@ The protocol uses Groth16 because:
   verification (M1 §1.2). Every step fits in one transaction, including repay, which
   verifies two proofs (§4).
 
-### Borrow / repay — `collateral_semaphore.circom`
+### Borrow — `collateral_semaphore.circom`
 
 Proves, in zero knowledge, that a **member** of the commitment set is sufficiently
 collateralized, without revealing which one or by how much, and binds the proof to
@@ -94,6 +95,21 @@ the payout recipient.
   4. sufficiency `collateral_amount·100 ≥ loan_amount·collateral_ratio`
   5. range checks
   6. `recipient` (the payout key hash as an integer) is constrained (`recipient²`), so a proof cannot be re-targeted at another key
+
+### Repay — `repay_proof.circom`
+
+Proves the same membership as the borrow and, from the **same secret**, both the loan
+nullifier being settled and the repayment nullifier `R` that the repay appends. A repay
+can therefore only ever release its own deposit. The circuit has its own verification
+key, so a (public) borrow proof is never a valid repay proof.
+
+- **Public signals:** `[group_merkle_root, loan_nullifier, repay_nullifier, loan_amount, collateral_ratio, external_nullifier, repay_external_nullifier]`
+- **Private witness:** `secret`, `collateral_amount`, Merkle path (`siblings`, `pathIndices`)
+- **Constraints:**
+  1. `leaf = Poseidon255(collateral_amount, secret)` and Merkle membership `leaf ∈ group_merkle_root`
+  2. `loan_nullifier = Poseidon255(secret, external_nullifier)`
+  3. `repay_nullifier = Poseidon255(secret, repay_external_nullifier)`
+  4. sufficiency and range checks as in the borrow circuit
 
 ### Unlock — `settlement_proof.circom`
 
@@ -117,7 +133,7 @@ same circuit and verification key serve both sets:
 | Used by | Leaf | Set |
 |---|---|---|
 | `DepositCollateral` | the collateral commitment | `group_root` |
-| `RepayAnonymous` | `R` | `repaid_root` |
+| `RepayAnonymous` | `R` (the one the repay proof binds) | `repaid_root` |
 
 - **Public signals:** `[old_root, new_root, leaf, index]`
 - **Private witness:** `siblings` (the frontier for position `index`)
@@ -140,14 +156,14 @@ on Preprod; a multi-party ceremony is required before mainnet (see M1 Appendix A
 
 - **Generic Groth16 verifier (reused, not rebuilt).** `modulo-p/ak-381` v0.1.1
   provides `groth_verify(vk, proof, public)` for BLS12-381. `contracts/lib/zk.ak`
-  wraps it as `verify_borrow_proof` (6 signals), `verify_settlement_proof` (3 signals)
-  and `verify_append_proof` (4 signals).
+  wraps it as `verify_borrow_proof` (6 signals), `verify_repay_proof` (7 signals),
+  `verify_settlement_proof` (3 signals) and `verify_append_proof` (4 signals).
 - **Pool identity by NFT.** The pool validator spends only the input that holds the
   one-shot pool NFT, and finds the continuing output by the NFT at the same address.
   The collateral validator trusts a pool reference input only if it carries the NFT.
   A UTxO that someone merely paid to the pool address can neither be spent as the pool
   nor serve as the unlock's source of `repaid_root`.
-- **VKeys as parameters.** The borrow, settlement and append vkey references are script
+- **VKeys as parameters.** The borrow, repay, settlement and append vkey references are script
   parameters, read via `get_vkey` from the reference inputs. No datum can point the
   validators at a different key.
 - **Public signals bound to trusted state.** `group_root`, `repaid_root`, the two next
@@ -155,7 +171,8 @@ on Preprod; a multi-party ceremony is required before mainnet (see M1 Appendix A
   from the pool datum. Redeemer-supplied values are cross-checked:
   - `loan_nullifier` against the open and used sets
   - `loan_amount` and `repay_amount` against the fixed denominations and the pool value delta
-  - `commitment` and `repay_nullifier` against the append proof
+  - `commitment` against the deposit append proof
+  - `repay_nullifier` against the repay proof **and** the repay append proof (one value fed to both)
   - `recipient` against the payout output
 
   A spender cannot feed the verifier convenient inputs.
@@ -181,16 +198,16 @@ on Preprod; a multi-party ceremony is required before mainnet (see M1 Appendix A
 
 | Component | Value |
 |---|---|
-| Pool NFT policy | `586a933cb6c1ece99d373e106ff38b4c430d0e606541c8635c0cf049` (token name `POOL`) |
-| NFT seed UTxO | `2167979b07ce2d56db946b25353aa8a788d0ab66e50051d2a31c6edc9cd3f530#2` |
-| `lending_pool_v5` address | `addr_test1wrveaegrnva5cdujxkzgysztllpyuuv5eusu0scq9rsphfcqadca3` |
-| `lending_pool_v5` hash | `d99ee5039b3b4c3792358482404bffc24e7194cf21c7c30028e01ba7` |
-| `collateral_v5` address | `addr_test1wq8mxjpxxlgzg4n0wr7y8mgf5ctc54zl52q72hnjpqkyfls9xp6l2` |
-| `collateral_v5` hash | `0fb3482637d024566f70fc43ed09a6178a545fa281e55e72082c44fe` |
-| VKey reference UTxOs | `3e018c9063f1c37954079b79285be7bd534efb12dc98f77ad025dffc28790316` #0 borrow · #1 settlement · #2 append |
+| Pool NFT policy | `4346c33b38b46f5b34b60b86bc9ba4ea55f392a3c4cc4cafd060c6ce` (token name `POOL`) |
+| NFT seed UTxO | `71eb3a5fed1da2a20e7754e79394d98e063477c9a3ed1c79d590018f76adb5dc#1` |
+| `lending_pool_v5` address | `addr_test1wz93tpqvc0l2ez8mqqx5ll395yy24w3h63uxzct3n4xjt6skt4q3p` |
+| `lending_pool_v5` hash | `8b15840cc3feac88fb000d4ffe25a108aaba37d4786161719d4d25ea` |
+| `collateral_v5` address | `addr_test1wpzmrvq50c8f6wcvsl6nel2g9tghzu8dqe2q2cs8h9grcrqwzdp7q` |
+| `collateral_v5` hash | `45b1b0147e0e9d3b0c87f53cfd482ad17170ed0654056207b9503c0c` |
+| VKey reference UTxOs | `edbfae0e6704086b0f9feddf30c83544c10406faf729792ba57bbdc4b2be1132` #0 borrow · #1 settlement · #2 append · #3 repay |
 | Compiler | Aiken v1.1.19, Plutus V3 |
 | Verifier lib | `modulo-p/ak-381` v0.1.1 |
-| Circuits | BLS12-381, Groth16, Poseidon255; borrow (6 signals), settlement (3 signals), append (4 signals); all depth 10 |
+| Circuits | BLS12-381, Groth16, Poseidon255; borrow (6 signals), repay (7 signals), settlement (3 signals), append (4 signals); all depth 10 |
 
 The applied script hashes are derived from `contracts/plutus.json` with Mesh
 `applyParamsToScript` along the parameter chain (`offchain/cli/v5/common.mjs`,
@@ -201,10 +218,10 @@ therefore yields different (equivalent) bytes and hashes.
 
 | Tx | Proofs verified | mem | cpu | Fee |
 |---|---|---|---|---|
-| Init + mint | none | 26,721 | 10,851,425 | 0.20 ADA |
-| Deposit | append | 485,924 | 2,550,218,387 (26 %) | 0.61 ADA |
-| Borrow | borrow | 483,872 | 2,816,388,568 (28 %) | 0.63 ADA |
-| Repay | borrow + append | 549,703 | 5,218,597,012 (52 %) | 0.82 ADA |
+| Init + mint | none | 30,315 | 13,380,902 | 0.20 ADA |
+| Deposit | append | 485,924 | 2,550,218,387 (26 %) | 0.62 ADA |
+| Borrow | borrow | 480,680 | 2,815,800,439 (28 %) | 0.63 ADA |
+| Repay | repay + append | 555,369 | 5,350,130,263 (54 %) | 0.83 ADA |
 | Unlock | settlement | 262,819 | 2,345,905,591 (23 %) | 0.45 ADA |
 
 ---
@@ -221,25 +238,41 @@ make that trustworthy:
   pool value delta and the append proofs.
 - **Settlement-gated unlock.** Collateral can only be freed once a valid settlement
   proof shows the repayment nullifier is a member of `repaid_root`. The only way `R`
-  enters `repaid_root` is a valid repayment. An `R`-absent root makes the membership
-  proof unsatisfiable, which is the fail-closed test `unlock_without_repay_fails`.
+  enters `repaid_root` is a valid repayment **of that deposit's own loan**: the repay
+  proof derives `R` and the settled loan nullifier from one secret. An `R`-absent root
+  makes the membership proof unsatisfiable, which is the fail-closed test
+  `unlock_without_repay_fails`.
 - **One loan per deposit.** Each deposit's nullifier can borrow exactly once, so a
   settlement can never be reused for a later loan.
 - **Owner-bound payouts.** Loans and collateral are paid only to the recipient the
   proof or the deposit fixed, so proofs cannot be front-run.
 
-**Adversarial test suite.** `aiken check` runs **49 tests (0 warnings)**, including
+**Adversarial test suite.** `aiken check` runs **54 tests (0 warnings)**, including
 validator tests with real BLS12-381 proofs:
 
 | Area | Tests |
 |---|---|
-| Circuits on-chain | Proof verifies, and a tampered signal fails, for each circuit (borrow, settlement, append, deposit append, recipient) |
+| Circuits on-chain | Proof verifies, and a tampered signal fails, for each circuit (borrow, repay, settlement, append, deposit append, recipient) |
 | Pool NFT | Mint only with the seed, exactly one `POOL`, never burned |
 | Pool identity | A pool UTxO without the NFT is not spendable; the NFT cannot leave the pool or its address; vkeys at other references are ignored |
 | Deposit | Exact denomination, correct script, matching commitment, valid append, index advance; no other spend can rewrite `group_root` |
 | Borrow | Membership succeeds; reused / used nullifier fails; second loan on a repaid deposit fails; insufficient denomination fails; payout to another key, a short payout, or a swapped recipient fails |
-| Repay | Exactly principal + interest; under- and over-payment fail; bogus append fails; used nullifiers cannot be cleared |
+| Repay | Exactly principal + interest; under- and over-payment fail; bogus append fails; used nullifiers cannot be cleared; a foreign `R` fails; a copied borrow proof used as a repay proof fails |
 | Unlock | Settled unlock succeeds; unlock without repayment fails; wrong commitment fails; forged pool reference fails; vkey at another reference fails; payout to another address, a short payout, or a payout tagged for another deposit fails |
+
+### Independent testing
+
+Independent testers ran the protocol on Preprod with their own wallets and pools; their
+dated reports are in [`docs/Tester-Feedback/`](Tester-Feedback/) (index in
+[`MILESTONE3-EVIDENCE.md`](MILESTONE3-EVIDENCE.md)). In the break-it run on 2026-11-18
+([`MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md)),
+attacks 1–8 were rejected; attack 9 showed that the repayment nullifier was not bound
+to the repaid loan. Commit
+[`6b5cbb3`](https://github.com/TrustLevel/ZK-Defi-Protocol/commit/6b5cbb3) binds it with
+the repay proof (§2) and adds both attacks as regression tests
+(`repay_with_foreign_repay_nullifier_fails`, `repay_with_copied_borrow_proof_fails`).
+On the open loan of the live cycle above, both attacks were rejected by the validator
+while the honest repay on the same state was accepted.
 
 ### Trust assumptions
 
