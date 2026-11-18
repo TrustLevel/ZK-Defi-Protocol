@@ -5,13 +5,19 @@
   "description": "Protocol logic shared by the CLI and the web app: Poseidon255 commitments and Merkle trees, nullifiers, BLS12-381 point compression, proof inputs, Plutus data and transaction builders.",
   "type": "module",
   "exports": {
-    "./crypto": "./src/crypto.mjs"
+    "./crypto": "./src/crypto.mjs",
+    "./plutus": "./src/plutus.mjs"
   },
   "scripts": {
     "test": "node --test"
   },
   "dependencies": {
+    "@meshsdk/core": "^1.9.1",
     "ffjavascript": "^0.2.63",
     "poseidon-bls12381": "^1.0.2"
+  },
+  "overrides": {
+    "libsodium-wrappers-sumo": "0.8.2",
+    "libsodium-sumo": "0.8.2"
   }
 }
