@@ -1,25 +1,33 @@
 /**
  * v6 off-chain shared helpers (Mesh-based, Node ESM) — PRIVATE lending model.
  *
- * Two BLS12-381 circuits:
- *   BORROW/REPAY: collateral_semaphore (Merkle membership + nullifier + sufficiency)
- *     public [group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier]
+ * Three BLS12-381 circuits:
+ *   BORROW/REPAY: collateral_semaphore (Merkle membership + nullifier + sufficiency,
+ *                 bound to a payout recipient)
+ *     public [group_merkle_root, loan_nullifier, loan_amount, collateral_ratio,
+ *             external_nullifier, recipient]
  *   UNLOCK:       settlement_proof (commitment-bound + Merkle membership of the
  *                 PRIVATE repayment nullifier R in the append-only repaid_root)
  *     public [commitment, repaid_root, repay_external_nullifier]
- *   APPEND:       append_proof (R inserted at next_index: old_root -> new_root)
- *     public [old_root, new_root, leaf, index]  (used inside Repay, permissionless)
+ *   APPEND:       append_proof (leaf inserted at index: old_root -> new_root)
+ *     public [old_root, new_root, leaf, index]  (DepositCollateral: commitment into
+ *     group_root; Repay: R into repaid_root — both permissionless, same vkey)
+ *
+ * Scripts (parameter chain, resolved per deployment by loadScripts()):
+ *   pool_nft(seed) -> collateral_v5(policy, settlement_vkey_ref)
+ *                  -> lending_pool_v5(policy, collateral_hash, vkey_ref, append_vkey_ref)
  *
  * Aiken encodings (contracts/lib/types_v5.ak) — field order is load-bearing:
- *   DepositDatumV5 = conStr 0 [commitment:int, timestamp:int]
+ *   DepositDatumV5 = conStr 0 [commitment:int, timestamp:int, unlock_to:Address]
  *   PoolDatumV5    = conStr 0 [total_deposited, total_borrowed, interest_rate,
- *                    collateral_ratio, vkey_ref:OutRef, settlement_vkey_ref:OutRef,
- *                    append_vkey_ref:OutRef, group_root:int, repaid_root:int,
- *                    next_index:int, external_nullifier:int, repay_external_nullifier:int,
- *                    loan_denomination:int, open_loans:[int], admin:bytes, last_updated:int]
+ *                    collateral_ratio, group_root, group_next_index, repaid_root,
+ *                    next_index, external_nullifier, repay_external_nullifier,
+ *                    collateral_denomination, loan_denomination, open_loans:[int],
+ *                    used_nullifiers:[int], last_updated]
  *   OutputReference= conStr 0 [txHash:bytes, index:int]   (stdlib v2.2.0 flat bytes)
- *   PoolRedeemerV5 : Deposit=0[] · SetGroupRoot=1[int] ·
- *                    BorrowAnonymous=2[Proof,int,int] · RepayAnonymous=3[Proof,int,int,int,Proof]
+ *   PoolRedeemerV5 : AddLiquidity=0[] · DepositCollateral=1[int, Proof] ·
+ *                    BorrowAnonymous=2[Proof, int, int, pkh] ·
+ *                    RepayAnonymous=3[Proof, pkh, int, int, int, Proof]
  *   CollateralRedeemerV5 : UnlockDeposit=0[Proof, OutRef]
  *   Proof          = conStr 0 [piA, piB, piC]
  */
@@ -38,6 +46,8 @@ import {
   integer,
   byteString,
   list,
+  pubKeyAddress,
+  deserializeAddress,
 } from "@meshsdk/core";
 import * as snarkjs from "snarkjs";
 import * as ff from "ffjavascript";
@@ -71,6 +81,11 @@ export const REPAY_EXTERNAL_NULLIFIER = 8888n;
 // Every loan is exactly this size, so loan amounts are uniform (carry no
 // per-loan information) and open_loans stores only nullifiers.
 export const LOAN_DENOMINATION = 10_000_000n; // 10 ADA
+// Every collateral deposit is exactly this size (enforced on-chain at
+// DepositCollateral); it must cover the loan at the collateral ratio.
+export const COLLATERAL_DENOMINATION = 20_000_000n; // 20 ADA
+// Asset name of the one-shot pool NFT ("POOL"), hex.
+export const POOL_NFT_NAME_HEX = Buffer.from("POOL").toString("hex");
 
 // ── env ──────────────────────────────────────────────────────────────────────
 export function loadEnv() {
@@ -110,17 +125,40 @@ function validator(title) {
   if (!v) throw new Error(`validator ${title} not found in plutus.json`);
   return v;
 }
-// Pool is unparameterized; collateral is parameterized by the pool script hash.
-const POOL_V = validator("v5/lending_pool_v5.lending_pool_v5.spend");
+const NFT_V = validator("v5/pool_nft.pool_nft.mint");
 const COLL_V = validator("v5/collateral_v5.collateral_v5.spend");
-export const POOL_CBOR = applyCborEncoding(POOL_V.compiledCode);
-export const POOL_HASH = resolveScriptHash(POOL_CBOR, "V3");
-if (POOL_HASH !== POOL_V.hash) throw new Error("pool script hash mismatch vs plutus.json");
-// apply pool_script_hash param to collateral
-export const COLLATERAL_CBOR = applyParamsToScript(COLL_V.compiledCode, [POOL_HASH], "Mesh");
-export const COLLATERAL_HASH = resolveScriptHash(COLLATERAL_CBOR, "V3");
-export const POOL_ADDRESS = serializePlutusScript({ code: POOL_CBOR, version: "V3" }, undefined, 0).address;
-export const COLLATERAL_ADDRESS = serializePlutusScript({ code: COLLATERAL_CBOR, version: "V3" }, undefined, 0).address;
+const POOL_V = validator("v5/lending_pool_v5.lending_pool_v5.spend");
+
+// Apply the parameter chain for one deployment:
+//   seed      = the wallet UTxO the init tx spends (one-shot NFT policy)
+//   vkeys     = { txHash, borrowIdx, settlementIdx, appendIdx } (receipts/vkey.json)
+// Returns every script (CBOR, hash, address) the steps need.
+export function deriveScripts(seed, vkeys) {
+  const ref = (idx) => outputReference(vkeys.txHash, idx);
+  const nftCbor = applyParamsToScript(
+    NFT_V.compiledCode, [outputReference(seed.txHash, seed.outputIndex)], "JSON");
+  const policyId = resolveScriptHash(nftCbor, "V3");
+  const collCbor = applyParamsToScript(
+    COLL_V.compiledCode, [byteString(policyId), ref(vkeys.settlementIdx)], "JSON");
+  const collHash = resolveScriptHash(collCbor, "V3");
+  const poolCbor = applyParamsToScript(
+    POOL_V.compiledCode,
+    [byteString(policyId), byteString(collHash), ref(vkeys.borrowIdx), ref(vkeys.appendIdx)],
+    "JSON");
+  const poolHash = resolveScriptHash(poolCbor, "V3");
+  const addr = (code) => serializePlutusScript({ code, version: "V3" }, undefined, 0).address;
+  return {
+    NFT_CBOR: nftCbor, POLICY_ID: policyId, POOL_NFT_UNIT: policyId + POOL_NFT_NAME_HEX,
+    COLLATERAL_CBOR: collCbor, COLLATERAL_HASH: collHash, COLLATERAL_ADDRESS: addr(collCbor),
+    POOL_CBOR: poolCbor, POOL_HASH: poolHash, POOL_ADDRESS: addr(poolCbor),
+  };
+}
+
+// Scripts of the current deployment (written by 2-init-pool).
+export function loadScripts() {
+  const dep = loadReceipt("deployment.json");
+  return deriveScripts(dep.seed, dep.vkeys);
+}
 
 // always-false park for VKey UTxOs (read-only reference inputs only).
 export const ALWAYS_FALSE_ADDRESS =
@@ -224,8 +262,8 @@ async function compressProof(proof) {
   return conStr(0, [byteString(piA), byteString(piB), byteString(piC)]);
 }
 
-// Borrow/repay membership proof.
-export async function generateBorrowProof({ commitments, index, secret, collateralAmount, loanAmount, ratio, externalNullifier = EXTERNAL_NULLIFIER }) {
+// Borrow/repay membership proof, bound to the payout key hash `recipientPkh`.
+export async function generateBorrowProof({ commitments, index, secret, collateralAmount, loanAmount, ratio, recipientPkh, externalNullifier = EXTERNAL_NULLIFIER }) {
   const { root, siblings, pathIndices } = merkleProof(commitments, index);
   const nullifier = computeNullifier(secret, externalNullifier);
   const input = {
@@ -234,6 +272,7 @@ export async function generateBorrowProof({ commitments, index, secret, collater
     loan_amount: BigInt(loanAmount).toString(),
     collateral_ratio: BigInt(ratio).toString(),
     external_nullifier: BigInt(externalNullifier).toString(),
+    recipient: pkhToInt(recipientPkh).toString(),
     secret: BigInt(secret).toString(),
     collateral_amount: BigInt(collateralAmount).toString(),
     pathIndices: pathIndices.map(String),
@@ -264,31 +303,64 @@ export async function generateSettlementProof({ commitment, secret, collateralAm
   return { proofData: await compressProof(proof), R, root, publicSignals };
 }
 
-// Repay-time append proof: inserts R at `index` (the next free slot), taking the
-// repaid-set root from old_root -> new_root. `repaidBefore` is the list of R's
-// already in the set (length == index). Public signals [old_root, new_root, R, index].
-export async function generateAppendProof({ secret, repaidBefore, index, repayExternalNullifier = REPAY_EXTERNAL_NULLIFIER }) {
-  const R = computeRepayNullifier(secret, repayExternalNullifier);
-  const { root: oldRoot, siblings } = merkleProof(repaidBefore, index);
-  const newRoot = merkleRoot([...repaidBefore, R]);
+// Append proof for either append-only set: inserts `leaf` at the next free slot
+// (index = leavesBefore.length), taking the root from old_root -> new_root.
+// Public signals [old_root, new_root, leaf, index].
+export async function generateLeafAppendProof({ leavesBefore, leaf }) {
+  const index = leavesBefore.length;
+  const { root: oldRoot, siblings } = merkleProof(leavesBefore, index);
+  const newRoot = merkleRoot([...leavesBefore, leaf]);
   const input = {
     old_root: oldRoot.toString(),
     new_root: newRoot.toString(),
-    leaf: R.toString(),
+    leaf: BigInt(leaf).toString(),
     index: String(index),
     siblings: siblings.map((s) => s.toString()),
   };
   const { proof, publicSignals } = await snarkjs.groth16.fullProve(input, APPEND_WASM, APPEND_ZKEY);
   if (!(await snarkjs.groth16.verify(APPEND_VKEY, publicSignals, proof))) throw new Error("append proof off-chain verify failed");
-  return { proofData: await compressProof(proof), R, oldRoot, newRoot };
+  return { proofData: await compressProof(proof), oldRoot, newRoot, index };
+}
+
+// Repay-time append: inserts R = Poseidon255(secret, repay_ext) into repaid_root.
+// `repaidBefore` is the list of R's already in the set.
+export async function generateAppendProof({ secret, repaidBefore, repayExternalNullifier = REPAY_EXTERNAL_NULLIFIER }) {
+  const R = computeRepayNullifier(secret, repayExternalNullifier);
+  const a = await generateLeafAppendProof({ leavesBefore: repaidBefore, leaf: R });
+  return { ...a, R };
+}
+
+// Deposit-time append: inserts the collateral commitment into group_root.
+// `commitmentsBefore` is the list of commitments already in the set.
+export async function generateCommitmentAppendProof({ commitment, commitmentsBefore }) {
+  return generateLeafAppendProof({ leavesBefore: commitmentsBefore, leaf: commitment });
 }
 
 // ── Plutus data encoders ─────────────────────────────────────────────────────
 export function outputReference(txHash, index) {
   return conStr(0, [byteString(txHash), integer(index)]);
 }
-export function depositDatum(commitment, timestamp) {
-  return conStr(0, [integer(commitment.toString()), integer(timestamp)]);
+// A key payment address (bech32) as Aiken `Address` data, keeping its stake part.
+export function addressData(bech32) {
+  const a = deserializeAddress(bech32);
+  if (!a.pubKeyHash) throw new Error(`not a key payment address: ${bech32}`);
+  if (a.stakeScriptCredentialHash) return pubKeyAddress(a.pubKeyHash, a.stakeScriptCredentialHash, true);
+  return pubKeyAddress(a.pubKeyHash, a.stakeCredentialHash || undefined);
+}
+// Payment key hash of a key address (bech32).
+export function paymentKeyHash(bech32) {
+  const { pubKeyHash } = deserializeAddress(bech32);
+  if (!pubKeyHash) throw new Error(`not a key payment address: ${bech32}`);
+  return pubKeyHash;
+}
+// The proof's recipient signal: the 28-byte key hash as a big-endian integer
+// (matches bytearray.to_int_big_endian in the validator).
+export function pkhToInt(pkhHex) {
+  if (!/^[0-9a-f]{56}$/i.test(pkhHex)) throw new Error(`bad key hash: ${pkhHex}`);
+  return BigInt("0x" + pkhHex);
+}
+export function depositDatum(commitment, timestamp, unlockToBech32) {
+  return conStr(0, [integer(commitment.toString()), integer(timestamp), addressData(unlockToBech32)]);
 }
 export function poolDatum(d) {
   return conStr(0, [
@@ -296,23 +368,22 @@ export function poolDatum(d) {
     integer(d.total_borrowed),
     integer(d.interest_rate),
     integer(d.collateral_ratio),
-    outputReference(d.vkey_ref_tx, d.vkey_ref_idx),
-    outputReference(d.settlement_vkey_ref_tx, d.settlement_vkey_ref_idx),
-    outputReference(d.append_vkey_ref_tx, d.append_vkey_ref_idx),
     integer(d.group_root.toString()),
+    integer(d.group_next_index),
     integer(d.repaid_root.toString()),
     integer(d.next_index),
     integer(d.external_nullifier.toString()),
     integer(d.repay_external_nullifier.toString()),
+    integer(d.collateral_denomination.toString()),
     integer(d.loan_denomination.toString()),
     list((d.open_loans || []).map((n) => integer(n.toString()))),
-    byteString(d.admin),
+    list((d.used_nullifiers || []).map((n) => integer(n.toString()))),
     integer(d.last_updated),
   ]);
 }
 
 // Rebuild the continuing PoolDatumV5 from a pool.json receipt, applying overrides
-// (e.g. { total_borrowed, open_loans, group_root, repaid_root, last_updated }).
+// (e.g. { total_borrowed, open_loans, used_nullifiers, group_root, last_updated }).
 // Centralizes the load-bearing field list so no step can silently drop a field.
 export function poolDatumFrom(pool, overrides = {}) {
   return poolDatum({
@@ -320,33 +391,34 @@ export function poolDatumFrom(pool, overrides = {}) {
     total_borrowed: pool.total_borrowed,
     interest_rate: pool.interest_rate,
     collateral_ratio: pool.collateral_ratio,
-    vkey_ref_tx: pool.vkey_ref_tx, vkey_ref_idx: pool.vkey_ref_idx,
-    settlement_vkey_ref_tx: pool.settlement_vkey_ref_tx, settlement_vkey_ref_idx: pool.settlement_vkey_ref_idx,
-    append_vkey_ref_tx: pool.append_vkey_ref_tx, append_vkey_ref_idx: pool.append_vkey_ref_idx,
     group_root: BigInt(pool.group_root),
+    group_next_index: pool.group_next_index,
     repaid_root: BigInt(pool.repaid_root),
     next_index: pool.next_index,
     external_nullifier: BigInt(pool.external_nullifier),
     repay_external_nullifier: BigInt(pool.repay_external_nullifier),
+    collateral_denomination: BigInt(pool.collateral_denomination),
     loan_denomination: BigInt(pool.loan_denomination),
     open_loans: pool.open_loans,
-    admin: pool.admin,
+    used_nullifiers: pool.used_nullifiers,
     last_updated: pool.last_updated,
     ...overrides,
   });
 }
 
 // redeemers
-export const R_Deposit = conStr(0, []);
-export function R_SetGroupRoot(newRoot) {
-  return conStr(1, [integer(newRoot.toString())]);
+export const R_AddLiquidity = conStr(0, []);
+export function R_DepositCollateral(commitment, appendProofData) {
+  return conStr(1, [integer(commitment.toString()), appendProofData]);
 }
-export function R_Borrow(proofData, loanAmount, nullifier) {
-  return conStr(2, [proofData, integer(loanAmount), integer(nullifier.toString())]);
+export function R_Borrow(proofData, loanAmount, nullifier, recipientPkh) {
+  return conStr(2, [proofData, integer(loanAmount), integer(nullifier.toString()), byteString(recipientPkh)]);
 }
-export function R_Repay(proofData, repayAmount, nullifier, repayNullifier, appendProofData) {
-  return conStr(3, [proofData, integer(repayAmount), integer(nullifier.toString()), integer(repayNullifier.toString()), appendProofData]);
+export function R_Repay(proofData, recipientPkh, repayAmount, nullifier, repayNullifier, appendProofData) {
+  return conStr(3, [proofData, byteString(recipientPkh), integer(repayAmount), integer(nullifier.toString()), integer(repayNullifier.toString()), appendProofData]);
 }
+// NFT mint redeemer (the policy ignores it).
+export const R_Mint = conStr(0, []);
 export function R_Unlock(proofData, poolRefTx, poolRefIdx) {
   return conStr(0, [proofData, outputReference(poolRefTx, poolRefIdx)]);
 }
