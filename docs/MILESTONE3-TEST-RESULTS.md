@@ -6,10 +6,11 @@ All figures below are for the private (v6) protocol as deployed.
 
 | Suite | Command | Result |
 |---|---|---|
-| On-chain + adversarial validator tests (Aiken) | `cd contracts && aiken check` | **54 / 54 pass**, 0 fail, 0 warnings |
+| On-chain + adversarial validator tests (Aiken) | `cd contracts && aiken check` | **54 / 54 pass (100 %)**, 0 fail, 0 warnings |
 | Circuit gate (borrow circuit, incl. tampered signals) | `cd offchain/cli && node v5/test-semaphore-proof.mjs` | valid proof `true`; tampered `loan_amount` and tampered `recipient` `false` |
-| Live Preprod cycle (6 txs) | `offchain/cli/v5/{1..6}` | **6 / 6 confirmed**, all `valid_contract: true` |
+| Live Preprod cycle (6 txs) | `offchain/cli/v5/{1..6}` | **6 / 6 confirmed (100 %)**, all `valid_contract: true` |
 | Live repay attacks on an open loan: borrow proof used as repay proof + junk `R`; repay proof with a foreign `R` | built and evaluated against Preprod, not submitted; honest repay on the same state as control | both **rejected**; control **accepted** |
+| Independent break-it run (pumbiii, 2026-11-18, own pool and wallet) | [`MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md) | attacks 1–8 **rejected**; attack 9 found the unbound repayment nullifier, resolved in commit [`6b5cbb3`](https://github.com/TrustLevel/ZK-Defi-Protocol/commit/6b5cbb3) and covered by the two repay binding tests below |
 
 ### Aiken tests (54)
 
@@ -71,7 +72,35 @@ All figures below are for the private (v6) protocol as deployed.
 | | `unlock_payout_tagged_for_other_deposit_fails` | one payout output cannot settle two deposits |
 | | `unlock_redeemer_carries_no_loan_nullifier` | structural: `UnlockDeposit` shares no value with the borrow |
 
-## 2. Live Preprod cycle (confirmed)
+## 2. Edge case scenarios
+
+Each scenario is an aiken test from §1 (the validator tests run real BLS12-381
+proofs); the test passes when the script behaves as stated.
+
+| Edge case | Expected | Test |
+|---|---|---|
+| First deposit into the empty commitment set (index 0) | accepted | `deposit_collateral_succeeds` |
+| Deposit 1 ADA below the denomination (19 instead of 20 ADA) | rejected | `deposit_collateral_wrong_amount_fails` |
+| Deposit pays the right amount to the wrong script | rejected | `deposit_collateral_wrong_address_fails` |
+| Appended commitment differs from the locked one | rejected | `deposit_collateral_commitment_mismatch_fails` |
+| Append index not advanced | rejected | `deposit_collateral_index_not_advanced_fails` |
+| Collateral denomination does not cover the loan at the ratio | rejected | `borrow_collateral_denomination_too_small_fails` |
+| Borrow with a nullifier that is still open | rejected | `borrow_reused_nullifier_fails` |
+| Borrow again after the loan was repaid (same secret) | rejected | `borrow_after_repay_same_secret_fails` |
+| Loan payout 1 ADA short | rejected | `borrow_underpays_recipient_fails` |
+| Repay principal only (interest missing) | rejected | `repay_below_interest_fails` |
+| Repay more than due | rejected | `repay_overpay_fails` |
+| Repay that appends another deposit's `R` | rejected | `repay_with_foreign_repay_nullifier_fails` |
+| Repay with a borrow proof instead of a repay proof | rejected | `repay_with_copied_borrow_proof_fails` |
+| Unlock while `repaid_root` is still empty | rejected | `unlock_without_repay_fails` |
+| Unlock payout 1 ADA short | rejected | `unlock_underpays_recipient_fails` |
+| One payout output used for two deposits (double satisfaction) | rejected | `unlock_payout_tagged_for_other_deposit_fails` |
+| Unlock proof for a different commitment | rejected | `unlock_wrong_commitment_fails` |
+| Public signal changed by one (each circuit) | rejected | `tampered_*_signal_fails_onchain` |
+| Mint two pool NFTs, an extra token, another name, or burn the NFT | rejected | `mint_two_fails`, `mint_extra_token_fails`, `mint_other_name_fails`, `burn_fails` |
+| Pool NFT left at the pool address but in another output, or moved to another address | rejected | `continuing_output_without_nft_fails`, `continuing_output_other_address_fails` |
+
+## 3. Live Preprod cycle (confirmed)
 
 | Step | Tx hash | valid_contract | Fee (ADA) |
 |---|---|---|---|
@@ -89,7 +118,7 @@ Economics: pool 100 → 90 → 100.5 ADA; collateral (20 ADA) released to `unloc
 - **Index lag.** Blockfrost's UTxO index lags block confirmation by seconds. `wait.mjs` waits until the tx outputs are indexed.
 - **Collateral UTxO.** Script txs need a **pure-ADA** UTxO for Cardano collateral, and the init tx needs two (seed + collateral). Split one off first if necessary.
 
-## 3. On-chain verification cost (measured live)
+## 4. On-chain verification cost (measured live)
 
 | Tx | Proofs | Memory | CPU steps | of tx limit (cpu) |
 |---|---|---|---|---|
@@ -102,7 +131,7 @@ Preprod tx limits: 17,500,000 memory / 10,000,000,000 cpu steps. A single on-cha
 `groth_verify` costs ~2.3–2.8 B cpu. Repay runs two proofs in one tx and still fits
 comfortably (≈3 % mem, ≈54 % cpu).
 
-## 4. Cardanoscan links
+## 5. Cardanoscan links
 
 - Park: https://preprod.cardanoscan.io/transaction/edbfae0e6704086b0f9feddf30c83544c10406faf729792ba57bbdc4b2be1132
 - Init + mint: https://preprod.cardanoscan.io/transaction/e2ecaa36399f9732f6c56b76489ae58d7b5beaa6aa69a0150ce6ef26b1b5390e

@@ -143,6 +143,43 @@ same circuit and verification key serve both sets:
   `index` to the set's next index, then increments it. The tree fills left to right
   and nothing is overwritten.
 
+### Proof generation, end to end
+
+Every proof is generated off-chain by the user and verified on-chain by a validator.
+The steps are the same for all four circuits; the functions are in
+`offchain/cli/v5/common.mjs`.
+
+1. **Secret and commitment.** At deposit the user draws a random `secret` and computes
+   `commitment = Poseidon255(collateral_amount, secret)` (`computeCommitment`). Only
+   the commitment goes on-chain; the secret and amount stay with the user.
+2. **Derived values.** From the same secret the user derives the loan nullifier
+   `Poseidon255(secret, external_nullifier)` (`computeNullifier`) and the repayment
+   nullifier `R = Poseidon255(secret, repay_external_nullifier)`
+   (`computeRepayNullifier`). The two scalars come from the pool datum.
+3. **Merkle path.** The user rebuilds the depth-10 Poseidon255 tree from the set's
+   leaves in insertion order (commitments for `group_root`, repayment nullifiers for
+   `repaid_root`) and takes the path of their leaf (`merkleProof`). The rebuilt root
+   must equal the root in the current pool datum.
+4. **Witness input.** Public signals (from the pool datum and the planned redeemer) and
+   private witness (`secret`, `collateral_amount`, path) are assembled in the exact
+   signal order of the circuit (`generateBorrowProof`, `generateRepayProof`,
+   `generateSettlementProof`, `generateLeafAppendProof`).
+5. **Proving.** snarkjs `groth16.fullProve` runs the circuit's witness generator
+   (`circuits/*_js/*.wasm`) and the proving key (`circuits/keys/*_final.zkey`) and
+   returns the proof and its public signals. If any constraint fails (for example an
+   `R` that is not in `repaid_root`), no proof can be produced at all.
+6. **Off-chain check.** The proof is verified once against the circuit's
+   `verification_key_*.json` before anything is built.
+7. **Encoding.** The BLS12-381 points are compressed to the byte format of the on-chain
+   verifier (G1 48 bytes, G2 96 bytes, with the compression / infinity / sign flags in
+   the first byte) and wrapped as `Proof { piA, piB, piC }` (`compressProof`). The
+   verification keys are encoded the same way once, when they are parked
+   (`buildVkeyDatum`).
+8. **On-chain verification.** The proof goes into the redeemer (`R_DepositCollateral`,
+   `R_Borrow`, `R_Repay`, `R_Unlock`). The validator rebuilds the public signals from
+   the trusted pool state and the redeemer, in the same order, and calls
+   `groth_verify` with the verification key at its parameter reference (§3).
+
 **Trusted setup.** Each circuit goes through a BLS12-381 powers-of-tau, then
 `groth16 setup`, then a phase-2 contribution, producing `*_final.zkey` and
 `verification_key_*.json`. Proofs are generated off-chain with snarkjs, and the
