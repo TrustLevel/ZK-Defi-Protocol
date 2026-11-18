@@ -32,12 +32,13 @@ use types_v5.{
   AddLiquidity, BorrowAnonymous, DepositCollateral, DepositDatumV5, PoolDatumV5,
   PoolRedeemerV5, RepayAnonymous, pool_nft_name,
 }
-use zk.{get_vkey, verify_append_proof, verify_borrow_proof}
+use zk.{get_vkey, verify_append_proof, verify_borrow_proof, verify_repay_proof}
 
 validator lending_pool_v5(
   pool_nft_policy: PolicyId,
   collateral_hash: ScriptHash,
   vkey_ref: OutputReference,
+  repay_vkey_ref: OutputReference,
   append_vkey_ref: OutputReference,
 ) {
   spend(
@@ -157,16 +158,15 @@ validator lending_pool_v5(
         }
       }
 
-      // RepayAnonymous: re-attest membership + the loan nullifier, pay principal +
-      // interest, remove the loan from the open set, AND insert the repayment
-      // nullifier R into repaid_root via a zero-knowledge append proof. Stays
-      // PERMISSIONLESS (no admin signature): the append proof binds
-      // old_root = repaid_root, new_root = out.repaid_root, leaf = R, index =
-      // next_index — so the borrower grows the settlement set themselves and can
-      // later unlock without any admin step. A bogus R only harms the repayer.
+      // RepayAnonymous: a repay proof attests membership, the loan nullifier AND
+      // the repayment nullifier R from ONE secret; pay principal + interest,
+      // remove the loan from the open set, AND insert that R into repaid_root via
+      // a zero-knowledge append proof. PERMISSIONLESS (no admin signature): the
+      // append proof binds old_root = repaid_root, new_root = out.repaid_root,
+      // leaf = R, index = next_index — so the settlement set grows only with the
+      // R of the loan actually repaid, and its deposit can later unlock.
       RepayAnonymous {
         proof,
-        recipient,
         repay_amount,
         loan_nullifier,
         repay_nullifier,
@@ -174,19 +174,22 @@ validator lending_pool_v5(
       } -> {
         let outstanding = has_nullifier(pool_datum.open_loans, loan_nullifier)
         let principal = pool_datum.loan_denomination
-        let vkey = get_vkey(tx, vkey_ref)
-        // The proof re-attests membership + the loan nullifier for the (fixed)
-        // loan denomination. repay_amount is enforced by the pool accounting below.
+        let vkey = get_vkey(tx, repay_vkey_ref)
+        // The repay proof binds the loan nullifier AND the appended repayment
+        // nullifier R to ONE secret (for the fixed loan denomination), so a repay
+        // can only release its own deposit; a (public) borrow proof is not a repay
+        // proof. repay_amount is enforced by the pool accounting below.
         let proof_ok =
-          verify_borrow_proof(
+          verify_repay_proof(
             vkey,
             proof,
             pool_datum.group_root,
             loan_nullifier,
+            repay_nullifier,
             principal,
             pool_datum.collateral_ratio,
             pool_datum.external_nullifier,
-            bytearray.to_int_big_endian(recipient),
+            pool_datum.repay_external_nullifier,
           )
         // Append proof: R is inserted at next_index, repaid_root -> out.repaid_root.
         let append_vkey = get_vkey(tx, append_vkey_ref)

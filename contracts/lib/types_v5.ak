@@ -94,8 +94,8 @@ pub type PoolDatumV5 {
 /// is appended at `group_next_index`, taking group_root -> out.group_root.
 /// `BorrowAnonymous`: the proof is bound to `recipient`; the loan must be paid
 /// to that key (front-running protection).
-/// `RepayAnonymous`: `recipient` is the value the re-attesting proof was made
-/// with — passed through only, nothing is paid to it. `repay_nullifier` = R = Poseidon255(secret, repay_external_nullifier);
+/// `RepayAnonymous`: `proof` is a repay proof binding `loan_nullifier` AND
+/// `repay_nullifier` to one secret. `repay_nullifier` = R = Poseidon255(secret, repay_external_nullifier);
 /// `append_proof` attests R is appended at `next_index`, taking repaid_root ->
 /// out.repaid_root (permissionless — no admin signature on repay).
 pub type PoolRedeemerV5 {
@@ -109,7 +109,6 @@ pub type PoolRedeemerV5 {
   }
   RepayAnonymous {
     proof: Proof,
-    recipient: VerificationKeyHash,
     repay_amount: Int,
     loan_nullifier: Int,
     repay_nullifier: Int,

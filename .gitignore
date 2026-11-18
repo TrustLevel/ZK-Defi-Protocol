@@ -156,6 +156,10 @@ circuits/collateral_proof_final.zkey
 !circuits/append_proof_js/
 !circuits/append_proof_js/append_proof.wasm
 !circuits/keys/append_proof_final.zkey
+# repay circuit (proves N AND R from one secret, binding R to the repaid loan)
+!circuits/repay_proof_js/
+!circuits/repay_proof_js/repay_proof.wasm
+!circuits/keys/repay_proof_final.zkey
 
 # Local dev instructions — kept locally, not published to the public repo
 /CLAUDE.md

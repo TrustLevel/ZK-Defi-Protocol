@@ -48,6 +48,34 @@ pub fn verify_borrow_proof(
   )
 }
 
+/// Verify a repay proof: membership + the loan nullifier N AND the repayment
+/// nullifier R, both from the SAME secret. Public-signal order MUST match
+/// `circuits/repay_proof.circom`:
+///   [group_merkle_root, loan_nullifier, repay_nullifier, loan_amount,
+///    collateral_ratio, external_nullifier, repay_external_nullifier]
+/// Binds the R a repay appends to the loan it settles. It has its own
+/// verification key, so a borrow proof is never a valid repay proof.
+pub fn verify_repay_proof(
+  vkey: SnarkVerificationKey,
+  proof: Proof,
+  group_merkle_root: Int,
+  loan_nullifier: Int,
+  repay_nullifier: Int,
+  loan_amount: Int,
+  collateral_ratio: Int,
+  external_nullifier: Int,
+  repay_external_nullifier: Int,
+) -> Bool {
+  groth_verify(
+    vkey,
+    proof,
+    [
+      group_merkle_root, loan_nullifier, repay_nullifier, loan_amount,
+      collateral_ratio, external_nullifier, repay_external_nullifier,
+    ],
+  )
+}
+
 /// Verify a v6 settlement proof, bound to the SPECIFIC collateral UTxO being spent.
 /// Public-signal order MUST match `circuits/settlement_proof.circom`:
 ///   [commitment, repaid_root, repay_external_nullifier]

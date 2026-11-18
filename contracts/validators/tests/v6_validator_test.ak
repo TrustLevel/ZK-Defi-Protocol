@@ -18,10 +18,10 @@ use types_v5.{
   RepayAnonymous, UnlockDeposit, pool_nft_name,
 }
 use semaphore_onchain_test.{
-  append_proof, append_vkey, commitment, ext, group_append_proof, group_root,
-  loan_amt, loan_null,
-  old_repaid_root, proof, ratio, recipient_pkh, repaid_root, repay_ext,
-  repay_null,
+  append_proof, append_proof_d, append_vkey, commitment, ext, group_append_proof,
+  group_root, loan_amt, loan_null,
+  old_repaid_root, proof, ratio, recipient_pkh, repaid_root, repaid_root_d,
+  repay_ext, repay_null, repay_null_d, repay_proof, repay_vkey,
   settlement_proof, settlement_vkey, vkey,
 }
 use v5/collateral_v5
@@ -46,6 +46,9 @@ const vk_oref: OutputReference =
 
 const svk_oref: OutputReference =
   OutputReference { transaction_id: #"b2", output_index: 0 }
+
+const rvk_oref: OutputReference =
+  OutputReference { transaction_id: #"b5", output_index: 0 }
 
 const avk_oref: OutputReference =
   OutputReference { transaction_id: #"b4", output_index: 0 }
@@ -103,6 +106,18 @@ fn svk_ref_input() -> Input {
   }
 }
 
+fn rvk_ref_input() -> Input {
+  Input {
+    output_reference: rvk_oref,
+    output: Output {
+      address: from_script(#"deadbeef"),
+      value: from_lovelace(2_000_000),
+      datum: InlineDatum(repay_vkey()),
+      reference_script: None,
+    },
+  }
+}
+
 fn avk_ref_input() -> Input {
   Input {
     output_reference: avk_oref,
@@ -153,6 +168,7 @@ test borrow_membership_succeeds() {
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     BorrowAnonymous {
@@ -183,6 +199,7 @@ test borrow_reused_nullifier_fails() {
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     BorrowAnonymous {
@@ -213,6 +230,7 @@ test borrow_after_repay_same_secret_fails() {
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     BorrowAnonymous {
@@ -242,6 +260,7 @@ test borrow_not_recorded_as_used_fails() {
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     BorrowAnonymous {
@@ -269,18 +288,18 @@ test repay_principal_plus_interest_succeeds() {
     Transaction {
       ..placeholder,
       inputs: [pool_input(pd, 90_000_000)],
-      reference_inputs: [vk_ref_input(), avk_ref_input()],
+      reference_inputs: [rvk_ref_input(), avk_ref_input()],
       outputs: [pool_out(out, 90_000_000 + repay)],
     }
   lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     RepayAnonymous {
-      proof: proof(),
-      recipient: recipient_pkh,
+      proof: repay_proof(),
       repay_amount: repay,
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
@@ -302,18 +321,18 @@ test repay_clearing_used_nullifier_fails() {
     Transaction {
       ..placeholder,
       inputs: [pool_input(pd, 90_000_000)],
-      reference_inputs: [vk_ref_input(), avk_ref_input()],
+      reference_inputs: [rvk_ref_input(), avk_ref_input()],
       outputs: [pool_out(out, 90_000_000 + repay)],
     }
   !lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     RepayAnonymous {
-      proof: proof(),
-      recipient: recipient_pkh,
+      proof: repay_proof(),
       repay_amount: repay,
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
@@ -334,18 +353,18 @@ test repay_below_interest_fails() {
     Transaction {
       ..placeholder,
       inputs: [pool_input(pd, 90_000_000)],
-      reference_inputs: [vk_ref_input(), avk_ref_input()],
+      reference_inputs: [rvk_ref_input(), avk_ref_input()],
       outputs: [pool_out(out, 90_000_000 + repay)],
     }
   !lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     RepayAnonymous {
-      proof: proof(),
-      recipient: recipient_pkh,
+      proof: repay_proof(),
       repay_amount: repay,
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
@@ -367,18 +386,18 @@ test repay_overpay_fails() {
     Transaction {
       ..placeholder,
       inputs: [pool_input(pd, 90_000_000)],
-      reference_inputs: [vk_ref_input(), avk_ref_input()],
+      reference_inputs: [rvk_ref_input(), avk_ref_input()],
       outputs: [pool_out(out, 90_000_000 + repay)],
     }
   !lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     RepayAnonymous {
-      proof: proof(),
-      recipient: recipient_pkh,
+      proof: repay_proof(),
       repay_amount: repay,
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
@@ -401,18 +420,18 @@ test repay_bogus_append_fails() {
     Transaction {
       ..placeholder,
       inputs: [pool_input(pd, 90_000_000)],
-      reference_inputs: [vk_ref_input(), avk_ref_input()],
+      reference_inputs: [rvk_ref_input(), avk_ref_input()],
       outputs: [pool_out(out, 90_000_000 + repay)],
     }
   !lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     RepayAnonymous {
-      proof: proof(),
-      recipient: recipient_pkh,
+      proof: repay_proof(),
       repay_amount: repay,
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
@@ -634,6 +653,7 @@ test spend_pool_without_nft_fails() fail {
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     BorrowAnonymous {
@@ -677,6 +697,7 @@ test continuing_output_without_nft_fails() fail {
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     BorrowAnonymous {
@@ -712,6 +733,7 @@ test continuing_output_other_address_fails() fail {
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     BorrowAnonymous {
@@ -751,6 +773,7 @@ test borrow_with_vkey_at_other_ref_fails() fail {
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     BorrowAnonymous {
@@ -785,6 +808,7 @@ test group_root_change_without_append_fails() {
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     AddLiquidity,
@@ -827,6 +851,7 @@ fn run_deposit(tx: Transaction) -> Bool {
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(empty_group_pool()),
     DepositCollateral { commitment, append_proof: group_append_proof() },
@@ -906,6 +931,7 @@ test borrow_collateral_denomination_too_small_fails() {
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     BorrowAnonymous {
@@ -1013,6 +1039,7 @@ test borrow_payout_to_other_key_fails() {
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     BorrowAnonymous {
@@ -1043,6 +1070,7 @@ test borrow_underpays_recipient_fails() {
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     BorrowAnonymous {
@@ -1075,6 +1103,7 @@ test borrow_redeemer_recipient_swapped_fails() {
     nft_policy,
     coll_hash,
     vk_oref,
+    rvk_oref,
     avk_oref,
     Some(pd),
     BorrowAnonymous {
@@ -1082,6 +1111,76 @@ test borrow_redeemer_recipient_swapped_fails() {
       loan_amount: loan_amt,
       loan_nullifier: loan_null,
       recipient: thief_pkh,
+    },
+    pool_oref,
+    tx,
+  )
+}
+
+// ---- Repay binding (R belongs to the loan being repaid) ---------------------
+
+test repay_with_foreign_repay_nullifier_fails() {
+  // Repaying loan A while appending deposit D's R would let D unlock while D's
+  // own loan stays open, and leave A's collateral locked. The R a repay inserts
+  // must come from the same secret as the loan it settles.
+  let loan = loan_null
+  let pd = pool_datum(loan_amt, [loan], old_repaid_root, 0, [loan])
+  let out = pool_datum(0, [], repaid_root_d, 1, [loan])
+  let repay = 10_500_000
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [pool_input(pd, 90_000_000)],
+      reference_inputs: [rvk_ref_input(), avk_ref_input()],
+      outputs: [pool_out(out, 90_000_000 + repay)],
+    }
+  !lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    coll_hash,
+    vk_oref,
+    rvk_oref,
+    avk_oref,
+    Some(pd),
+    RepayAnonymous {
+      proof: repay_proof(),
+      repay_amount: repay,
+      loan_nullifier: loan_null,
+      repay_nullifier: repay_null_d,
+      append_proof: append_proof_d(),
+    },
+    pool_oref,
+    tx,
+  )
+}
+
+test repay_with_copied_borrow_proof_fails() {
+  // A third party copies the victim's (public) borrow proof, "repays" the
+  // victim's loan with it and appends a foreign R, which would lock the
+  // victim's collateral for good. A borrow proof is not a repay proof.
+  let loan = loan_null
+  let pd = pool_datum(loan_amt, [loan], old_repaid_root, 0, [loan])
+  let out = pool_datum(0, [], repaid_root_d, 1, [loan])
+  let repay = 10_500_000
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [pool_input(pd, 90_000_000)],
+      reference_inputs: [rvk_ref_input(), avk_ref_input()],
+      outputs: [pool_out(out, 90_000_000 + repay)],
+    }
+  !lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    coll_hash,
+    vk_oref,
+    rvk_oref,
+    avk_oref,
+    Some(pd),
+    RepayAnonymous {
+      proof: proof(),
+      repay_amount: repay,
+      loan_nullifier: loan_null,
+      repay_nullifier: repay_null_d,
+      append_proof: append_proof_d(),
     },
     pool_oref,
     tx,
