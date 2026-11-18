@@ -1,0 +1,17 @@
+{
+  "name": "@zk-defi/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Protocol logic shared by the CLI and the web app: Poseidon255 commitments and Merkle trees, nullifiers, BLS12-381 point compression, proof inputs, Plutus data and transaction builders.",
+  "type": "module",
+  "exports": {
+    "./crypto": "./src/crypto.mjs"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ffjavascript": "^0.2.63",
+    "poseidon-bls12381": "^1.0.2"
+  }
+}
