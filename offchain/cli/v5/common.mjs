@@ -76,7 +76,9 @@ export const APPEND_WASM = path.join(CIRCUITS, "append_proof_js/append_proof.was
 export const APPEND_ZKEY = path.join(CIRCUITS, "keys/append_proof_final.zkey");
 export const APPEND_VKEY = JSON.parse(fs.readFileSync(path.join(CIRCUITS, "keys/verification_key_append.json"), "utf8"));
 
-export const RECEIPTS = path.join(__dirname, "receipts");
+// One receipts directory per deployment; RECEIPTS_DIR (relative to this folder)
+// selects another one, e.g. RECEIPTS_DIR=receipts/m4 for the M4 pool.
+export const RECEIPTS = path.join(__dirname, process.env.RECEIPTS_DIR || "receipts");
 
 // Protocol constants (demo). external_nullifier scopes loan nullifiers; the tree
 // depth must match the circuit (CollateralSemaphore(10)).
@@ -102,6 +104,10 @@ export function loadEnv() {
     const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
     if (m) env[m[1]] = m[2].trim().replace(/^"|"$/g, "");
   }
+  // payout addresses may also be set per run on the command line
+  for (const k of ["RECIPIENT_ADDRESS", "UNLOCK_TO_ADDRESS"]) {
+    if (process.env[k]) env[k] = process.env[k];
+  }
   for (const k of ["PREPROD_BLOCKFROST_API_KEY", "ADMIN_WALLET_SEED"]) {
     if (!env[k]) throw new Error(`Missing required env var ${k}`);
   }
@@ -110,10 +116,17 @@ export function loadEnv() {
 export function makeProvider(env) {
   return new BlockfrostProvider(env.PREPROD_BLOCKFROST_API_KEY);
 }
+// The signing wallet: ADMIN_WALLET_SEED by default. WALLET_SEED names another
+// seed variable in .env and WALLET_ACCOUNT selects its account index, so one
+// cycle can run with separate accounts (e.g. deposit from A, repay from B,
+// borrow + unlock submitted by a relayer).
 export async function makeWallet(env, provider) {
+  const seedVar = process.env.WALLET_SEED || "ADMIN_WALLET_SEED";
+  if (!env[seedVar]) throw new Error(`Missing seed variable ${seedVar} in .env`);
   const wallet = new MeshWallet({
     networkId: 0, fetcher: provider, submitter: provider,
-    key: { type: "mnemonic", words: env.ADMIN_WALLET_SEED.split(/\s+/) },
+    accountIndex: Number(process.env.WALLET_ACCOUNT || 0),
+    key: { type: "mnemonic", words: env[seedVar].split(/\s+/) },
   });
   await wallet.init();
   return wallet;
