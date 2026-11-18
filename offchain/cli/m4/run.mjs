@@ -1,0 +1,238 @@
+/**
+ * M4 command line client on the shared protocol module (packages/protocol).
+ * Reads the pool and both trees from the chain; keeps only the user's note
+ * (secret + deposit reference) locally, as the web app does in the browser.
+ *
+ *   node run.mjs deposit   --note <name>               signer: account A
+ *   node run.mjs borrow    --note <name> --to <addr>   signer: relayer; loan to <addr>
+ *   node run.mjs repay     --note <name>               signer: account B
+ *   node run.mjs unlock    --note <name>               signer: relayer
+ *   node run.mjs liquidity --ada <n>                   signer: lender
+ *   node run.mjs status   [--note <name>]
+ *
+ * Signer: WALLET_SEED names the seed variable in the repo .env (default
+ * ADMIN_WALLET_SEED), WALLET_ACCOUNT its account index. Deposit pays the
+ * collateral back to UNLOCK_TO_ADDRESS if set, else to the signer.
+ * Notes live in ./notes/ (gitignored): whoever holds a note can unlock its deposit.
+ */
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { BlockfrostProvider, MeshWallet, MeshTxBuilder } from "@meshsdk/core";
+import * as snarkjs from "snarkjs";
+import * as ff from "ffjavascript";
+import {
+  computeCommitment, computeNullifier, computeRepayNullifier, compressProof,
+  borrowInput, repayInput, settlementInput, appendInput, COLLATERAL_DENOMINATION,
+} from "@zk-defi/protocol/crypto";
+import { paymentKeyHash } from "@zk-defi/protocol/plutus";
+import { deriveScripts } from "@zk-defi/protocol/scripts";
+import { fetchPool, fetchLeaves, checkLeaves } from "@zk-defi/protocol/chain";
+import { buildDeposit, buildBorrow, buildRepay, buildUnlock, buildAddLiquidity, repayAmount } from "@zk-defi/protocol/tx";
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.resolve(HERE, "../../..");
+const NOTES = path.join(HERE, "notes");
+const read = (p) => JSON.parse(fs.readFileSync(p, "utf8"));
+const DEPLOYMENT = read(path.join(ROOT, "packages/protocol/deployments/preprod-m4.json"));
+const S = deriveScripts(read(path.join(ROOT, "contracts/plutus.json")), DEPLOYMENT.seed, DEPLOYMENT.vkeys);
+
+// ── env, chain, wallet ───────────────────────────────────────────────────────
+const env = {};
+for (const line of fs.readFileSync(path.join(ROOT, ".env"), "utf8").split("\n")) {
+  const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
+  if (m) env[m[1]] = m[2].trim().replace(/^"|"$/g, "");
+}
+const KEY = env.PREPROD_BLOCKFROST_API_KEY;
+const provider = new BlockfrostProvider(KEY);
+const bf = async (p) => {
+  const r = await fetch("https://cardano-preprod.blockfrost.io/api/v0" + p, { headers: { project_id: KEY } });
+  if (!r.ok) throw new Error(`Blockfrost ${r.status} ${p}`);
+  return r.json();
+};
+async function signer() {
+  const seedVar = process.env.WALLET_SEED || "ADMIN_WALLET_SEED";
+  if (!env[seedVar]) throw new Error(`Missing seed variable ${seedVar} in .env`);
+  const wallet = new MeshWallet({
+    networkId: 0, fetcher: provider, submitter: provider,
+    accountIndex: Number(process.env.WALLET_ACCOUNT || 0),
+    key: { type: "mnemonic", words: env[seedVar].split(/\s+/) },
+  });
+  await wallet.init();
+  const address = await wallet.getChangeAddress();
+  return { wallet, payer: { address, utxos: await provider.fetchAddressUTxOs(address) } };
+}
+async function state() {
+  const pool = await fetchPool(provider, S);
+  const leaves = await fetchLeaves(bf, S);
+  checkLeaves(pool.datum, leaves);
+  return { pool, leaves };
+}
+async function submit(wallet, unsigned) {
+  const txHash = await wallet.submitTx(await wallet.signTx(unsigned, true));
+  console.log("submitted", txHash, `https://preprod.cardanoscan.io/transaction/${txHash}`);
+  // wait until the outputs are indexed, then let Blockfrost's evaluator catch up
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, 5000));
+    try {
+      if ((await provider.fetchTxInfo(txHash))?.block && (await provider.fetchUTxOs(txHash)).length) {
+        console.log("confirmed; settling 30s");
+        await new Promise((r) => setTimeout(r, 30_000));
+        return txHash;
+      }
+    } catch { /* not indexed yet */ }
+  }
+  throw new Error(`timed out waiting for ${txHash}`);
+}
+
+// ── proving (Node; the web app proves in a Web Worker) ──────────────────────
+const CIRCUIT = {
+  append: ["append_proof", "append_proof_final", "verification_key_append"],
+  borrow: ["collateral_semaphore", "collateral_semaphore_final", "verification_key_semaphore"],
+  repay: ["repay_proof", "repay_proof_final", "verification_key_repay"],
+  settlement: ["settlement_proof", "settlement_proof_final", "verification_key_settlement"],
+};
+async function prove(kind, input) {
+  const [c, zkey, vkey] = CIRCUIT[kind];
+  const t = Date.now();
+  const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+    input, path.join(ROOT, `circuits/${c}_js/${c}.wasm`), path.join(ROOT, `circuits/keys/${zkey}.zkey`));
+  if (!(await snarkjs.groth16.verify(read(path.join(ROOT, `circuits/keys/${vkey}.json`)), publicSignals, proof))) {
+    throw new Error(`${kind} proof failed local verification`);
+  }
+  const curve = await ff.getCurveFromName("bls12381");
+  try {
+    console.log(`${kind} proof ok (${((Date.now() - t) / 1000).toFixed(1)}s)`);
+    return compressProof(curve, proof);
+  } finally {
+    await curve.terminate();
+  }
+}
+
+// ── notes ────────────────────────────────────────────────────────────────────
+const notePath = (name) => path.join(NOTES, `${name}.json`);
+function loadNote(name) {
+  const n = read(notePath(name));
+  return { ...n, secret: BigInt(n.secret), commitment: BigInt(n.commitment) };
+}
+function saveNote(name, note) {
+  fs.mkdirSync(NOTES, { recursive: true });
+  if (fs.existsSync(notePath(name))) throw new Error(`note ${name} exists`);
+  fs.writeFileSync(notePath(name), JSON.stringify(note, (_k, v) => (typeof v === "bigint" ? v.toString() : v), 2));
+}
+function leafIndex(leaves, leaf, what) {
+  const i = leaves.findIndex((x) => x === leaf);
+  if (i < 0) throw new Error(`${what} not found on-chain`);
+  return i;
+}
+
+// ── steps ────────────────────────────────────────────────────────────────────
+const step = {
+  async deposit({ note }) {
+    const { wallet, payer } = await signer();
+    const { pool, leaves } = await state();
+    const secret = BigInt("0x" + Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("hex"));
+    const commitment = computeCommitment(COLLATERAL_DENOMINATION, secret);
+    const a = appendInput({ leavesBefore: leaves.commitments, leaf: commitment });
+    const appendProof = await prove("append", a.input);
+    const unlockTo = process.env.UNLOCK_TO_ADDRESS || payer.address;
+    const unsigned = await buildDeposit(new MeshTxBuilder({ fetcher: provider, evaluator: provider }), {
+      S, deployment: DEPLOYMENT, pool, commitment, appendProof, newGroupRoot: a.newRoot, unlockTo, payer,
+    });
+    const txHash = await submit(wallet, unsigned);
+    // outputs: 0 = pool, 1 = collateral
+    saveNote(note, { secret, commitment, deposit: { txHash, outputIndex: 1 }, unlockTo });
+    console.log(`note saved: ${notePath(note)}`);
+  },
+
+  async borrow({ note, to }) {
+    if (!to) throw new Error("--to <address> (the loan recipient, account B)");
+    const n = loadNote(note);
+    const { wallet, payer } = await signer();
+    const { pool, leaves } = await state();
+    const recipientPkh = paymentKeyHash(to);
+    const b = borrowInput({
+      commitments: leaves.commitments, index: leafIndex(leaves.commitments, n.commitment, "deposit commitment"),
+      secret: n.secret, ratio: pool.datum.collateral_ratio, recipientPkh,
+    });
+    if (pool.datum.used_nullifiers.includes(b.nullifier)) throw new Error("this deposit already backed a loan");
+    const proof = await prove("borrow", b.input);
+    const unsigned = await buildBorrow(new MeshTxBuilder({ fetcher: provider, evaluator: provider }), {
+      S, deployment: DEPLOYMENT, pool, proof, nullifier: b.nullifier, recipient: to, recipientPkh, payer,
+    });
+    await submit(wallet, unsigned);
+  },
+
+  async repay({ note }) {
+    const n = loadNote(note);
+    const { wallet, payer } = await signer();
+    const { pool, leaves } = await state();
+    const r = repayInput({
+      commitments: leaves.commitments, index: leafIndex(leaves.commitments, n.commitment, "deposit commitment"),
+      secret: n.secret, ratio: pool.datum.collateral_ratio,
+    });
+    if (!pool.datum.open_loans.includes(r.nullifier)) throw new Error("no open loan for this note");
+    const a = appendInput({ leavesBefore: leaves.repaid, leaf: r.R });
+    const proof = await prove("repay", r.input);
+    const appendProof = await prove("append", a.input);
+    console.log(`repaying ${Number(repayAmount(pool.datum)) / 1e6} ADA`);
+    const unsigned = await buildRepay(new MeshTxBuilder({ fetcher: provider, evaluator: provider }), {
+      S, deployment: DEPLOYMENT, pool, proof, nullifier: r.nullifier, R: r.R, appendProof, newRepaidRoot: a.newRoot, payer,
+    });
+    await submit(wallet, unsigned);
+  },
+
+  async unlock({ note }) {
+    const n = loadNote(note);
+    const { wallet, payer } = await signer();
+    const { pool, leaves } = await state();
+    const R = computeRepayNullifier(n.secret);
+    const s = settlementInput({
+      commitment: n.commitment, secret: n.secret, repaid: leaves.repaid, index: leafIndex(leaves.repaid, R, "repayment"),
+    });
+    const deposit = (await provider.fetchAddressUTxOs(S.COLLATERAL_ADDRESS)).find(
+      (u) => u.input.txHash === n.deposit.txHash && u.input.outputIndex === n.deposit.outputIndex);
+    if (!deposit) throw new Error("deposit UTxO not found (already unlocked?)");
+    const proof = await prove("settlement", s.input);
+    const unsigned = await buildUnlock(new MeshTxBuilder({ fetcher: provider, evaluator: provider }), {
+      S, deployment: DEPLOYMENT, pool, deposit, unlockTo: n.unlockTo, proof, payer,
+    });
+    await submit(wallet, unsigned);
+  },
+
+  async liquidity({ ada }) {
+    const { wallet, payer } = await signer();
+    const pool = await fetchPool(provider, S);
+    const unsigned = await buildAddLiquidity(new MeshTxBuilder({ fetcher: provider, evaluator: provider }), {
+      S, pool, amount: BigInt(Math.round(Number(ada) * 1e6)), payer,
+    });
+    await submit(wallet, unsigned);
+  },
+
+  async status({ note }) {
+    const { pool, leaves } = await state();
+    const d = pool.datum;
+    console.log(`pool ${Number(d.total_deposited) / 1e6} ADA deposited, ${Number(d.total_borrowed) / 1e6} borrowed`
+      + ` | deposits ${leaves.commitments.length} | open loans ${d.open_loans.length} | repaid ${leaves.repaid.length}`);
+    if (!note) return;
+    const n = loadNote(note);
+    const N = computeNullifier(n.secret), R = computeRepayNullifier(n.secret);
+    const deposited = leaves.commitments.includes(n.commitment);
+    const borrowed = d.used_nullifiers.includes(N);
+    const repaid = leaves.repaid.includes(R);
+    const unlocked = repaid && !(await provider.fetchAddressUTxOs(S.COLLATERAL_ADDRESS))
+      .some((u) => u.input.txHash === n.deposit.txHash && u.input.outputIndex === n.deposit.outputIndex);
+    console.log(`note ${note}: ${unlocked ? "Unlocked" : repaid ? "Repaid" : borrowed ? "Borrowed" : deposited ? "Deposited" : "unknown"}`);
+  },
+};
+
+// ── main ─────────────────────────────────────────────────────────────────────
+const [cmd, ...rest] = process.argv.slice(2);
+const args = {};
+for (let i = 0; i < rest.length; i += 2) args[rest[i].replace(/^--/, "")] = rest[i + 1];
+if (!step[cmd]) {
+  console.error("usage: node run.mjs <deposit|borrow|repay|unlock|liquidity|status> [--note name] [--to addr] [--ada n]");
+  process.exit(1);
+}
+await step[cmd](args);
+process.exit(0);

@@ -164,3 +164,6 @@ circuits/collateral_proof_final.zkey
 
 # Local dev instructions — kept locally, not published to the public repo
 /CLAUDE.md
+
+# M4 CLI notes hold deposit secrets — never commit
+offchain/cli/m4/notes/

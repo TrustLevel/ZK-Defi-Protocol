@@ -80,10 +80,17 @@ learns which position a visitor owns.
 
 ### 3.1 Shared protocol module
 
-The protocol logic in `offchain/cli/v5/common.mjs` (datum and redeemer encoders,
-BLS12-381 point compression, Poseidon Merkle tree, proof inputs, transaction builders)
-moves into one module used by both the CLI and the UI. The CLI keeps working on the same
-code, so the M3 evidence stays valid and there is one source of truth for the encodings.
+`packages/protocol` holds the protocol logic once, for the backend, the web app and
+the command line: Poseidon255 leaves and nullifiers, the Merkle trees, BLS12-381 point
+compression, circuit inputs, every datum and redeemer, the script parameter chain,
+the transaction builders and the chain reader. It has no Node built-ins in the parts
+the browser uses. Its tests check it against the chain: values and data hashes of a
+Preprod cycle on the M4 pool, the parked verification key, and the deployed script
+hashes.
+
+`offchain/cli/m4/run.mjs` is a command line client on this module. It reads the pool
+and both trees from the chain and keeps only the user's note locally, as the web app
+does. The M3 scripts in `offchain/cli/v5/` stay as they are, as the M3 evidence.
 
 ### 3.2 Web app
 
@@ -247,7 +254,8 @@ fixed denominations, Preprod.
 1. M4 deployment of the contracts.
 2. Two-account cycle with a relayer, run from the CLI: account A deposits, the relayer
    submits the borrow to account B, account B repays, the relayer submits the unlock.
-3. Shared protocol module (`packages/protocol`); CLI switched to it and re-run.
+3. Shared protocol module (`packages/protocol`) and the M4 command line client on it,
+   run through a full cycle.
 4. Backend: indexer, evaluate and submit, relayer.
 5. Web app skeleton with in-browser proving in a Web Worker.
 6. Borrower flow: notes, account switching, client-side state, retry on pool contention.
