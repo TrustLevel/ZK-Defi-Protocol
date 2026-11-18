@@ -143,7 +143,7 @@ to connect at each step.
 
 | Step | Proofs (in browser) | Paid from | On-chain effect |
 |---|---|---|---|
-| Deposit | append (commitment → `group_root`) | account A | 20 ADA locked under a commitment; `unlock_to` = a fresh address of account A |
+| Deposit | append (commitment → `group_root`) | account A | 20 ADA locked under a commitment; `unlock_to` = account A |
 | Borrow | borrow (membership, recipient-bound) | relayer | 10 ADA to account B |
 | Repay | repay + append (R → `repaid_root`) | account B | 10 ADA principal + 5 % interest to the pool |
 | Unlock | settlement (R ∈ `repaid_root`) | relayer | 20 ADA to the deposit's `unlock_to` |
@@ -165,8 +165,10 @@ protocol allows:
   received the loan, keeps that link away from account A and its deposit. Repaying from
   the deposit wallet would connect deposit and borrow through the wallet; the UI shows
   that link in the chain panel before the user signs.
-- **Fresh addresses.** The collateral returns to a fresh `unlock_to` address of
-  account A, not the address that paid the deposit.
+- **Collateral returns to account A.** The unlock spends its own deposit, so it is
+  linked to that deposit by design; paying the collateral back to the account that
+  deposited it reveals nothing more. What the unlock hides is which repayment, and so
+  which loan, it belongs to.
 - **Client-side state.** Secrets, notes and position status stay in the browser (§2).
 - **No identifying analytics.** See §6.
 
