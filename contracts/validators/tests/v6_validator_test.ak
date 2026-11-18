@@ -11,7 +11,7 @@
 use cardano/address.{from_script}
 use cardano/assets.{Value, from_asset, from_lovelace, merge}
 use cardano/transaction.{
-  InlineDatum, Input, Output, OutputReference, Transaction, placeholder,
+  InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, placeholder,
 }
 use types_v5.{
   BorrowAnonymous, DepositDatumV5, PoolDatumV5, RepayAnonymous, UnlockDeposit,
@@ -65,9 +65,6 @@ fn pool_datum(
     total_borrowed,
     interest_rate: 500,
     collateral_ratio: ratio,
-    vkey_ref: vk_oref,
-    settlement_vkey_ref: svk_oref,
-    append_vkey_ref: avk_oref,
     group_root,
     repaid_root: repaid,
     next_index: nidx,
@@ -122,7 +119,7 @@ fn pool_input(pd: PoolDatumV5, lovelace: Int) -> Input {
     output_reference: pool_oref,
     output: Output {
       address: from_script(pool_hash),
-      value: from_lovelace(lovelace),
+      value: pool_value(lovelace),
       datum: InlineDatum(pd),
       reference_script: None,
     },
@@ -132,7 +129,7 @@ fn pool_input(pd: PoolDatumV5, lovelace: Int) -> Input {
 fn pool_out(pd: PoolDatumV5, lovelace: Int) -> Output {
   Output {
     address: from_script(pool_hash),
-    value: from_lovelace(lovelace),
+    value: pool_value(lovelace),
     datum: InlineDatum(pd),
     reference_script: None,
   }
@@ -152,6 +149,9 @@ test borrow_membership_succeeds() {
       outputs: [pool_out(out, 100_000_000 - loan_amt)],
     }
   lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    vk_oref,
+    avk_oref,
     Some(pd),
     BorrowAnonymous { proof: proof(), loan_amount: loan_amt, loan_nullifier: loan_null },
     pool_oref,
@@ -173,6 +173,9 @@ test borrow_reused_nullifier_fails() {
       outputs: [pool_out(out, 100_000_000 - loan_amt)],
     }
   !lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    vk_oref,
+    avk_oref,
     Some(pd),
     BorrowAnonymous { proof: proof(), loan_amount: loan_amt, loan_nullifier: loan_null },
     pool_oref,
@@ -194,6 +197,9 @@ test borrow_after_repay_same_secret_fails() {
       outputs: [pool_out(out, 100_500_000 - loan_amt)],
     }
   !lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    vk_oref,
+    avk_oref,
     Some(pd),
     BorrowAnonymous { proof: proof(), loan_amount: loan_amt, loan_nullifier: loan_null },
     pool_oref,
@@ -214,6 +220,9 @@ test borrow_not_recorded_as_used_fails() {
       outputs: [pool_out(out, 100_000_000 - loan_amt)],
     }
   !lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    vk_oref,
+    avk_oref,
     Some(pd),
     BorrowAnonymous { proof: proof(), loan_amount: loan_amt, loan_nullifier: loan_null },
     pool_oref,
@@ -239,6 +248,9 @@ test repay_principal_plus_interest_succeeds() {
       outputs: [pool_out(out, 90_000_000 + repay)],
     }
   lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    vk_oref,
+    avk_oref,
     Some(pd),
     RepayAnonymous {
       proof: proof(),
@@ -267,6 +279,9 @@ test repay_clearing_used_nullifier_fails() {
       outputs: [pool_out(out, 90_000_000 + repay)],
     }
   !lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    vk_oref,
+    avk_oref,
     Some(pd),
     RepayAnonymous {
       proof: proof(),
@@ -294,6 +309,9 @@ test repay_below_interest_fails() {
       outputs: [pool_out(out, 90_000_000 + repay)],
     }
   !lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    vk_oref,
+    avk_oref,
     Some(pd),
     RepayAnonymous {
       proof: proof(),
@@ -322,6 +340,9 @@ test repay_overpay_fails() {
       outputs: [pool_out(out, 90_000_000 + repay)],
     }
   !lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    vk_oref,
+    avk_oref,
     Some(pd),
     RepayAnonymous {
       proof: proof(),
@@ -351,6 +372,9 @@ test repay_bogus_append_fails() {
       outputs: [pool_out(out, 90_000_000 + repay)],
     }
   !lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    vk_oref,
+    avk_oref,
     Some(pd),
     RepayAnonymous {
       proof: proof(),
@@ -515,6 +539,138 @@ test unlock_with_vkey_at_other_ref_fails() fail {
     Some(deposit_datum(commitment)),
     UnlockDeposit { proof: settlement_proof(), pool_ref: pool_oref },
     coll_oref,
+    tx,
+  )
+}
+
+test spend_pool_without_nft_fails() fail {
+  // A UTxO at the pool address WITHOUT the pool NFT is not the pool; it must
+  // not be spendable as one (closes fake-pool / double-satisfaction tricks).
+  let pd = pool_datum(0, [], old_repaid_root, 0, [])
+  let out = pool_datum(loan_amt, [loan_null], old_repaid_root, 0, [loan_null])
+  let fake =
+    Input {
+      output_reference: pool_oref,
+      output: Output {
+        address: from_script(pool_hash),
+        value: from_lovelace(100_000_000),
+        datum: InlineDatum(pd),
+        reference_script: None,
+      },
+    }
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [fake],
+      reference_inputs: [vk_ref_input()],
+      outputs: [pool_out(out, 100_000_000 - loan_amt)],
+    }
+  lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    vk_oref,
+    avk_oref,
+    Some(pd),
+    BorrowAnonymous { proof: proof(), loan_amount: loan_amt, loan_nullifier: loan_null },
+    pool_oref,
+    tx,
+  )
+}
+
+test continuing_output_without_nft_fails() fail {
+  // The NFT must stay with the pool: a continuing output at the pool address
+  // WITHOUT the NFT (NFT moved elsewhere) is rejected.
+  let pd = pool_datum(0, [], old_repaid_root, 0, [])
+  let out = pool_datum(loan_amt, [loan_null], old_repaid_root, 0, [loan_null])
+  let no_nft_out =
+    Output {
+      address: from_script(pool_hash),
+      value: from_lovelace(100_000_000 - loan_amt),
+      datum: InlineDatum(out),
+      reference_script: None,
+    }
+  let nft_elsewhere =
+    Output {
+      address: from_script(#"7e1f7e1f"),
+      value: pool_value(2_000_000),
+      datum: NoDatum,
+      reference_script: None,
+    }
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [pool_input(pd, 100_000_000)],
+      reference_inputs: [vk_ref_input()],
+      outputs: [no_nft_out, nft_elsewhere],
+    }
+  lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    vk_oref,
+    avk_oref,
+    Some(pd),
+    BorrowAnonymous { proof: proof(), loan_amount: loan_amt, loan_nullifier: loan_null },
+    pool_oref,
+    tx,
+  )
+}
+
+test continuing_output_other_address_fails() fail {
+  // The NFT-carrying continuing output must sit at the SAME pool address.
+  let pd = pool_datum(0, [], old_repaid_root, 0, [])
+  let out = pool_datum(loan_amt, [loan_null], old_repaid_root, 0, [loan_null])
+  let moved =
+    Output {
+      address: from_script(#"7e1f7e1f"),
+      value: pool_value(100_000_000 - loan_amt),
+      datum: InlineDatum(out),
+      reference_script: None,
+    }
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [pool_input(pd, 100_000_000)],
+      reference_inputs: [vk_ref_input()],
+      outputs: [moved],
+    }
+  lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    vk_oref,
+    avk_oref,
+    Some(pd),
+    BorrowAnonymous { proof: proof(), loan_amount: loan_amt, loan_nullifier: loan_null },
+    pool_oref,
+    tx,
+  )
+}
+
+test borrow_with_vkey_at_other_ref_fails() fail {
+  // The borrow vkey is fixed by parameter (vk_oref); a vkey offered at any
+  // other reference input is ignored.
+  let pd = pool_datum(0, [], old_repaid_root, 0, [])
+  let out = pool_datum(loan_amt, [loan_null], old_repaid_root, 0, [loan_null])
+  let attacker_vk =
+    Input {
+      output_reference: OutputReference { transaction_id: #"ad", output_index: 1 },
+      output: Output {
+        address: from_script(#"bad0bad0"),
+        value: from_lovelace(2_000_000),
+        datum: InlineDatum(vkey()),
+        reference_script: None,
+      },
+    }
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [pool_input(pd, 100_000_000)],
+      reference_inputs: [attacker_vk],
+      outputs: [pool_out(out, 100_000_000 - loan_amt)],
+    }
+  lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    vk_oref,
+    avk_oref,
+    Some(pd),
+    BorrowAnonymous { proof: proof(), loan_amount: loan_amt, loan_nullifier: loan_null },
+    pool_oref,
     tx,
   )
 }

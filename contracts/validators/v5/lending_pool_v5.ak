@@ -11,18 +11,26 @@
 //// zero-knowledge append proof — PERMISSIONLESSLY, no admin — which is what lets
 //// them later prove settlement (in ZK) at unlock. `group_root` (the deposit
 //// anonymity set) stays admin-curated via SetGroupRoot.
+////
+//// The pool is the UTxO that carries the one-shot pool NFT: the validator only
+//// spends an input holding it and finds the continuing output by it (at the same
+//// address). The borrow and append verification keys are validator parameters.
 
 use aiken/collection/list
-use cardano/assets.{lovelace_of}
+use cardano/assets.{PolicyId, lovelace_of, quantity_of}
 use cardano/script_context.{ScriptContext}
-use cardano/transaction.{Input, InlineDatum, Output, OutputReference, Transaction}
+use cardano/transaction.{InlineDatum, Output, OutputReference, Transaction}
 use types_v5.{
   BorrowAnonymous, Deposit, PoolDatumV5, PoolRedeemerV5, RepayAnonymous,
-  SetGroupRoot,
+  SetGroupRoot, pool_nft_name,
 }
 use zk.{get_vkey, verify_append_proof, verify_borrow_proof}
 
-validator lending_pool_v5 {
+validator lending_pool_v5(
+  pool_nft_policy: PolicyId,
+  vkey_ref: OutputReference,
+  append_vkey_ref: OutputReference,
+) {
   spend(
     datum: Option<PoolDatumV5>,
     redeemer: PoolRedeemerV5,
@@ -32,7 +40,11 @@ validator lending_pool_v5 {
     expect Some(pool_datum) = datum
     expect Some(pool_input) =
       list.find(tx.inputs, fn(i) { i.output_reference == output_ref })
-    expect Some(pool_output) = continuing_pool_output(tx, pool_input)
+    // Only the UTxO holding the pool NFT is the pool.
+    expect has_pool_nft(pool_input.output, pool_nft_policy)
+    // The NFT must continue in an output at the same pool address.
+    expect Some(pool_output) = continuing_pool_output(tx, pool_nft_policy)
+    expect pool_output.address == pool_input.output.address
     expect InlineDatum(out_data) = pool_output.datum
     expect out: PoolDatumV5 = out_data
 
@@ -77,7 +89,7 @@ validator lending_pool_v5 {
       // A nullifier that was EVER used cannot borrow again — not even after its
       // loan was repaid — so a repaid deposit's R never covers a later loan.
       BorrowAnonymous { proof, loan_amount, loan_nullifier } -> {
-        let vkey = get_vkey(tx, pool_datum.vkey_ref)
+        let vkey = get_vkey(tx, vkey_ref)
         let proof_ok =
           verify_borrow_proof(
             vkey,
@@ -125,7 +137,7 @@ validator lending_pool_v5 {
       } -> {
         let outstanding = has_nullifier(pool_datum.open_loans, loan_nullifier)
         let principal = pool_datum.loan_denomination
-        let vkey = get_vkey(tx, pool_datum.vkey_ref)
+        let vkey = get_vkey(tx, vkey_ref)
         // The proof re-attests membership + the loan nullifier for the (fixed)
         // loan denomination. repay_amount is enforced by the pool accounting below.
         let proof_ok =
@@ -139,7 +151,7 @@ validator lending_pool_v5 {
             pool_datum.external_nullifier,
           )
         // Append proof: R is inserted at next_index, repaid_root -> out.repaid_root.
-        let append_vkey = get_vkey(tx, pool_datum.append_vkey_ref)
+        let append_vkey = get_vkey(tx, append_vkey_ref)
         let append_ok =
           verify_append_proof(
             append_vkey,
@@ -187,9 +199,6 @@ fn pool_static_preserved(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
   and {
     new.interest_rate == old.interest_rate,
     new.collateral_ratio == old.collateral_ratio,
-    new.vkey_ref == old.vkey_ref,
-    new.settlement_vkey_ref == old.settlement_vkey_ref,
-    new.append_vkey_ref == old.append_vkey_ref,
     new.external_nullifier == old.external_nullifier,
     new.repay_external_nullifier == old.repay_external_nullifier,
     new.loan_denomination == old.loan_denomination,
@@ -222,6 +231,10 @@ fn remove_loan(loans: List<Int>, n: Int) -> List<Int> {
   list.filter(loans, fn(x) { x != n })
 }
 
-fn continuing_pool_output(tx: Transaction, pool_input: Input) -> Option<Output> {
-  list.find(tx.outputs, fn(output) { output.address == pool_input.output.address })
+fn has_pool_nft(output: Output, policy: PolicyId) -> Bool {
+  quantity_of(output.value, policy, pool_nft_name) == 1
+}
+
+fn continuing_pool_output(tx: Transaction, policy: PolicyId) -> Option<Output> {
+  list.find(tx.outputs, fn(output) { has_pool_nft(output, policy) })
 }

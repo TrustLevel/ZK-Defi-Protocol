@@ -36,10 +36,8 @@ pub type DepositDatumV5 {
   timestamp: Int,
 }
 
-/// Lending pool datum (v6).
-/// `vkey_ref`            -> borrow/repay membership circuit verification key
-/// `settlement_vkey_ref` -> unlock settlement circuit verification key
-/// `append_vkey_ref`     -> repay-time append circuit verification key
+/// Lending pool datum (v6). The pool UTxO carries the one-shot pool NFT; the
+/// verification keys are validator parameters, not datum fields.
 /// `group_root`          -> Merkle root of the collateral commitment set
 ///                          (admin-curated for M3, via SetGroupRoot)
 /// `repaid_root`         -> append-only Merkle root of repayment nullifiers R;
@@ -63,9 +61,6 @@ pub type PoolDatumV5 {
   total_borrowed: Int,
   interest_rate: Int,
   collateral_ratio: Int,
-  vkey_ref: OutputReference,
-  settlement_vkey_ref: OutputReference,
-  append_vkey_ref: OutputReference,
   group_root: Int,
   repaid_root: Int,
   next_index: Int,
