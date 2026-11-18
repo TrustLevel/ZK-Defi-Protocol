@@ -1,19 +1,19 @@
 /**
- * Step 5 — RepayAnonymous: re-attest membership + the loan nullifier, pay
+ * Step 5 — RepayAnonymous: a repay proof attests membership, the loan nullifier
+ * AND the repayment nullifier R from ONE secret (R is bound to this loan); pay
  * principal + interest, remove the loan from open_loans, AND self-insert the
  * repayment nullifier R into repaid_root via a zero-knowledge append proof — all
  * PERMISSIONLESS (no admin signature). The append proof binds old_root = current
  * repaid_root, new_root = out.repaid_root, leaf = R, index = next_index, so the
  * borrower grows the settlement set themselves and can later unlock with no admin
  * step. On-chain: groth_verify for both the membership proof and the append proof.
- * The repayment is a fixed amount (exactly principal + interest). The membership
- * proof is re-made with the borrow's recipient (passed through; nothing is paid
- * to it). used_nullifiers is unchanged — the deposit can never borrow again.
+ * The repayment is a fixed amount (exactly principal + interest).
+ * used_nullifiers is unchanged — the deposit can never borrow again.
  */
 import {
   loadEnv, makeProvider, makeWallet, walletAddress, makeTxBuilder,
   loadScripts, fetchPool, poolAmount, pickCollateral,
-  poolDatumFrom, generateBorrowProof, generateAppendProof, R_Repay, LOAN_DENOMINATION,
+  poolDatumFrom, generateRepayProof, generateAppendProof, R_Repay, LOAN_DENOMINATION,
   loadReceipt, saveReceipt, scanLink,
 } from "./common.mjs";
 
@@ -39,10 +39,9 @@ console.log("principal:", principal / 1e6, "ADA | interest:", interest / 1e6, "|
 
 const { utxo: poolUtxo, lovelace: poolBalance } = await fetchPool(provider, S);
 
-const { proofData, nullifier } = await generateBorrowProof({
+const { proofData, nullifier, R: boundR } = await generateRepayProof({
   commitments, index: deposit.index, secret: BigInt(deposit.secret),
   collateralAmount: deposit.collateralAmount, loanAmount: principal, ratio: pool.collateral_ratio,
-  recipientPkh: borrow.recipientPkh,
 });
 // Self-append R into repaid_root at next_index (permissionless, ZK-attested).
 const repaidBefore = repaid.repaidNullifiers;
@@ -50,6 +49,7 @@ if (repaidBefore.length !== pool.next_index) throw new Error(`repaid.json size $
 const { proofData: appendProofData, R, newRoot } = await generateAppendProof({
   secret: BigInt(deposit.secret), repaidBefore,
 });
+if (R !== boundR) throw new Error("append leaf != the R the repay proof binds");
 console.log("append proof ok | repaid_root", BigInt(pool.repaid_root).toString().slice(0, 12) + "... ->", newRoot.toString().slice(0, 12) + "... | index", pool.next_index);
 
 const now = Date.now();
@@ -70,8 +70,8 @@ const unsigned = await tx
   .txIn(poolUtxo.input.txHash, poolUtxo.input.outputIndex, poolUtxo.output.amount, S.POOL_ADDRESS)
   .txInScript(S.POOL_CBOR)
   .txInInlineDatumPresent()
-  .txInRedeemerValue(R_Repay(proofData, borrow.recipientPkh, repay, nullifier, R, appendProofData), "JSON")
-  .readOnlyTxInReference(dep.vkeys.txHash, dep.vkeys.borrowIdx)
+  .txInRedeemerValue(R_Repay(proofData, repay, nullifier, R, appendProofData), "JSON")
+  .readOnlyTxInReference(dep.vkeys.txHash, dep.vkeys.repayIdx)
   .readOnlyTxInReference(dep.vkeys.txHash, dep.vkeys.appendIdx)
   .txOut(S.POOL_ADDRESS, poolAmount(S, poolBalance + repay))
   .txOutInlineDatumValue(contDatum, "JSON")

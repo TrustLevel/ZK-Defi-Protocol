@@ -2,10 +2,14 @@
  * v6 off-chain shared helpers (Mesh-based, Node ESM) — PRIVATE lending model.
  *
  * Three BLS12-381 circuits:
- *   BORROW/REPAY: collateral_semaphore (Merkle membership + nullifier + sufficiency,
+ *   BORROW:       collateral_semaphore (Merkle membership + nullifier + sufficiency,
  *                 bound to a payout recipient)
  *     public [group_merkle_root, loan_nullifier, loan_amount, collateral_ratio,
  *             external_nullifier, recipient]
+ *   REPAY:        repay_proof (membership + loan nullifier N AND repayment
+ *                 nullifier R from ONE secret — binds R to the repaid loan)
+ *     public [group_merkle_root, loan_nullifier, repay_nullifier, loan_amount,
+ *             collateral_ratio, external_nullifier, repay_external_nullifier]
  *   UNLOCK:       settlement_proof (commitment-bound + Merkle membership of the
  *                 PRIVATE repayment nullifier R in the append-only repaid_root)
  *     public [commitment, repaid_root, repay_external_nullifier]
@@ -15,7 +19,8 @@
  *
  * Scripts (parameter chain, resolved per deployment by loadScripts()):
  *   pool_nft(seed) -> collateral_v5(policy, settlement_vkey_ref)
- *                  -> lending_pool_v5(policy, collateral_hash, vkey_ref, append_vkey_ref)
+ *                  -> lending_pool_v5(policy, collateral_hash, vkey_ref, repay_vkey_ref,
+ *                                     append_vkey_ref)
  *
  * Aiken encodings (contracts/lib/types_v5.ak) — field order is load-bearing:
  *   DepositDatumV5 = conStr 0 [commitment:int, timestamp:int, unlock_to:Address]
@@ -27,7 +32,7 @@
  *   OutputReference= conStr 0 [txHash:bytes, index:int]   (stdlib v2.2.0 flat bytes)
  *   PoolRedeemerV5 : AddLiquidity=0[] · DepositCollateral=1[int, Proof] ·
  *                    BorrowAnonymous=2[Proof, int, int, pkh] ·
- *                    RepayAnonymous=3[Proof, pkh, int, int, int, Proof]
+ *                    RepayAnonymous=3[Proof, int, int, int, Proof]
  *   CollateralRedeemerV5 : UnlockDeposit=0[Proof, OutRef]
  *   Proof          = conStr 0 [piA, piB, piC]
  */
@@ -64,6 +69,9 @@ export const BORROW_VKEY = JSON.parse(fs.readFileSync(path.join(CIRCUITS, "keys/
 export const SETTLEMENT_WASM = path.join(CIRCUITS, "settlement_proof_js/settlement_proof.wasm");
 export const SETTLEMENT_ZKEY = path.join(CIRCUITS, "keys/settlement_proof_final.zkey");
 export const SETTLEMENT_VKEY = JSON.parse(fs.readFileSync(path.join(CIRCUITS, "keys/verification_key_settlement.json"), "utf8"));
+export const REPAY_WASM = path.join(CIRCUITS, "repay_proof_js/repay_proof.wasm");
+export const REPAY_ZKEY = path.join(CIRCUITS, "keys/repay_proof_final.zkey");
+export const REPAY_VKEY = JSON.parse(fs.readFileSync(path.join(CIRCUITS, "keys/verification_key_repay.json"), "utf8"));
 export const APPEND_WASM = path.join(CIRCUITS, "append_proof_js/append_proof.wasm");
 export const APPEND_ZKEY = path.join(CIRCUITS, "keys/append_proof_final.zkey");
 export const APPEND_VKEY = JSON.parse(fs.readFileSync(path.join(CIRCUITS, "keys/verification_key_append.json"), "utf8"));
@@ -131,7 +139,7 @@ const POOL_V = validator("v5/lending_pool_v5.lending_pool_v5.spend");
 
 // Apply the parameter chain for one deployment:
 //   seed      = the wallet UTxO the init tx spends (one-shot NFT policy)
-//   vkeys     = { txHash, borrowIdx, settlementIdx, appendIdx } (receipts/vkey.json)
+//   vkeys     = { txHash, borrowIdx, settlementIdx, appendIdx, repayIdx } (receipts/vkey.json)
 // Returns every script (CBOR, hash, address) the steps need.
 export function deriveScripts(seed, vkeys) {
   const ref = (idx) => outputReference(vkeys.txHash, idx);
@@ -143,7 +151,7 @@ export function deriveScripts(seed, vkeys) {
   const collHash = resolveScriptHash(collCbor, "V3");
   const poolCbor = applyParamsToScript(
     POOL_V.compiledCode,
-    [byteString(policyId), byteString(collHash), ref(vkeys.borrowIdx), ref(vkeys.appendIdx)],
+    [byteString(policyId), byteString(collHash), ref(vkeys.borrowIdx), ref(vkeys.repayIdx), ref(vkeys.appendIdx)],
     "JSON");
   const poolHash = resolveScriptHash(poolCbor, "V3");
   const addr = (code) => serializePlutusScript({ code, version: "V3" }, undefined, 0).address;
@@ -303,6 +311,30 @@ export async function generateBorrowProof({ commitments, index, secret, collater
   return { proofData: await compressProof(proof), root, nullifier, publicSignals };
 }
 
+// Repay proof: membership + loan nullifier N AND repayment nullifier R from the
+// SAME secret, so the R the repay appends is bound to the loan it settles.
+export async function generateRepayProof({ commitments, index, secret, collateralAmount, loanAmount, ratio, externalNullifier = EXTERNAL_NULLIFIER, repayExternalNullifier = REPAY_EXTERNAL_NULLIFIER }) {
+  const { root, siblings, pathIndices } = merkleProof(commitments, index);
+  const nullifier = computeNullifier(secret, externalNullifier);
+  const R = computeRepayNullifier(secret, repayExternalNullifier);
+  const input = {
+    group_merkle_root: root.toString(),
+    loan_nullifier: nullifier.toString(),
+    repay_nullifier: R.toString(),
+    loan_amount: BigInt(loanAmount).toString(),
+    collateral_ratio: BigInt(ratio).toString(),
+    external_nullifier: BigInt(externalNullifier).toString(),
+    repay_external_nullifier: BigInt(repayExternalNullifier).toString(),
+    secret: BigInt(secret).toString(),
+    collateral_amount: BigInt(collateralAmount).toString(),
+    pathIndices: pathIndices.map(String),
+    siblings: siblings.map((s) => s.toString()),
+  };
+  const { proof, publicSignals } = await snarkjs.groth16.fullProve(input, REPAY_WASM, REPAY_ZKEY);
+  if (!(await snarkjs.groth16.verify(REPAY_VKEY, publicSignals, proof))) throw new Error("repay proof off-chain verify failed");
+  return { proofData: await compressProof(proof), root, nullifier, R, publicSignals };
+}
+
 // Unlock settlement proof: binds to the spent commitment AND proves Merkle
 // membership of the PRIVATE repayment nullifier R in repaid_root. Public signals
 // [commitment, repaid_root, repay_external_nullifier] share nothing with borrow.
@@ -434,8 +466,8 @@ export function R_DepositCollateral(commitment, appendProofData) {
 export function R_Borrow(proofData, loanAmount, nullifier, recipientPkh) {
   return conStr(2, [proofData, integer(loanAmount), integer(nullifier.toString()), byteString(recipientPkh)]);
 }
-export function R_Repay(proofData, recipientPkh, repayAmount, nullifier, repayNullifier, appendProofData) {
-  return conStr(3, [proofData, byteString(recipientPkh), integer(repayAmount), integer(nullifier.toString()), integer(repayNullifier.toString()), appendProofData]);
+export function R_Repay(proofData, repayAmount, nullifier, repayNullifier, appendProofData) {
+  return conStr(3, [proofData, integer(repayAmount), integer(nullifier.toString()), integer(repayNullifier.toString()), appendProofData]);
 }
 // NFT mint redeemer (the policy ignores it).
 export const R_Mint = conStr(0, []);
