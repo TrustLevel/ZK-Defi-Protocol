@@ -1,5 +1,6 @@
 // End-to-end sanity check for the v6 collateral_semaphore circuit:
-// build a Poseidon255 Merkle tree, generate a membership+nullifier proof, verify it.
+// build a Poseidon255 Merkle tree, generate a membership+nullifier proof bound
+// to a payout recipient, verify it, and check that tampering fails.
 import { poseidon2 } from "poseidon-bls12381";
 import * as snarkjs from "snarkjs";
 import { readFileSync } from "fs";
@@ -15,6 +16,7 @@ const amount = 20_000_000n; // private collateral
 const ratio = 125n;
 const loan = 10_000_000n;
 const extNull = 42n; // loan context
+const recipient = BigInt("0x" + "be".repeat(28)); // payout key hash as integer
 
 // leaf commitment
 const leaf = poseidon2([amount, secret]);
@@ -43,6 +45,7 @@ const input = {
   loan_amount: loan.toString(),
   collateral_ratio: ratio.toString(),
   external_nullifier: extNull.toString(),
+  recipient: recipient.toString(),
   secret: secret.toString(),
   collateral_amount: amount.toString(),
   pathIndices: pathIndices.map(String),
@@ -67,4 +70,10 @@ tampered[2] = (BigInt(tampered[2]) + 1n).toString();
 const bad = await snarkjs.groth16.verify(vkey, tampered, proof);
 console.log("verify(tampered loan_amount):", bad, "(expected false)");
 
-process.exit(ok && !bad ? 0 : 1);
+// Negative: re-target the proof at another recipient -> must fail.
+const retargeted = [...publicSignals];
+retargeted[5] = (BigInt(retargeted[5]) + 1n).toString();
+const badRecipient = await snarkjs.groth16.verify(vkey, retargeted, proof);
+console.log("verify(tampered recipient):", badRecipient, "(expected false)");
+
+process.exit(ok && !bad && !badRecipient ? 0 : 1);
