@@ -131,6 +131,20 @@ async function main() {
   const a = await snarkjs.groth16.fullProve(aInput, AWASM, AZKEY);
   if (!(await snarkjs.groth16.verify(AVKEY, a.publicSignals, a.proof))) throw new Error("append off-chain verify failed");
 
+  // Deposit append proof: the SAME append circuit inserts the collateral
+  // commitment at index 0 into the EMPTY commitment set, taking group_root from
+  // the empty root to the borrow fixture's group_root. This is what
+  // DepositCollateral verifies to grow group_root permissionlessly (no admin).
+  const gInput = {
+    old_root: emptyRoot.toString(),
+    new_root: root.toString(),
+    leaf: leaf.toString(),
+    index: "0",
+    siblings: siblings.map((s) => s.toString()),
+  };
+  const g = await snarkjs.groth16.fullProve(gInput, AWASM, AZKEY);
+  if (!(await snarkjs.groth16.verify(AVKEY, g.publicSignals, g.proof))) throw new Error("group append off-chain verify failed");
+
   const curve = await ff.getCurveFromName("bls12381");
   const cG1 = (p) => compressedG1(curve, p);
   const cG2 = (p) => compressedG2(curve, p);
@@ -145,6 +159,7 @@ async function main() {
   const svkIC = SVKEY.IC.map(cG1);
   // append
   const aPiA = cG1(a.proof.pi_a), aPiB = cG2(a.proof.pi_b), aPiC = cG1(a.proof.pi_c);
+  const gPiA = cG1(g.proof.pi_a), gPiB = cG2(g.proof.pi_b), gPiC = cG1(g.proof.pi_c);
   const avkAlpha = cG1(AVKEY.vk_alpha_1), avkBeta = cG2(AVKEY.vk_beta_2);
   const avkGamma = cG2(AVKEY.vk_gamma_2), avkDelta = cG2(AVKEY.vk_delta_2);
   const avkIC = AVKEY.IC.map(cG1);
@@ -232,6 +247,12 @@ pub fn append_proof() -> Proof {
   Proof { piA: #"${aPiA}", piB: #"${aPiB}", piC: #"${aPiC}" }
 }
 
+// Deposit append proof: inserts \`commitment\` at index 0 into the empty
+// commitment set (old_repaid_root is the same empty root), giving group_root.
+pub fn group_append_proof() -> Proof {
+  Proof { piA: #"${gPiA}", piB: #"${gPiB}", piC: #"${gPiC}" }
+}
+
 test borrow_proof_verifies_onchain() {
   verify_borrow_proof(vkey(), proof(), ${g_root}, ${g_null}, ${g_loan}, ${g_ratio}, ${g_ext})
 }
@@ -253,12 +274,17 @@ test append_proof_verifies_onchain() {
   verify_append_proof(append_vkey(), append_proof(), ${a_old_root}, ${a_new_root}, ${a_leaf}, ${a_index})
 }
 
+test group_append_proof_verifies_onchain() {
+  verify_append_proof(append_vkey(), group_append_proof(), ${a_old_root}, ${g_root}, ${s_cmt}, 0)
+}
+
 test tampered_append_signal_fails_onchain() {
   // Tamper the new_root public signal (+1) -> the claimed insertion no longer holds.
   !verify_append_proof(append_vkey(), append_proof(), ${a_old_root}, ${BigInt(a_new_root) + 1n}, ${a_leaf}, ${a_index})
 }
 `;
   if (a_new_root !== s_repaid_root) throw new Error("append new_root != settlement repaid_root — fixture inconsistency");
+  if (g.publicSignals[1] !== g_root || g.publicSignals[2] !== s_cmt) throw new Error("group append != borrow group_root/commitment — fixture inconsistency");
   fs.writeFileSync(OUT, ak);
   console.log("Wrote", OUT);
   console.log("public signals:", publicSignals);
