@@ -9,12 +9,13 @@
 //// carries the borrow-time loan_nullifier (Leak-2 fix), enforced structurally.
 
 use cardano/address.{from_script}
-use cardano/assets.{from_lovelace}
+use cardano/assets.{Value, from_asset, from_lovelace, merge}
 use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction, placeholder,
 }
 use types_v5.{
   BorrowAnonymous, DepositDatumV5, PoolDatumV5, RepayAnonymous, UnlockDeposit,
+  pool_nft_name,
 }
 use semaphore_onchain_test.{
   append_proof, append_vkey, commitment, ext, group_root, loan_amt, loan_null,
@@ -25,6 +26,13 @@ use v5/collateral_v5
 use v5/lending_pool_v5
 
 const pool_hash: ByteArray = #"a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"
+
+const nft_policy: ByteArray = #"d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"
+
+/// Lovelace plus the one-shot pool NFT — the value of the REAL pool UTxO.
+fn pool_value(lovelace: Int) -> Value {
+  merge(from_lovelace(lovelace), from_asset(nft_policy, pool_nft_name, 1))
+}
 
 const coll_hash: ByteArray = #"c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0"
 
@@ -379,7 +387,7 @@ fn pool_ref_input(repaid: Int, nidx: Int) -> Input {
     output_reference: pool_oref,
     output: Output {
       address: from_script(pool_hash),
-      value: from_lovelace(90_000_000),
+      value: pool_value(90_000_000),
       datum: InlineDatum(pool_datum(loan_amt, [], repaid, nidx, [loan_null])),
       reference_script: None,
     },
@@ -395,7 +403,8 @@ test unlock_when_settled_succeeds() {
       reference_inputs: [pool_ref_input(repaid_root, 1), svk_ref_input()],
     }
   collateral_v5.collateral_v5.spend(
-    pool_hash,
+    nft_policy,
+    svk_oref,
     Some(deposit_datum(commitment)),
     UnlockDeposit { proof: settlement_proof(), pool_ref: pool_oref },
     coll_oref,
@@ -413,7 +422,8 @@ test unlock_without_repay_fails() {
       reference_inputs: [pool_ref_input(old_repaid_root, 0), svk_ref_input()],
     }
   !collateral_v5.collateral_v5.spend(
-    pool_hash,
+    nft_policy,
+    svk_oref,
     Some(deposit_datum(commitment)),
     UnlockDeposit { proof: settlement_proof(), pool_ref: pool_oref },
     coll_oref,
@@ -430,7 +440,8 @@ test unlock_wrong_commitment_fails() {
       reference_inputs: [pool_ref_input(repaid_root, 1), svk_ref_input()],
     }
   !collateral_v5.collateral_v5.spend(
-    pool_hash,
+    nft_policy,
+    svk_oref,
     Some(deposit_datum(commitment + 1)),
     UnlockDeposit { proof: settlement_proof(), pool_ref: pool_oref },
     coll_oref,
@@ -445,4 +456,65 @@ test unlock_redeemer_carries_no_loan_nullifier() {
   let r = UnlockDeposit { proof: settlement_proof(), pool_ref: pool_oref }
   let UnlockDeposit { proof: _, pool_ref } = r
   pool_ref == pool_oref
+}
+
+test unlock_via_forged_pool_ref_fails() fail {
+  // The real pool has NOT been repaid. An attacker pays a fresh UTxO to the pool
+  // script address (no validator runs on a payment) with a datum whose
+  // repaid_root contains R, and points pool_ref at it. Must be rejected.
+  let forged_oref = OutputReference { transaction_id: #"ee", output_index: 7 }
+  let forged_pool =
+    Input {
+      output_reference: forged_oref,
+      output: Output {
+        address: from_script(pool_hash),
+        value: from_lovelace(2_000_000),
+        datum: InlineDatum(pool_datum(0, [], repaid_root, 1, [loan_null])),
+        reference_script: None,
+      },
+    }
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [coll_input(commitment)],
+      reference_inputs: [forged_pool, svk_ref_input()],
+    }
+  collateral_v5.collateral_v5.spend(
+    nft_policy,
+    svk_oref,
+    Some(deposit_datum(commitment)),
+    UnlockDeposit { proof: settlement_proof(), pool_ref: forged_oref },
+    coll_oref,
+    tx,
+  )
+}
+
+test unlock_with_vkey_at_other_ref_fails() fail {
+  // The settlement vkey is fixed by parameter (svk_oref). A vkey supplied at any
+  // other reference input — e.g. one the attacker set up themselves — is ignored,
+  // so the unlock cannot be authorized against an attacker-chosen key.
+  let attacker_vk =
+    Input {
+      output_reference: OutputReference { transaction_id: #"ad", output_index: 0 },
+      output: Output {
+        address: from_script(#"bad0bad0"),
+        value: from_lovelace(2_000_000),
+        datum: InlineDatum(settlement_vkey()),
+        reference_script: None,
+      },
+    }
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [coll_input(commitment)],
+      reference_inputs: [pool_ref_input(repaid_root, 1), attacker_vk],
+    }
+  collateral_v5.collateral_v5.spend(
+    nft_policy,
+    svk_oref,
+    Some(deposit_datum(commitment)),
+    UnlockDeposit { proof: settlement_proof(), pool_ref: pool_oref },
+    coll_oref,
+    tx,
+  )
 }

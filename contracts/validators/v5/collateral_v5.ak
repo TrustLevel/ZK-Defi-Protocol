@@ -16,19 +16,24 @@
 //// loan_nullifier, and the proof's public signals share nothing with the borrow,
 //// so borrow<->unlock is unlinkable.
 ////
-//// Parameterised by `pool_script_hash` so the trusted pool datum (and thus the
-//// trusted settlement vkey + repaid_root) is located via a reference input rather
-//// than trusted from the redeemer.
+//// Parameterised by the pool NFT policy and the settlement vkey reference. The
+//// pool reference input is trusted only if it carries the one-shot pool NFT — a
+//// UTxO someone merely paid to the pool address cannot supply a fake repaid_root.
+//// The settlement vkey is fixed by parameter, never read from a datum.
 
 use aiken/collection/list
-use aiken/crypto.{ScriptHash}
-use cardano/address.{Script}
+use cardano/assets.{PolicyId, quantity_of}
 use cardano/script_context.{ScriptContext}
-use cardano/transaction.{InlineDatum, Input, Output, OutputReference, Transaction}
-use types_v5.{CollateralRedeemerV5, DepositDatumV5, PoolDatumV5, UnlockDeposit}
+use cardano/transaction.{InlineDatum, Input, OutputReference, Transaction}
+use types_v5.{
+  CollateralRedeemerV5, DepositDatumV5, PoolDatumV5, UnlockDeposit, pool_nft_name,
+}
 use zk.{get_vkey, verify_settlement_proof}
 
-validator collateral_v5(pool_script_hash: ScriptHash) {
+validator collateral_v5(
+  pool_nft_policy: PolicyId,
+  settlement_vkey_ref: OutputReference,
+) {
   spend(
     datum: Option<DepositDatumV5>,
     redeemer: CollateralRedeemerV5,
@@ -38,16 +43,17 @@ validator collateral_v5(pool_script_hash: ScriptHash) {
     expect Some(collateral_datum) = datum
     let UnlockDeposit { proof, pool_ref } = redeemer
 
-    // Locate the trusted pool datum via a reference input bound to the pool script.
+    // Locate the trusted pool datum: the reference input must carry the pool NFT.
     expect Some(pool_in) = find_reference_input(tx, pool_ref)
-    expect is_at_script(pool_in.output, pool_script_hash)
+    expect
+      quantity_of(pool_in.output.value, pool_nft_policy, pool_nft_name) == 1
     expect InlineDatum(pd_data) = pool_in.output.datum
     expect pool_datum: PoolDatumV5 = pd_data
 
     // Settlement proof: binds to this exact deposit (commitment) AND proves, in
     // zero knowledge, membership of the private repayment nullifier in repaid_root.
     // This is the entire unlock gate — no borrow-shared value is revealed.
-    let vkey = get_vkey(tx, pool_datum.settlement_vkey_ref)
+    let vkey = get_vkey(tx, settlement_vkey_ref)
     verify_settlement_proof(
       vkey,
       proof,
@@ -59,13 +65,6 @@ validator collateral_v5(pool_script_hash: ScriptHash) {
 
   else(_ctx: ScriptContext) {
     fail @"Unsupported validator purpose"
-  }
-}
-
-fn is_at_script(output: Output, script_hash: ScriptHash) -> Bool {
-  when output.address.payment_credential is {
-    Script(hash) -> hash == script_hash
-    _ -> False
   }
 }
 
