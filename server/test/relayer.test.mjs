@@ -93,6 +93,18 @@ test("borrow: refuses malformed input before any work", async () => {
   await assert.rejects(relayer.borrow({ ...borrowProof, recipient: "addr_test1wzz9c7tu2x4j0rx4l9xzgcw74s7y5exts2stfwpqfpxamksgfmdd4" }), { statusCode: 400 });
 });
 
+test("borrow: builds again when the pool moved, as long as the root holds", async () => {
+  const r = runner();
+  let tries = 0;
+  r.borrow = async () => {
+    if (++tries < 3) throw Object.assign(new Error("moved"), { code: "pool_moved" });
+    return { txHash: "b2" };
+  };
+  const relayer = createRelayer({ chain: chainWith(datum), runner: r, vkeys, retryMs: 0 });
+  assert.deepEqual(await relayer.borrow({ ...borrowProof, recipient: B }), { txHash: "b2" });
+  assert.equal(tries, 3);
+});
+
 test("unlock: pays the deposit's own unlock_to", async () => {
   const r = runner();
   const out = await createRelayer({ chain: chainWith(datum), runner: r, vkeys }).unlock({ ...settleProof, deposit: deposit.input });

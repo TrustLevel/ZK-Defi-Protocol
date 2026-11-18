@@ -51,12 +51,25 @@ async function verify(vkey, publicSignals, proof) {
 // chain:  { state({ fresh }) }      (chain-service.mjs)
 // runner: { borrow(args), unlock(args), findDeposit(ref) }   (tx-runner.mjs)
 // vkeys:  { borrow, settlement } as snarkjs verification key JSON
-export function createRelayer({ chain, runner, vkeys }) {
+export function createRelayer({ chain, runner, vkeys, retryMs = 15_000, attempts = 3 }) {
   let queue = Promise.resolve();
   const exclusive = (fn) => {
     const run = queue.then(fn, fn);
     queue = run.catch(() => {});
     return run;
+  };
+  // Another transaction may spend the pool between our read and our submit. The
+  // proof stays valid as long as its root is unchanged, so build again on the
+  // new pool (the attempt re-reads it and re-checks the root).
+  const withRetry = async (attempt) => {
+    for (let i = 1; ; i++) {
+      try {
+        return await attempt();
+      } catch (e) {
+        if (e?.code !== "pool_moved" || i >= attempts) throw e;
+        await new Promise((r) => setTimeout(r, retryMs));
+      }
+    }
   };
 
   return {
@@ -80,12 +93,12 @@ export function createRelayer({ chain, runner, vkeys }) {
       }
       await verify(vkeys.borrow, publicSignals, proof);
 
-      return exclusive(async () => {
+      return exclusive(() => withRetry(async () => {
         const { pool: live } = await chain.state({ fresh: true });
         if (live.datum.group_root !== root) throw stale("the deposit set changed; prove again against the new root");
         if (live.datum.used_nullifiers.includes(nullifier)) throw new RelayError(409, "used", "this deposit already backed a loan");
         return runner.borrow({ pool: live, proof, nullifier, recipient, recipientPkh });
-      });
+      }));
     },
 
     // body: { proof, publicSignals, deposit: { txHash, outputIndex } }
@@ -104,11 +117,11 @@ export function createRelayer({ chain, runner, vkeys }) {
       await verify(vkeys.settlement, publicSignals, proof);
       const unlockTo = addressFromData(datum.unlockTo);
 
-      return exclusive(async () => {
+      return exclusive(() => withRetry(async () => {
         const { pool: live } = await chain.state({ fresh: true });
         if (live.datum.repaid_root !== repaidRoot) throw stale("the repaid set changed; prove again against the new root");
         return runner.unlock({ pool: live, proof, deposit, unlockTo });
-      });
+      }));
     },
   };
 }

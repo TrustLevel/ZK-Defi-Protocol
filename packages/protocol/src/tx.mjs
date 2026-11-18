@@ -26,6 +26,25 @@ export function pickCollateral(utxos, minLovelace = 5_000_000n) {
   if (!c) throw new Error("no pure-ADA UTxO >= 5 ADA for script collateral");
   return c;
 }
+// A payment to oneself that creates a pure-ADA UTxO for script collateral, for a
+// wallet whose outputs all carry tokens. Needs no script and no collateral.
+export function buildCollateralSplit(txb, { payer, lovelace = 5_000_000n, network = "preprod" }) {
+  return txb
+    .setNetwork(network)
+    .txOut(payer.address, [{ unit: "lovelace", quantity: String(lovelace) }])
+    .changeAddress(payer.address)
+    .selectUtxosFrom(payer.utxos)
+    .complete();
+}
+export function hasCollateral(utxos) {
+  try {
+    pickCollateral(utxos);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Flat-rate interest (bps), as the validator computes it.
 export function repayAmount(datum) {
   const principal = datum.loan_denomination;

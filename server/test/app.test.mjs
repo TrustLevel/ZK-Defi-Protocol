@@ -39,6 +39,21 @@ test("evaluate and submit accept only hex transactions", async () => {
   assert.equal(ev.json().redeemers[0].budget.mem, "1");
 });
 
+test("GET /api/utxos/:txHash serves a transaction's outputs and validates the hash", async () => {
+  const outputs = [{ input: { txHash: "ab".repeat(32), outputIndex: 0 }, output: { amount: [{ unit: "lovelace", quantity: "2000000" }] } }];
+  const app = await buildApp({ chain: okChain, txService: { ...txService, utxos: async () => outputs }, deployment });
+  assert.equal((await app.inject({ method: "GET", url: "/api/utxos/xyz" })).statusCode, 400);
+  const res = await app.inject({ method: "GET", url: `/api/utxos/${"ab".repeat(32)}` });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(res.json(), outputs);
+});
+
+test("GET /api/cost-models passes the network's cost models through", async () => {
+  const models = [[1, 2], [3], [4, 5, 6]];
+  const app = await buildApp({ chain: okChain, txService: { ...txService, costModels: async () => models }, deployment });
+  assert.deepEqual((await app.inject({ method: "GET", url: "/api/cost-models" })).json(), models);
+});
+
 test("relay routes exist only with a relayer", async () => {
   const without = await buildApp({ chain: okChain, txService, deployment });
   assert.equal((await without.inject({ method: "POST", url: "/api/relay/borrow", payload: {} })).statusCode, 404);

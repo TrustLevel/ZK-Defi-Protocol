@@ -4,6 +4,8 @@
  * are testable without the chain.
  *
  *   GET  /api/state          pool UTxO + decoded datum + both trees' leaves
+ *   GET  /api/utxos/:txHash  outputs of a transaction (for the browser's tx builder)
+ *   GET  /api/cost-models    Plutus cost models of the current epoch (same)
  *   POST /api/evaluate {tx}  script budgets for a transaction built in the browser
  *   POST /api/submit   {tx}  submit a transaction signed in the browser
  *   POST /api/relay/borrow   relayer builds, pays and submits a borrow (see relayer.mjs)
@@ -38,6 +40,16 @@ export async function buildApp({ chain, txService, relayer, deployment, logger =
       indexedAt: at,
     });
   });
+
+  // Outputs of a transaction, for the browser's transaction builder (reference
+  // inputs such as the parked verification keys).
+  app.get("/api/utxos/:txHash", {
+    schema: { params: { type: "object", properties: { txHash: { type: "string", pattern: "^[0-9a-f]{64}$" } } } },
+  }, async (req) => toJson(await txService.utxos(req.params.txHash)));
+
+  // Plutus cost models of the current epoch: the browser's builder needs them for
+  // the script integrity hash (Mesh's defaults may differ from the network's).
+  app.get("/api/cost-models", async () => txService.costModels());
 
   const txBody = { body: { type: "object", required: ["tx"], properties: { tx: { type: "string", pattern: "^[0-9a-fA-F]+$", maxLength: 32768 } } } };
   app.post("/api/evaluate", { schema: txBody }, async (req) => toJson({ redeemers: await txService.evaluate(req.body.tx) }));
