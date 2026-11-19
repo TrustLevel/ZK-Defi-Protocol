@@ -7,7 +7,7 @@ const deployment = { network: "preprod", policyId: "aa", poolAddress: "addr_pool
 const snapshot = {
   at: 1,
   pool: { utxo: { input: { txHash: "ab", outputIndex: 0 } }, datum: { group_root: 2n ** 254n, open_loans: [5n] } },
-  leaves: { commitments: [7n], repaid: [] },
+  leaves: { commitments: [7n], repaid: [], lenders: [8n] },
   deposits: [`${"cd".repeat(32)}#1`],
 };
 const okChain = { state: async () => snapshot };
@@ -21,6 +21,7 @@ test("GET /api/state returns pool and leaves with integers as strings", async ()
   assert.equal(body.pool.datum.group_root, (2n ** 254n).toString());
   assert.deepEqual(body.pool.datum.open_loans, ["5"]);
   assert.deepEqual(body.leaves.commitments, ["7"]);
+  assert.deepEqual(body.leaves.lenders, ["8"]);
   assert.deepEqual(body.deposits, [`${"cd".repeat(32)}#1`]);
   assert.equal(body.deployment.poolAddress, "addr_pool");
 });
@@ -59,9 +60,11 @@ test("GET /api/cost-models passes the network's cost models through", async () =
 test("relay routes exist only with a relayer", async () => {
   const without = await buildApp({ chain: okChain, txService, deployment });
   assert.equal((await without.inject({ method: "POST", url: "/api/relay/borrow", payload: {} })).statusCode, 404);
-  const relayer = { borrow: async () => ({ txHash: "b0" }), unlock: async () => ({ txHash: "u0" }) };
+  const relayer = { borrow: async () => ({ txHash: "b0" }), unlock: async () => ({ txHash: "u0" }), withdraw: async () => ({ txHash: "w0" }) };
   const withRelayer = await buildApp({ chain: okChain, txService, relayer, deployment });
   assert.deepEqual((await withRelayer.inject({ method: "POST", url: "/api/relay/unlock", payload: {} })).json(), { txHash: "u0" });
+  assert.deepEqual((await withRelayer.inject({ method: "POST", url: "/api/relay/withdraw", payload: {} })).json(), { txHash: "w0" });
+  assert.equal((await without.inject({ method: "POST", url: "/api/relay/withdraw", payload: {} })).statusCode, 404);
 });
 
 // Behind Caddy every request comes from the proxy; the rate limit must count

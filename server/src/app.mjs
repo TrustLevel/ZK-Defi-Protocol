@@ -3,13 +3,14 @@
  * never receives a secret or a note. Dependencies are injected so the routes
  * are testable without the chain.
  *
- *   GET  /api/state          pool UTxO + decoded datum + both trees' leaves
+ *   GET  /api/state          pool UTxO + decoded datum + the three trees' leaves
  *   GET  /api/utxos/:txHash  outputs of a transaction (for the browser's tx builder)
  *   GET  /api/cost-models    Plutus cost models of the current epoch (same)
  *   POST /api/evaluate {tx}  script budgets for a transaction built in the browser
  *   POST /api/submit   {tx}  submit a transaction signed in the browser
  *   POST /api/relay/borrow   relayer builds, pays and submits a borrow (see relayer.mjs)
  *   POST /api/relay/unlock   relayer builds, pays and submits an unlock
+ *   POST /api/relay/withdraw relayer builds, pays and submits a lender withdrawal
  *   POST /api/events         anonymous usage counters (see analytics.mjs)
  *   GET  /api/analytics      the counters, public
  */
@@ -67,6 +68,7 @@ export async function buildApp({ chain, txService, relayer, analytics, deploymen
     const relayLimit = { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } };
     app.post("/api/relay/borrow", relayLimit, async (req) => relayer.borrow(req.body));
     app.post("/api/relay/unlock", relayLimit, async (req) => relayer.unlock(req.body));
+    app.post("/api/relay/withdraw", relayLimit, async (req) => relayer.withdraw(req.body));
   }
 
   if (analytics) {

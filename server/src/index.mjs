@@ -9,6 +9,8 @@
  *   HOST, PORT                  default 127.0.0.1:3001 (a reverse proxy faces the internet)
  *   TRUST_PROXY                 "1" behind a reverse proxy (rate limit per client)
  *   REPO_ROOT                   where contracts/, circuits/ and packages/ live (default ../)
+ *   DEPLOYMENT_FILE             pool deployment, relative to REPO_ROOT
+ *                               (default packages/protocol/deployments/preprod-m4-lend.json)
  *   ANALYTICS_FILE              where the usage counters are kept (default server/data/analytics.json);
  *                               "off" turns analytics off
  */
@@ -28,7 +30,7 @@ const read = (rel) => JSON.parse(fs.readFileSync(path.join(ROOT, rel), "utf8"));
 const key = process.env.PREPROD_BLOCKFROST_API_KEY;
 if (!key) throw new Error("PREPROD_BLOCKFROST_API_KEY is required");
 
-const deployment = read("packages/protocol/deployments/preprod-m4.json");
+const deployment = read(process.env.DEPLOYMENT_FILE || "packages/protocol/deployments/preprod-m4-lend.json");
 const S = deriveScripts(read("contracts/plutus.json"), deployment.seed, deployment.vkeys);
 const provider = new BlockfrostProvider(key);
 const bf = async (p) => {
@@ -72,7 +74,11 @@ if (seed) {
   const runner = await createTxRunner({ provider, S, deployment, wallet });
   relayer = createRelayer({
     chain, runner,
-    vkeys: { borrow: read("circuits/keys/verification_key_semaphore.json"), settlement: read("circuits/keys/verification_key_settlement.json") },
+    vkeys: {
+      borrow: read("circuits/keys/verification_key_semaphore.json"),
+      settlement: read("circuits/keys/verification_key_settlement.json"),
+      lender: read("circuits/keys/verification_key_lender_withdraw.json"),
+    },
   });
   console.log(`relayer on, paying from ${runner.address.slice(0, 24)}…`);
 } else {
