@@ -13,9 +13,9 @@
  */
 import fs from "fs";
 
-const STEPS = ["deposit", "borrow", "repay", "unlock", "liquidity", "collateral", "wallet", "note"];
+const STEPS = ["deposit", "borrow", "repay", "unlock", "liquidity", "withdraw", "collateral", "wallet", "note"];
 const EVENTS = ["start", "proof", "sign", "submitted", "confirmed", "failed", "connect", "download", "import"];
-const KINDS = ["append", "borrow", "repay", "settlement"];
+const KINDS = ["append", "borrow", "repay", "settlement", "lender"];
 const ERRORS = ["wallet_declined", "account_changed", "insufficient_funds", "contention", "evaluation", "relay_rejected", "timeout", "network", "other"];
 const WALLETS = ["eternl", "lace", "nami", "typhoncip30", "yoroi", "gerowallet", "nufi", "vespr", "begin", "other"];
 

@@ -49,3 +49,15 @@ test("knows the error classes the web app sends", async () => {
     assert.equal((await post(app, [{ step: "repay", event: "failed", error }])).statusCode, 204, error);
   }
 });
+
+test("counts the lender steps: buying a share and withdrawing it with the lender proof", async () => {
+  const { app } = await appWith();
+  const res = await post(app, [
+    { step: "withdraw", event: "start" },
+    { step: "withdraw", event: "proof", kind: "lender", ms: 1040 },
+    { step: "withdraw", event: "confirmed", retries: 0 },
+  ]);
+  assert.equal(res.statusCode, 204);
+  const s = (await app.inject({ method: "GET", url: "/api/analytics" })).json();
+  assert.deepEqual(s["2026-11-19"].proofMs, { lender: { 1000: 1 } });
+});
