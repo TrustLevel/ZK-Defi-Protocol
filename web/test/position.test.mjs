@@ -53,3 +53,12 @@ test("linkage warnings: repaying or receiving with the deposit's account", () =>
   assert.equal(linkageWarnings(note, { step: "repay", keyHashes: [A] })[0].code, "repay-from-deposit-account");
   assert.equal(linkageWarnings(note, { step: "borrow", keyHashes: [A] })[0].code, "loan-to-deposit-account");
 });
+
+// Before the chain state has loaded, a card must not offer a deposit: the note
+// may already be deposited, and depositing it twice locks 20 ADA for good.
+test("without chain state a note is loading, never new", async () => {
+  const { statusOf } = await import("../lib/position.js");
+  assert.equal(statusOf(note, null), "loading");
+  assert.equal(statusOf({ ...note, deposit: { txHash: "ab".repeat(32), outputIndex: 1 } }, null), "loading");
+  assert.equal(statusOf(note, { ...empty, deposits: new Set() }), "new");
+});

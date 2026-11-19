@@ -15,6 +15,14 @@ export function positionOf(note, state, { depositSpent }) {
   return "deposited";
 }
 
+// The card's state: "loading" until the chain state is there, so no step is
+// offered on a guess (a note shown as new could be deposited a second time).
+export function statusOf(note, state) {
+  if (!state) return "loading";
+  const ref = note.deposit && `${note.deposit.txHash}#${note.deposit.outputIndex}`;
+  return positionOf(note, state, { depositSpent: !!ref && !state.deposits.has(ref) });
+}
+
 // What a step would reveal on-chain if done from this account. keyHashes: the
 // payment key hashes of the connected account (or of the loan recipient).
 export function linkageWarnings(note, { step, keyHashes }) {

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getState } from "../lib/api";
 import { deployment } from "../lib/flow";
 import { createNote, loadNotes, saveNote, parseNote } from "../lib/notes";
-import { positionOf } from "../lib/position";
+import { statusOf } from "../lib/position";
 import PositionCard from "./PositionCard";
 import { track } from "../lib/analytics";
 
@@ -48,12 +48,6 @@ export default function BorrowView({ account }) {
     }
   }
 
-  const status = (note) => {
-    if (!state) return "new";
-    const ref = note.deposit && `${note.deposit.txHash}#${note.deposit.outputIndex}`;
-    return positionOf(note, state, { depositSpent: !!ref && !state.deposits.has(ref) });
-  };
-
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
@@ -67,7 +61,7 @@ export default function BorrowView({ account }) {
       {error && <p className="text-sm text-warn">{error}</p>}
       {notes.length === 0 && <p className="text-sm text-muted">No positions yet. Start one with “New position”.</p>}
       {[...notes].reverse().map((n) => (
-        <PositionCard key={n.id} note={n} status={status(n)} state={state} account={account} onChange={refresh} />
+        <PositionCard key={n.id} note={n} status={statusOf(n, state)} state={state} account={account} onChange={refresh} />
       ))}
     </section>
   );
