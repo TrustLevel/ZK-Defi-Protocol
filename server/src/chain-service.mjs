@@ -58,19 +58,24 @@ export function createChainService({ provider, bf, S, maxAgeMs = 10_000, feedSiz
   }
 
   async function refresh() {
-    const pool = await fetchPool(provider, S);
+    const pool = await fetchPool(provider, S).catch((e) => {
+      // While a transaction spends the pool, Blockfrost can briefly list none.
+      throw /found 0$/.test(e.message) ? new IndexLagError() : e;
+    });
     const ref = `${pool.utxo.input.txHash}#${pool.utxo.input.outputIndex}`;
-    if (snapshot?.ref !== ref) await index();
+    // Deposits still locked at the collateral script (a note whose deposit is
+    // gone from here, after its repayment, has been unlocked).
+    const deposits = (await provider.fetchAddressUTxOs(S.COLLATERAL_ADDRESS))
+      .map((u) => `${u.input.txHash}#${u.input.outputIndex}`);
+    // An unlock leaves the pool where it is, so a changed deposit set also
+    // means new activity.
+    if (snapshot?.ref !== ref || snapshot.deposits.join() !== deposits.join()) await index();
     try {
       checkLeaves(pool.datum, leaves);
     } catch {
       // The pool moved further than the history Blockfrost has indexed.
       throw new IndexLagError();
     }
-    // Deposits still locked at the collateral script (a note whose deposit is
-    // gone from here, after its repayment, has been unlocked).
-    const deposits = (await provider.fetchAddressUTxOs(S.COLLATERAL_ADDRESS))
-      .map((u) => `${u.input.txHash}#${u.input.outputIndex}`);
     snapshot = {
       ref, pool, deposits, activity: [...activity], at: Date.now(),
       leaves: { commitments: [...leaves.commitments], repaid: [...leaves.repaid] },

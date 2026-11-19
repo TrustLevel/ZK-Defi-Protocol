@@ -52,11 +52,14 @@ async function verify(vkey, publicSignals, proof) {
 // runner: { borrow(args), unlock(args), findDeposit(ref) }   (tx-runner.mjs)
 // vkeys:  { borrow, settlement } as snarkjs verification key JSON
 export function createRelayer({ chain, runner, vkeys, retryMs = 15_000, attempts = 3 }) {
+  // The caller gets the hash once the transaction is submitted (the client
+  // follows the chain itself); the next relayed transaction waits until this
+  // one is confirmed (`settled`), so it sees the relayer's new change output.
   let queue = Promise.resolve();
   const exclusive = (fn) => {
     const run = queue.then(fn, fn);
-    queue = run.catch(() => {});
-    return run;
+    queue = run.then((r) => r?.settled).catch(() => {});
+    return run.then(({ settled, ...result }) => result);
   };
   // Another transaction may spend the pool between our read and our submit. The
   // proof stays valid as long as its root is unchanged, so build again on the

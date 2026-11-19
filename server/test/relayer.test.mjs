@@ -121,3 +121,20 @@ test("unlock: refuses a proof for another deposit, an unknown deposit and a stal
   await assert.rejects(createRelayer({ chain: chainWith({ ...datum, repaid_root: 1n }), runner: runner(), vkeys }).unlock({ ...settleProof, deposit: deposit.input }),
     { statusCode: 409, code: "stale" });
 });
+
+test("answers once submitted; the next relayed transaction waits for the confirmation", async () => {
+  const r = runner();
+  let confirm;
+  const order = [];
+  r.borrow = async () => { order.push("submit 1"); return { txHash: "b1", settled: new Promise((res) => { confirm = res; }) }; };
+  r.unlock = async () => { order.push("submit 2"); return { txHash: "u1" }; };
+  const relayer = createRelayer({ chain: chainWith(datum), runner: r, vkeys });
+  // a reverse proxy may give up after 30 s; the client follows the chain itself
+  assert.deepEqual(await relayer.borrow({ ...borrowProof, recipient: B }), { txHash: "b1" });
+  const second = relayer.unlock({ ...settleProof, deposit: deposit.input });
+  await new Promise((res) => setTimeout(res, 50));
+  assert.deepEqual(order, ["submit 1"]);
+  confirm();
+  assert.deepEqual(await second, { txHash: "u1" });
+  assert.deepEqual(order, ["submit 1", "submit 2"]);
+});

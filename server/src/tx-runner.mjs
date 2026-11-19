@@ -1,8 +1,8 @@
 /**
  * Builds, signs and submits the relayer's transactions with the relayer wallet
- * as the only signer and payer, then waits until the transaction is confirmed
- * and indexed, so the next relayed transaction sees the relayer's new change
- * output and the new pool.
+ * as the only signer and payer. Returns the hash once submitted, with `settled`:
+ * a promise for the transaction being confirmed and indexed, so the next relayed
+ * transaction sees the relayer's new change output and the new pool.
  */
 import { MeshTxBuilder } from "@meshsdk/core";
 import * as ff from "ffjavascript";
@@ -45,8 +45,8 @@ export async function createTxRunner({ provider, S, deployment, wallet, settleMs
       if (SPENT_INPUT.test(String(e?.message ?? e))) throw new RelayError(409, "pool_moved", "the pool moved before submission");
       throw e;
     }
-    await waitConfirmed(txHash);
-    return { txHash };
+    // a timeout here only delays the next relayed transaction
+    return { txHash, settled: waitConfirmed(txHash).catch((e) => console.log(e.message)) };
   }
 
   return {
