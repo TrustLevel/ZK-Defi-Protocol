@@ -39,6 +39,7 @@ export default function BorrowView({ account, onAccount }) {
   async function importNote(file) {
     try {
       const note = parseNote(await file.text());
+      if (note.kind === "lender") throw new Error("This is a lender note; import it in the Lend tab.");
       if (note.policyId !== deployment.policyId) throw new Error("This note belongs to a different pool.");
       saveNote(note);
       track([{ step: "note", event: "import" }]);
