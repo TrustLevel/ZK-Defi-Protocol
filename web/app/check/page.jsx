@@ -4,7 +4,8 @@
 // how long this browser takes. Nothing is sent anywhere.
 import { useState } from "react";
 import {
-  computeCommitment, computeRepayNullifier, borrowInput, repayInput, settlementInput, appendInput,
+  computeCommitment, computeRepayNullifier, computeLenderCommitment, borrowInput, repayInput, settlementInput,
+  appendInput, lenderWithdrawInput,
 } from "@zk-defi/protocol/crypto";
 import { prove } from "../../lib/prover";
 import PocNotice from "../../components/PocNotice";
@@ -19,6 +20,7 @@ function inputs() {
     borrow: borrowInput({ commitments, index: 2, secret, ratio: 125n, recipientPkh: "ab".repeat(28) }).input,
     repay: repayInput({ commitments, index: 2, secret, ratio: 125n }).input,
     settlement: settlementInput({ commitment, secret, repaid: [44n, R], index: 1 }).input,
+    lender: lenderWithdrawInput({ notes: [55n, computeLenderCommitment(secret)], index: 1, secret, recipientPkh: "ab".repeat(28) }).input,
   };
 }
 

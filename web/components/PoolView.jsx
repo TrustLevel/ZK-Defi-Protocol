@@ -29,11 +29,12 @@ const SHOWS = {
   borrow: (a) => `10 ADA out · nullifier ${hex(a.nullifier)} · which collateral: hidden`,
   repay: (a) => `10.5 ADA in · nullifier ${hex(a.nullifier)} · marker ${hex(a.marker)}`,
   unlock: () => "20 ADA collateral returned · which repayment: hidden",
-  liquidity: () => "liquidity added",
+  liquidity: () => "one share bought at the current price · lender leaf added",
+  withdraw: (a) => `one share paid out at the current price · nullifier ${hex(a.nullifier)} · which share: hidden`,
 };
 
 // What each kind of transaction is called in the feed.
-const KIND = { deposit: "Collateral", borrow: "Borrow", repay: "Repay", unlock: "Unlock", liquidity: "Liquidity" };
+const KIND = { deposit: "Collateral", borrow: "Borrow", repay: "Repay", unlock: "Unlock", liquidity: "Lend", withdraw: "Withdraw" };
 
 // The commitment tree as a grid. No leaf is highlighted: the chain does not
 // know which one is yours, and neither does this page.
@@ -90,12 +91,13 @@ export default function PoolView() {
 
   const d = state.pool.datum;
   const lovelace = state.pool.utxo.output.amount.find((a) => a.unit === "lovelace").quantity;
-  const utilization = d.total_deposited > 0n ? Number((d.total_borrowed * 10000n) / d.total_deposited) / 100 : 0;
+  const free = BigInt(lovelace) - d.liquidity_reserve;
+  const utilization = free + d.total_borrowed > 0n ? Number((d.total_borrowed * 10000n) / (free + d.total_borrowed)) / 100 : 0;
 
   return (
     <section className="space-y-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Available" value={`${ada(lovelace)} ADA`} hint="lovelace in the pool UTxO" />
+        <Stat label={<Term id="freeLiquidity">Available</Term>} value={`${ada(free)} ADA`} hint={`free liquidity, ${d.total_shares} lender shares`} />
         <Stat label="Borrowed" value={`${ada(d.total_borrowed)} ADA`} hint={`${utilization}% utilization`} />
         <Stat label={<Term id="interest" />} value={`${Number(d.interest_rate) / 100}%`} hint="flat, per loan" />
         <Stat label="Open loans" value={d.open_loans.length} />

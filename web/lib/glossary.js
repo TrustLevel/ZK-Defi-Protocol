@@ -60,6 +60,18 @@ export const GLOSSARY = {
   },
   withdraw: {
     term: "Withdraw",
-    text: "The current protocol has no way yet to take back collateral that never backed a loan, or liquidity added by a lender. Collateral comes back through repay and unlock.",
+    text: "A lender takes one share out of the pool and gets the current share price, paid to account B by the relayer. Borrowers get their collateral back through repay and unlock instead; collateral that never backed a loan comes back the same way, with an immediate repayment.",
+  },
+  share: {
+    term: "Share",
+    text: "Lenders lend in shares. One share is one note in your browser and a part of everything the pool owns, including the loans that are out. Because every share is the same, buying and withdrawing amounts do not point to anyone.",
+  },
+  sharePrice: {
+    term: "Share price",
+    text: "What one share is worth: the ADA in the pool plus the loans that are out, divided by the number of shares. Each repayment's interest raises it for all shares at once, so everyone who buys or withdraws at the same moment pays or gets the same amount.",
+  },
+  freeLiquidity: {
+    term: "Free liquidity",
+    text: "The ADA actually in the pool, not lent out. Loans and withdrawals are paid only from it. When most of it is lent out, lenders wait until borrowers repay. Loans have no deadline, so a loan that is never repaid is missing for the lenders who withdraw last.",
   },
 };
