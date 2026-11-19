@@ -1,8 +1,8 @@
 /**
- * Relayer for borrow and unlock: it pays fees and script collateral, so the
- * user's wallet does not appear in these transactions. It cannot redirect
- * funds: the borrow proof is bound to the recipient key and the unlock pays the
- * deposit's own unlock_to.
+ * Relayer for borrow, unlock and lender withdraw: it pays fees and script
+ * collateral, so the user's wallet does not appear in these transactions. It
+ * cannot redirect funds: the borrow and withdraw proofs are bound to the
+ * recipient key and the unlock pays the deposit's own unlock_to.
  *
  * It spends its own ADA on every relayed transaction, so it checks everything
  * itself first: the public signals against the live pool datum, the recipient
@@ -14,6 +14,7 @@
 import * as snarkjs from "snarkjs";
 import { pkhToInt } from "@zk-defi/protocol/crypto";
 import { paymentKeyHash, decodeDepositDatum, addressFromData } from "@zk-defi/protocol/plutus";
+import { withdrawableShares } from "@zk-defi/protocol/tx";
 
 export class RelayError extends Error {
   constructor(statusCode, code, message) {
@@ -36,6 +37,17 @@ function parseSignals(publicSignals, n) {
     throw bad("public signals must be decimal strings");
   }
 }
+function recipientKey(recipient, recipientInt) {
+  let recipientPkh;
+  try {
+    recipientPkh = paymentKeyHash(recipient);
+  } catch {
+    throw bad("recipient must be a key payment address");
+  }
+  if (pkhToInt(recipientPkh) !== recipientInt) throw bad("the proof is bound to a different recipient");
+  return recipientPkh;
+}
+const poolLovelace = (pool) => BigInt(pool.utxo.output.amount.find((a) => a.unit === "lovelace").quantity);
 function checkProofShape(proof) {
   const point = (p, n) => Array.isArray(p) && p.length === 3 && p.flat().every((x) => typeof x === "string" && /^\d{1,120}$/.test(x)) && p.flat().length === n;
   if (!proof || !point(proof.pi_a, 3) || !point(proof.pi_b, 6) || !point(proof.pi_c, 3)) throw bad("malformed proof");
@@ -49,8 +61,8 @@ async function verify(vkey, publicSignals, proof) {
 }
 
 // chain:  { state({ fresh }) }      (chain-service.mjs)
-// runner: { borrow(args), unlock(args), findDeposit(ref) }   (tx-runner.mjs)
-// vkeys:  { borrow, settlement } as snarkjs verification key JSON
+// runner: { borrow(args), unlock(args), withdraw(args), findDeposit(ref) }   (tx-runner.mjs)
+// vkeys:  { borrow, settlement, lender } as snarkjs verification key JSON
 export function createRelayer({ chain, runner, vkeys, retryMs = 15_000, attempts = 3 }) {
   // The caller gets the hash once the transaction is submitted (the client
   // follows the chain itself); the next relayed transaction waits until this
@@ -82,13 +94,7 @@ export function createRelayer({ chain, runner, vkeys, retryMs = 15_000, attempts
       const { proof, publicSignals, recipient } = body;
       checkProofShape(proof);
       const [root, nullifier, amount, ratio, ext, recipientInt] = parseSignals(publicSignals, 6);
-      let recipientPkh;
-      try {
-        recipientPkh = paymentKeyHash(recipient);
-      } catch {
-        throw bad("recipient must be a key payment address");
-      }
-      if (pkhToInt(recipientPkh) !== recipientInt) throw bad("the proof is bound to a different recipient");
+      const recipientPkh = recipientKey(recipient, recipientInt);
       const { pool } = await chain.state();
       const d = pool.datum;
       if (amount !== d.loan_denomination || ratio !== d.collateral_ratio || ext !== d.external_nullifier) {
@@ -124,6 +130,28 @@ export function createRelayer({ chain, runner, vkeys, retryMs = 15_000, attempts
         const { pool: live } = await chain.state({ fresh: true });
         if (live.datum.repaid_root !== repaidRoot) throw stale("the repaid set changed; prove again against the new root");
         return runner.unlock({ pool: live, proof, deposit, unlockTo });
+      }));
+    },
+
+    // body: { proof, publicSignals, recipient }
+    // publicSignals: [lender_root, withdraw_nullifier, lender_external_nullifier, recipient]
+    async withdraw(body = {}) {
+      const { proof, publicSignals, recipient } = body;
+      checkProofShape(proof);
+      const [root, nullifier, ext, recipientInt] = parseSignals(publicSignals, 4);
+      const recipientPkh = recipientKey(recipient, recipientInt);
+      const { pool } = await chain.state();
+      if (ext !== pool.datum.lender_external_nullifier) throw bad("public signals do not match the pool parameters");
+      await verify(vkeys.lender, publicSignals, proof);
+
+      return exclusive(() => withRetry(async () => {
+        const { pool: live } = await chain.state({ fresh: true });
+        if (live.datum.lender_root !== root) throw stale("the lender set changed; prove again against the new root");
+        if (live.datum.lender_nullifiers.includes(nullifier)) throw new RelayError(409, "used", "this share was already withdrawn");
+        if (withdrawableShares(live.datum, poolLovelace(live)) < 1n) {
+          throw new RelayError(409, "no_liquidity", "not enough free liquidity for a share; wait for repayments");
+        }
+        return runner.withdraw({ pool: live, proof, nullifier, recipient, recipientPkh });
       }));
     },
   };

@@ -7,7 +7,7 @@
 import { MeshTxBuilder } from "@meshsdk/core";
 import * as ff from "ffjavascript";
 import { compressProof } from "@zk-defi/protocol/crypto";
-import { buildBorrow, buildUnlock } from "@zk-defi/protocol/tx";
+import { buildBorrow, buildUnlock, buildWithdrawLiquidity } from "@zk-defi/protocol/tx";
 import { RelayError } from "./relayer.mjs";
 
 const SPENT_INPUT = /BadInputsUTxO|All inputs are spent|UnknownUtxo|ValueNotConservedUTxO/i;
@@ -59,5 +59,9 @@ export async function createTxRunner({ provider, S, deployment, wallet, settleMs
       })),
     unlock: ({ pool, proof, deposit, unlockTo }) =>
       run((txb, payer) => buildUnlock(txb, { S, deployment, pool, deposit, unlockTo, proof: compressProof(curve, proof), payer })),
+    withdraw: ({ pool, proof, nullifier, recipient, recipientPkh }) =>
+      run((txb, payer) => buildWithdrawLiquidity(txb, {
+        S, deployment, pool, proof: compressProof(curve, proof), nullifier, recipient, recipientPkh, payer,
+      })),
   };
 }

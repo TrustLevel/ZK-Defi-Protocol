@@ -6,7 +6,8 @@ import { readFileSync } from "node:fs";
 import * as snarkjs from "snarkjs";
 import {
   computeCommitment, computeRepayNullifier, merkleRoot, borrowInput, settlementInput,
-  COLLATERAL_DENOMINATION, LOAN_DENOMINATION, EXTERNAL_NULLIFIER, REPAY_EXTERNAL_NULLIFIER,
+  computeLenderCommitment, lenderWithdrawInput,
+  COLLATERAL_DENOMINATION, LOAN_DENOMINATION, EXTERNAL_NULLIFIER, REPAY_EXTERNAL_NULLIFIER, LENDER_EXTERNAL_NULLIFIER,
 } from "@zk-defi/protocol/crypto";
 import { depositDatum } from "@zk-defi/protocol/plutus";
 import { serializeData } from "@meshsdk/core";
@@ -17,6 +18,7 @@ const json = (p) => JSON.parse(readFileSync(p, "utf8"));
 const vkeys = {
   borrow: json(C + "keys/verification_key_semaphore.json"),
   settlement: json(C + "keys/verification_key_settlement.json"),
+  lender: json(C + "keys/verification_key_lender_withdraw.json"),
 };
 const B = "addr_test1qp390j3nd3ft4r7lr349tlakgnrlfmx45yz49g3edy2z4njdwfc7eln8wq4d4dmatfclluzexr53mjejgwfs5hkmxkxs7ekjak";
 const B_PKH = "6257ca336c52ba8fdf1c6a55ffb644c7f4ecd5a10552a23969142ace";
@@ -26,12 +28,24 @@ const UNLOCK_TO = "addr_test1qq7takgp3ld6fyxewja802gvtmnpx592rvvhgqepfax7suqdtlu
 const secret = 987654321987654321n;
 const commitment = computeCommitment(COLLATERAL_DENOMINATION, secret);
 const R = computeRepayNullifier(secret);
+const lenderSecret = 555666777888999n;
+const lenderNotes = [computeLenderCommitment(111n), computeLenderCommitment(lenderSecret)];
 const datum = {
   group_root: merkleRoot([commitment]), repaid_root: merkleRoot([R]), loan_denomination: LOAN_DENOMINATION,
   collateral_ratio: 125n, external_nullifier: EXTERNAL_NULLIFIER, repay_external_nullifier: REPAY_EXTERNAL_NULLIFIER,
   used_nullifiers: [], open_loans: [],
+  lender_root: merkleRoot(lenderNotes), lender_external_nullifier: LENDER_EXTERNAL_NULLIFIER, lender_nullifiers: [],
+  total_shares: 2n, total_borrowed: 0n, liquidity_reserve: 10_000_000n, share_start_price: 10_000_000n,
 };
-const chainWith = (d) => ({ state: async () => ({ pool: { utxo: { input: { txHash: "00", outputIndex: 0 } }, datum: d } }) });
+// Pool UTxO with 10 ADA reserve + two shares' worth (21 ADA) unless given.
+const chainWith = (d, lovelace = 31_000_000n) => ({
+  state: async () => ({
+    pool: {
+      utxo: { input: { txHash: "00", outputIndex: 0 }, output: { amount: [{ unit: "lovelace", quantity: String(lovelace) }] } },
+      datum: d,
+    },
+  }),
+});
 const deposit = {
   input: { txHash: "ab".repeat(32), outputIndex: 1 },
   output: { plutusData: serializeData(depositDatum(commitment, 1, UNLOCK_TO), "JSON") },
@@ -42,6 +56,7 @@ function runner() {
     calls,
     borrow: async (a) => { calls.push(["borrow", a]); return { txHash: "b0" }; },
     unlock: async (a) => { calls.push(["unlock", a]); return { txHash: "u0" }; },
+    withdraw: async (a) => { calls.push(["withdraw", a]); return { txHash: "w0" }; },
     findDeposit: async (ref) => (ref.txHash === deposit.input.txHash ? deposit : null),
   };
 }
@@ -55,6 +70,8 @@ const borrowProof = await prove("collateral_semaphore",
   borrowInput({ commitments: [commitment], index: 0, secret, ratio: 125n, recipientPkh: B_PKH }).input);
 const settleProof = await prove("settlement_proof",
   settlementInput({ commitment, secret, repaid: [R], index: 0 }).input);
+const withdrawProof = await prove("lender_withdraw",
+  lenderWithdrawInput({ notes: lenderNotes, index: 1, secret: lenderSecret, recipientPkh: B_PKH }).input);
 
 test("borrow: a valid proof is relayed to the bound recipient", async () => {
   const r = runner();
@@ -137,4 +154,41 @@ test("answers once submitted; the next relayed transaction waits for the confirm
   confirm();
   assert.deepEqual(await second, { txHash: "u1" });
   assert.deepEqual(order, ["submit 1", "submit 2"]);
+});
+
+test("withdraw: a valid lender proof is relayed to the bound recipient", async () => {
+  const r = runner();
+  const out = await createRelayer({ chain: chainWith(datum), runner: r, vkeys }).withdraw({ ...withdrawProof, recipient: B });
+  assert.deepEqual(out, { txHash: "w0" });
+  assert.equal(r.calls[0][0], "withdraw");
+  assert.equal(r.calls[0][1].recipient, B);
+  assert.equal(r.calls[0][1].recipientPkh, B_PKH);
+  assert.equal(r.calls[0][1].nullifier, BigInt(withdrawProof.publicSignals[1]));
+});
+
+test("withdraw: refuses another recipient, a tampered signal and another scope", async () => {
+  const relayer = createRelayer({ chain: chainWith(datum), runner: runner(), vkeys });
+  await assert.rejects(relayer.withdraw({ ...withdrawProof, recipient: OTHER }), { statusCode: 400, message: /different recipient/ });
+  const tampered = [...withdrawProof.publicSignals];
+  tampered[1] = (BigInt(tampered[1]) + 1n).toString();
+  await assert.rejects(relayer.withdraw({ proof: withdrawProof.proof, publicSignals: tampered, recipient: B }),
+    { statusCode: 400, message: /does not verify/ });
+  await assert.rejects(createRelayer({ chain: chainWith({ ...datum, lender_external_nullifier: 1n }), runner: runner(), vkeys })
+    .withdraw({ ...withdrawProof, recipient: B }), { statusCode: 400, message: /pool parameters/ });
+});
+
+test("withdraw: refuses a note already paid out and a stale lender root", async () => {
+  const W = BigInt(withdrawProof.publicSignals[1]);
+  await assert.rejects(createRelayer({ chain: chainWith({ ...datum, lender_nullifiers: [W] }), runner: runner(), vkeys })
+    .withdraw({ ...withdrawProof, recipient: B }), { statusCode: 409, code: "used" });
+  await assert.rejects(createRelayer({ chain: chainWith({ ...datum, lender_root: 1n }), runner: runner(), vkeys })
+    .withdraw({ ...withdrawProof, recipient: B }), { statusCode: 409, code: "stale" });
+});
+
+test("withdraw: refuses when the free liquidity does not cover a share", async () => {
+  // 20 ADA lent out: a share is worth 10.5 ADA, only 1 ADA is free.
+  const r = runner();
+  await assert.rejects(createRelayer({ chain: chainWith({ ...datum, total_borrowed: 20_000_000n }, 11_000_000n), runner: r, vkeys })
+    .withdraw({ ...withdrawProof, recipient: B }), { statusCode: 409, code: "no_liquidity" });
+  assert.equal(r.calls.length, 0);
 });
