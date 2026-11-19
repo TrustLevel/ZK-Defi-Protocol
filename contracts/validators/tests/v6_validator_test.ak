@@ -53,6 +53,9 @@ const rvk_oref: OutputReference =
 const avk_oref: OutputReference =
   OutputReference { transaction_id: #"b4", output_index: 0 }
 
+const lwvk_oref: OutputReference =
+  OutputReference { transaction_id: #"b6", output_index: 0 }
+
 const coll_oref: OutputReference =
   OutputReference { transaction_id: #"b3", output_index: 0 }
 
@@ -79,6 +82,13 @@ fn pool_datum(
     open_loans,
     used_nullifiers: used,
     last_updated: 0,
+    lender_root: old_repaid_root,
+    lender_next_index: 0,
+    total_shares: 10,
+    lender_nullifiers: [],
+    lender_external_nullifier: 9999,
+    share_start_price: 10_000_000,
+    liquidity_reserve: 0,
   }
 }
 
@@ -170,6 +180,7 @@ test borrow_membership_succeeds() {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
@@ -201,6 +212,7 @@ test borrow_reused_nullifier_fails() {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
@@ -232,6 +244,7 @@ test borrow_after_repay_same_secret_fails() {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
@@ -262,6 +275,7 @@ test borrow_not_recorded_as_used_fails() {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
@@ -297,6 +311,7 @@ test repay_principal_plus_interest_succeeds() {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     RepayAnonymous {
       proof: repay_proof(),
@@ -330,6 +345,7 @@ test repay_clearing_used_nullifier_fails() {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     RepayAnonymous {
       proof: repay_proof(),
@@ -362,6 +378,7 @@ test repay_below_interest_fails() {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     RepayAnonymous {
       proof: repay_proof(),
@@ -395,6 +412,7 @@ test repay_overpay_fails() {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     RepayAnonymous {
       proof: repay_proof(),
@@ -429,6 +447,7 @@ test repay_bogus_append_fails() {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     RepayAnonymous {
       proof: repay_proof(),
@@ -655,6 +674,7 @@ test spend_pool_without_nft_fails() fail {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
@@ -699,6 +719,7 @@ test continuing_output_without_nft_fails() fail {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
@@ -735,6 +756,7 @@ test continuing_output_other_address_fails() fail {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
@@ -775,6 +797,7 @@ test borrow_with_vkey_at_other_ref_fails() fail {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
@@ -802,6 +825,7 @@ test group_root_change_without_append_fails() {
     Transaction {
       ..placeholder,
       inputs: [pool_input(pd, 100_000_000)],
+      reference_inputs: [avk_ref_input()],
       outputs: [pool_out(out, 101_000_000)],
     }
   !lending_pool_v5.lending_pool_v5.spend(
@@ -810,8 +834,9 @@ test group_root_change_without_append_fails() {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
-    AddLiquidity,
+    AddLiquidity { commitment, append_proof: group_append_proof() },
     pool_oref,
     tx,
   )
@@ -853,6 +878,7 @@ fn run_deposit(tx: Transaction) -> Bool {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(empty_group_pool()),
     DepositCollateral { commitment, append_proof: group_append_proof() },
     pool_oref,
@@ -933,6 +959,7 @@ test borrow_collateral_denomination_too_small_fails() {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
@@ -1041,6 +1068,7 @@ test borrow_payout_to_other_key_fails() {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
@@ -1072,6 +1100,7 @@ test borrow_underpays_recipient_fails() {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
@@ -1105,6 +1134,7 @@ test borrow_redeemer_recipient_swapped_fails() {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
@@ -1140,6 +1170,7 @@ test repay_with_foreign_repay_nullifier_fails() {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     RepayAnonymous {
       proof: repay_proof(),
@@ -1174,6 +1205,7 @@ test repay_with_copied_borrow_proof_fails() {
     vk_oref,
     rvk_oref,
     avk_oref,
+    lwvk_oref,
     Some(pd),
     RepayAnonymous {
       proof: proof(),

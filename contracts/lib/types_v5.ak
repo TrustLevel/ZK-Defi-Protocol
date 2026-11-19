@@ -69,6 +69,21 @@ pub type DepositDatumV5 {
 /// `used_nullifiers`     -> every loan nullifier ever borrowed against; never
 ///                          shrinks, so one deposit backs exactly ONE loan and a
 ///                          repaid deposit's R can never cover a later loan
+///
+/// Lender side (one lender note = one pool share):
+/// `total_deposited`     -> cumulative lovelace paid in by AddLiquidity
+/// `lender_root`         -> append-only Merkle root of lender note leaves; grown by
+///                          AddLiquidity via a ZK append proof
+/// `lender_next_index`   -> next free leaf position in the lender tree
+/// `total_shares`        -> shares outstanding (notes added minus notes withdrawn)
+/// `lender_nullifiers`   -> withdraw nullifiers W of notes already paid out; never
+///                          shrinks, so each note pays out once
+/// `lender_external_nullifier` -> protocol constant scoping W
+/// `share_start_price`   -> price of a share while no share is outstanding
+/// `liquidity_reserve`   -> lovelace that stays in the pool UTxO (min UTxO); it is
+///                          neither lendable nor part of the share value
+/// Share value = pool lovelace - liquidity_reserve + total_borrowed (outstanding
+/// loans are pool assets). Free liquidity = pool lovelace - liquidity_reserve.
 pub type PoolDatumV5 {
   total_deposited: Int,
   total_borrowed: Int,
@@ -85,10 +100,22 @@ pub type PoolDatumV5 {
   open_loans: List<Int>,
   used_nullifiers: List<Int>,
   last_updated: Int,
+  lender_root: Int,
+  lender_next_index: Int,
+  total_shares: Int,
+  lender_nullifiers: List<Int>,
+  lender_external_nullifier: Int,
+  share_start_price: Int,
+  liquidity_reserve: Int,
 }
 
 /// Lending pool redeemer (v6).
-/// `AddLiquidity`: lender adds lovelace to the pool.
+/// `AddLiquidity`: a lender buys one share: pays exactly the current share price
+/// (rounded up) and `append_proof` attests the note leaf `commitment` is appended
+/// at `lender_next_index`, taking lender_root -> out.lender_root.
+/// `WithdrawLiquidity`: `proof` attests a note in `lender_root` with withdraw
+/// nullifier `withdraw_nullifier`, bound to `recipient`; the pool pays the current
+/// share price (rounded down) to that key, from free liquidity.
 /// `DepositCollateral`: a collateral output of exactly `collateral_denomination`
 /// with this `commitment` is created, and `append_proof` attests the commitment
 /// is appended at `group_next_index`, taking group_root -> out.group_root.
@@ -99,7 +126,12 @@ pub type PoolDatumV5 {
 /// `append_proof` attests R is appended at `next_index`, taking repaid_root ->
 /// out.repaid_root (permissionless — no admin signature on repay).
 pub type PoolRedeemerV5 {
-  AddLiquidity
+  AddLiquidity { commitment: Int, append_proof: Proof }
+  WithdrawLiquidity {
+    proof: Proof,
+    withdraw_nullifier: Int,
+    recipient: VerificationKeyHash,
+  }
   DepositCollateral { commitment: Int, append_proof: Proof }
   BorrowAnonymous {
     proof: Proof,
