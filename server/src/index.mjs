@@ -7,6 +7,7 @@
  *                               (default RELAYER_WALLET_SEED); without it the relay
  *                               routes are off
  *   HOST, PORT                  default 127.0.0.1:3001 (a reverse proxy faces the internet)
+ *   TRUST_PROXY                 "1" behind a reverse proxy (rate limit per client)
  *   REPO_ROOT                   where contracts/, circuits/ and packages/ live (default ../)
  *   ANALYTICS_FILE              where the usage counters are kept (default server/data/analytics.json);
  *                               "off" turns analytics off
@@ -90,5 +91,5 @@ if (process.env.ANALYTICS_FILE !== "off") {
 
 // Request logs carry method, path and status only: no IP, port or user agent.
 const logger = { level: "info", serializers: { req: (r) => ({ method: r.method, url: r.url }) } };
-const app = await buildApp({ chain, txService, relayer, analytics, deployment, logger });
+const app = await buildApp({ chain, txService, relayer, analytics, deployment, logger, trustProxy: process.env.TRUST_PROXY === "1" });
 await app.listen({ host: process.env.HOST || "127.0.0.1", port: Number(process.env.PORT || 3001) });

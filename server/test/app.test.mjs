@@ -63,3 +63,14 @@ test("relay routes exist only with a relayer", async () => {
   const withRelayer = await buildApp({ chain: okChain, txService, relayer, deployment });
   assert.deepEqual((await withRelayer.inject({ method: "POST", url: "/api/relay/unlock", payload: {} })).json(), { txHash: "u0" });
 });
+
+// Behind Caddy every request comes from the proxy; the rate limit must count
+// per client (X-Forwarded-For), or one busy user locks everyone out.
+test("behind a trusted proxy the rate limit is per client", async () => {
+  const relayer = { borrow: async () => ({ txHash: "b0" }), unlock: async () => ({ txHash: "u0" }) };
+  const app = await buildApp({ chain: okChain, txService, relayer, deployment, trustProxy: true });
+  const relay = (ip) => app.inject({ method: "POST", url: "/api/relay/borrow", payload: {}, remoteAddress: "10.0.0.2", headers: { "x-forwarded-for": ip } });
+  for (let i = 0; i < 10; i++) assert.equal((await relay("1.1.1.1")).statusCode, 200);
+  assert.equal((await relay("1.1.1.1")).statusCode, 429);
+  assert.equal((await relay("2.2.2.2")).statusCode, 200);
+});

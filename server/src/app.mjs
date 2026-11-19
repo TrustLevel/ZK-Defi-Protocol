@@ -21,9 +21,11 @@ import { EVENT } from "./analytics.mjs";
 // BigInt-safe JSON: every integer of the protocol goes out as a decimal string.
 const toJson = (v) => JSON.parse(JSON.stringify(v, (_k, x) => (typeof x === "bigint" ? x.toString() : x)));
 
-export async function buildApp({ chain, txService, relayer, analytics, deployment, logger = false }) {
+// trustProxy: behind a reverse proxy, take the client from X-Forwarded-For (for
+// the rate limit only; addresses are never logged or stored).
+export async function buildApp({ chain, txService, relayer, analytics, deployment, logger = false, trustProxy = false }) {
   // Unknown fields are refused, not silently dropped (Fastify's default).
-  const app = Fastify({ logger, bodyLimit: 64 * 1024, ajv: { customOptions: { removeAdditional: false } } });
+  const app = Fastify({ logger, trustProxy, bodyLimit: 64 * 1024, ajv: { customOptions: { removeAdditional: false } } });
   await app.register(rateLimit, { max: 120, timeWindow: "1 minute" });
 
   app.setErrorHandler((err, _req, reply) => {
