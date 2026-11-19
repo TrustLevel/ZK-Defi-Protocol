@@ -19,8 +19,8 @@ its own.
 - Docker with Compose.
 - A free Blockfrost project id for **Preprod** ([blockfrost.io](https://blockfrost.io)).
 - A wallet used only as the relayer, with some test ADA from the
-  [Preprod faucet](https://docs.cardano.org/cardano-testnets/tools/faucet). It pays about
-  1 ADA in fees per borrow or unlock. 50 test ADA lasts a long test round.
+  [Preprod faucet](https://docs.cardano.org/cardano-testnets/tools/faucet). It pays under
+  1 ADA in fees per borrow or unlock (about 0.5 ADA on Preprod today). 50 test ADA lasts a long test round.
 
 ## Start
 
