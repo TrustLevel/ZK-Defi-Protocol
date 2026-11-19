@@ -1,0 +1,27 @@
+{
+  "network": "preprod",
+  "description": "M4 pool with the lender side (private shares). Created by offchain/cli/m4/run.mjs deploy on 2026-11-19.",
+  "seed": {
+    "txHash": "37a6f9fb708fc1f216e4d49df82bfbcb410227ff8bed140312d12f24f785c813",
+    "outputIndex": 1
+  },
+  "vkeys": {
+    "txHash": "edbfae0e6704086b0f9feddf30c83544c10406faf729792ba57bbdc4b2be1132",
+    "borrowIdx": 0,
+    "settlementIdx": 1,
+    "appendIdx": 2,
+    "repayIdx": 3,
+    "lender": {
+      "txHash": "a5d6c715f9d4ec0cd10d974b9c191d9ae4bacf183b431b5c8ea69177f86c26dc",
+      "index": 0
+    }
+  },
+  "vkeyParkAddress": "addr_test1wzl94ddu5xplr7p8f55ldtxjvw6cqqsh57jkj4vndwthtkgdw2fq8",
+  "lenderVkeyTx": "a5d6c715f9d4ec0cd10d974b9c191d9ae4bacf183b431b5c8ea69177f86c26dc",
+  "initTx": "f96703ed85741a8f311ec3e81c83134b26caf6fd7470631566237183e16ebbc1",
+  "policyId": "6206b04cc30653c86889fe64e4c9eb210c70ff2a45641551e70daca9",
+  "poolHash": "7274a4441178b95564f8a1d768f5650e2819c2759db46a4e83b96db5",
+  "poolAddress": "addr_test1wpe8ffzyz9utj4tylzsaw684v58zsxwzwkwmg6jwswukmdg9eg473",
+  "collateralHash": "b408032bc2e8167edb1b4de6f0969c749b5586f472c28df923243861",
+  "collateralAddress": "addr_test1wz6qsqetct5pvlkmrdx7duykn36fk4vx73ev9r0eyvjrscggemx65"
+}
