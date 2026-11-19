@@ -162,6 +162,10 @@ circuits/collateral_proof_final.zkey
 !circuits/repay_proof_js/
 !circuits/repay_proof_js/repay_proof.wasm
 !circuits/keys/repay_proof_final.zkey
+# lender withdraw circuit (one pool share out, unlinkable to its liquidity deposit)
+!circuits/lender_withdraw_js/
+!circuits/lender_withdraw_js/lender_withdraw.wasm
+!circuits/keys/lender_withdraw_final.zkey
 
 # Local dev instructions — kept locally, not published to the public repo
 /CLAUDE.md

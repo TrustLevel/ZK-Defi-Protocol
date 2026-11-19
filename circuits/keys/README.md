@@ -12,6 +12,7 @@ on-chain pairing builtins), not BN254.
 | `repay_proof_final.zkey` / `verification_key_repay.json` | yes | Repay circuit (7 public signals) |
 | `settlement_proof_final.zkey` / `verification_key_settlement.json` | yes | Unlock circuit (3 public signals) |
 | `append_proof_final.zkey` / `verification_key_append.json` | yes | Append circuit (4 public signals) |
+| `lender_withdraw_final.zkey` / `verification_key_lender_withdraw.json` | yes | Lender withdraw circuit (4 public signals) |
 | `collateral_proof_final.zkey` / `verification_key.json` | yes | Legacy fixture circuit |
 | `pot14b_final.ptau` | no (gitignored) | BLS12-381 Powers of Tau (large enough for the borrow and repay circuits, ≤ 8,615 constraints) |
 

@@ -6,7 +6,10 @@
  *   commitment = Poseidon255(collateral_amount, secret)   -> group_root leaf
  *   N          = Poseidon255(secret, external_nullifier)   -> loan nullifier
  *   R          = Poseidon255(secret, repay_external_nullifier) -> repaid_root leaf
- * Both trees have depth DEPTH, unused leaves are 0.
+ * Lender notes (one note = one pool share):
+ *   L          = Poseidon255(LENDER_LEAF_TAG, secret)        -> lender_root leaf
+ *   W          = Poseidon255(secret, lender_external_nullifier) -> withdraw nullifier
+ * All trees have depth DEPTH, unused leaves are 0.
  *
  * The *Input builders return the exact witness objects the circuits take, so
  * a prover (snarkjs in Node, or in a browser Web Worker) only runs fullProve.
@@ -18,6 +21,9 @@ export const DEPTH = 10;
 // Protocol scalars; must match the pool datum.
 export const EXTERNAL_NULLIFIER = 7777n;
 export const REPAY_EXTERNAL_NULLIFIER = 8888n;
+export const LENDER_EXTERNAL_NULLIFIER = 9999n;
+// Fixed first input of a lender note's leaf hash; must match lender_withdraw.circom.
+export const LENDER_LEAF_TAG = 6666n;
 // Fixed denominations (lovelace): every loan and every collateral deposit has this size.
 export const LOAN_DENOMINATION = 10_000_000n;
 export const COLLATERAL_DENOMINATION = 20_000_000n;
@@ -33,6 +39,12 @@ export function computeNullifier(secret, externalNullifier = EXTERNAL_NULLIFIER)
 }
 export function computeRepayNullifier(secret, repayExternalNullifier = REPAY_EXTERNAL_NULLIFIER) {
   return poseidon2([BigInt(secret), BigInt(repayExternalNullifier)]);
+}
+export function computeLenderCommitment(secret) {
+  return poseidon2([LENDER_LEAF_TAG, BigInt(secret)]);
+}
+export function computeLenderNullifier(secret, lenderExternalNullifier = LENDER_EXTERNAL_NULLIFIER) {
+  return poseidon2([BigInt(secret), BigInt(lenderExternalNullifier)]);
 }
 
 // ── Merkle tree ──────────────────────────────────────────────────────────────
@@ -170,8 +182,26 @@ export function settlementInput({
   };
 }
 
+// Lender withdraw (lender_withdraw): note ∈ lender_root, withdraw nullifier W,
+// bound to the payout key.
+export function lenderWithdrawInput({
+  notes, index, secret, recipientPkh, lenderExternalNullifier = LENDER_EXTERNAL_NULLIFIER,
+}) {
+  const { root, siblings, pathIndices } = merkleProof(notes, index);
+  const nullifier = computeLenderNullifier(secret, lenderExternalNullifier);
+  return {
+    root, nullifier,
+    input: {
+      lender_root: str(root), withdraw_nullifier: str(nullifier),
+      lender_external_nullifier: str(lenderExternalNullifier), recipient: str(pkhToInt(recipientPkh)),
+      secret: str(secret), pathIndices: pathIndices.map(String), siblings: siblings.map(str),
+    },
+  };
+}
+
 // Append (append_proof): `leaf` inserted at the next free slot, old_root -> new_root.
-// Used by deposit (commitment into group_root) and repay (R into repaid_root).
+// Used by deposit (commitment into group_root), repay (R into repaid_root) and
+// add liquidity (lender note into lender_root).
 export function appendInput({ leavesBefore, leaf }) {
   const index = leavesBefore.length;
   const { root: oldRoot, siblings } = merkleProof(leavesBefore, index);
