@@ -1,0 +1,21 @@
+# M4 backend: chain state, evaluate/submit and the relayer. Holds the relayer
+# key, so it is never exposed directly; Caddy (Dockerfile.web) faces the internet.
+FROM node:22-bookworm-slim
+WORKDIR /app
+
+COPY packages/protocol/package.json packages/protocol/package-lock.json packages/protocol/
+RUN cd packages/protocol && npm ci --omit=dev
+COPY server/package.json server/package-lock.json server/
+RUN cd server && npm ci --omit=dev
+
+COPY packages/protocol packages/protocol
+COPY contracts/plutus.json contracts/
+COPY circuits/keys/verification_key_semaphore.json circuits/keys/verification_key_settlement.json circuits/keys/
+COPY server/src server/src
+
+ENV NODE_ENV=production REPO_ROOT=/app HOST=0.0.0.0 PORT=3001 TRUST_PROXY=1 ANALYTICS_FILE=/data/analytics.json
+RUN mkdir /data && chown node /data
+USER node
+WORKDIR /app/server
+HEALTHCHECK --interval=30s --timeout=5s CMD node -e "fetch('http://127.0.0.1:3001/api/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+CMD ["node", "src/index.mjs"]

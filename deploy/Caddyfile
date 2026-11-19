@@ -1,0 +1,26 @@
+# SITE_ADDRESS: a domain (preview.example.org) for automatic HTTPS, or ":80"
+# (default) for plain HTTP on a local machine. No access log is written.
+{$SITE_ADDRESS::80} {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy server:3001
+	}
+
+	handle {
+		root * /srv
+		try_files {path} {path}.html {path}/index.html
+		file_server
+	}
+
+	# circuit files are large and change only with a new deployment
+	@circuits path /circuits/*
+	header @circuits Cache-Control "public, max-age=86400"
+
+	header {
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		-Server
+	}
+}

@@ -1,0 +1,20 @@
+# Build context for deploy/: only what the web app and the backend need.
+**/node_modules
+**/.next
+web/out
+web/public/circuits
+server/data
+**/.env
+**/.env.*
+!**/.env.example
+.git
+docs
+offchain
+circuits/node_modules
+circuits/circomlib
+circuits/tests
+circuits/**/*.r1cs
+circuits/**/*.sym
+circuits/**/*.circom
+circuits/keys/*.ptau
+circuits/keys/*_0000.zkey

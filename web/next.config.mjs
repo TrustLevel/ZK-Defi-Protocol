@@ -10,10 +10,12 @@ export default {
   outputFileTracingRoot: path.join(path.dirname(fileURLToPath(import.meta.url)), ".."),
   output: isDev ? undefined : "export",
   images: { unoptimized: true },
-  async rewrites() {
-    if (!isDev) return [];
-    return [{ source: "/api/:path*", destination: `${process.env.API_URL || "http://127.0.0.1:3101"}/api/:path*` }];
-  },
+  // (a static export has no server to rewrite on: Caddy forwards /api there)
+  ...(isDev && {
+    async rewrites() {
+      return [{ source: "/api/:path*", destination: `${process.env.API_URL || "http://127.0.0.1:3101"}/api/:path*` }];
+    },
+  }),
   webpack: (config, { isServer }) => {
     // Mesh (Cardano serialization) and snarkjs load WebAssembly.
     config.experiments = { ...config.experiments, asyncWebAssembly: true, layers: true };
