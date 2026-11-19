@@ -127,11 +127,6 @@ pub type PoolDatumV5 {
 /// out.repaid_root (permissionless — no admin signature on repay).
 pub type PoolRedeemerV5 {
   AddLiquidity { commitment: Int, append_proof: Proof }
-  WithdrawLiquidity {
-    proof: Proof,
-    withdraw_nullifier: Int,
-    recipient: VerificationKeyHash,
-  }
   DepositCollateral { commitment: Int, append_proof: Proof }
   BorrowAnonymous {
     proof: Proof,
@@ -145,6 +140,11 @@ pub type PoolRedeemerV5 {
     loan_nullifier: Int,
     repay_nullifier: Int,
     append_proof: Proof,
+  }
+  WithdrawLiquidity {
+    proof: Proof,
+    withdraw_nullifier: Int,
+    recipient: VerificationKeyHash,
   }
 }
 
