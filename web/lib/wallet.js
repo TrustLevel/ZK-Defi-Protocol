@@ -25,6 +25,24 @@ export async function connectWallet(name) {
   return { name, wallet, address, keyHashes };
 }
 
+export class AccountChanged extends Error {
+  constructor(account) {
+    super(`Your wallet switched to ${shortAddress(account.address)}. Check that this is the account you want for this step, then press the button again.`);
+    this.name = "AccountChanged";
+    this.account = account;
+  }
+}
+
+// Before a step the wallet signs: the account selected in the wallet may have
+// changed since the app connected (the old connection then refuses requests).
+// Reconnect and stop if it is a different account, so the user decides again
+// with the right account and the right linkage warnings.
+export async function ensureSameAccount(account) {
+  const fresh = await connectWallet(account.name);
+  if (fresh.address !== account.address) throw new AccountChanged(fresh);
+  return fresh;
+}
+
 // What a transaction builder needs from the account: its UTxOs and, if the
 // wallet designates one, its collateral.
 export async function payerOf(account) {

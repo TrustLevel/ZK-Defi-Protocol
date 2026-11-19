@@ -10,7 +10,7 @@ import { track } from "../lib/analytics";
 
 // The user's positions (notes in this browser), each with its state derived
 // locally from the public chain data.
-export default function BorrowView({ account }) {
+export default function BorrowView({ account, onAccount }) {
   const [notes, setNotes] = useState([]);
   const [state, setState] = useState(null);
   const [error, setError] = useState(null);
@@ -61,7 +61,7 @@ export default function BorrowView({ account }) {
       {error && <p className="text-sm text-warn">{error}</p>}
       {notes.length === 0 && <p className="text-sm text-muted">No positions yet. Start one with “New position”.</p>}
       {[...notes].reverse().map((n) => (
-        <PositionCard key={n.id} note={n} status={statusOf(n, state)} state={state} account={account} onChange={refresh} />
+        <PositionCard key={n.id} note={n} status={statusOf(n, state)} state={state} account={account} onAccount={onAccount} onChange={refresh} />
       ))}
     </section>
   );

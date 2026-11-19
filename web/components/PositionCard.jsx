@@ -5,7 +5,7 @@ import { deserializeAddress } from "@meshsdk/core";
 import * as flow from "../lib/flow";
 import { downloadNote, saveNote, removeNote } from "../lib/notes";
 import { STEPS, linkageWarnings } from "../lib/position";
-import { shortAddress } from "../lib/wallet";
+import { shortAddress, ensureSameAccount } from "../lib/wallet";
 import { eventsOf, track } from "../lib/analytics";
 import Progress from "./Progress";
 import Lenses from "./Lenses";
@@ -33,24 +33,27 @@ function Warning({ children }) {
 }
 
 // One position (one note): the next step, which account it needs, and progress.
-export default function PositionCard({ note, status, state, account, onChange }) {
+export default function PositionCard({ note, status, state, account, onAccount, onChange }) {
   const [events, setEvents] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [backedUp, setBackedUp] = useState(false);
   const [recipient, setRecipient] = useState("");
 
-  async function run(name, step) {
+  // signed: the step is signed by the connected account (deposit, repay)
+  async function run(name, step, { signed = false } = {}) {
     setBusy(true);
     setError(null);
     setEvents([]);
     const seen = [];
     const on = (e) => { seen.push(e); setEvents((x) => [...x, e]); };
     try {
+      if (signed) await ensureSameAccount(account);
       await step(on);
       track(eventsOf(name, seen));
       onChange();
     } catch (e) {
+      if (e?.name === "AccountChanged") onAccount?.(e.account);
       track(eventsOf(name, seen, e));
       setError(e?.info || e?.message || String(e));
     } finally {
@@ -97,7 +100,7 @@ export default function PositionCard({ note, status, state, account, onChange })
               onClick={() => run("deposit", (on) => flow.deposit(on, account, note, (dep) => {
                 saveNote({ ...note, deposit: dep, depositKeyHashes: account.keyHashes });
                 onChange();
-              }))}>
+              }), { signed: true })}>
               Deposit 20 ADA{account ? ` from ${shortAddress(account.address)}` : ""}
             </button>
             {!busy && <button className="text-sm text-muted underline" onClick={() => { removeNote(note.id); onChange(); }}>Discard</button>}
@@ -139,7 +142,7 @@ export default function PositionCard({ note, status, state, account, onChange })
           </p>
           {accountWarnings.map((w) => <Warning key={w.code}>{w.text}</Warning>)}
           <button disabled={!account || busy} className="rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-40"
-            onClick={() => run("repay", (on) => flow.repay(on, account, note))}>
+            onClick={() => run("repay", (on) => flow.repay(on, account, note), { signed: true })}>
             Repay 10.5 ADA{account ? ` from ${shortAddress(account.address)}` : ""}
           </button>
         </div>

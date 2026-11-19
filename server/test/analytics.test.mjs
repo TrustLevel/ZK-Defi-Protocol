@@ -42,3 +42,10 @@ test("refuses anything outside the vocabulary: addresses, hashes, free text", as
   ]) assert.equal((await post(app, events)).statusCode, 400, JSON.stringify(events));
   assert.deepEqual(analytics.summary(), {});
 });
+
+test("knows the error classes the web app sends", async () => {
+  const { app } = await appWith();
+  for (const error of ["account_changed", "insufficient_funds"]) {
+    assert.equal((await post(app, [{ step: "repay", event: "failed", error }])).statusCode, 204, error);
+  }
+});

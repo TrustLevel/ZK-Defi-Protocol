@@ -36,8 +36,8 @@ export default function Home() {
         ))}
       </nav>
       {tab === "Pool" && <PoolView />}
-      {tab === "Borrow" && <BorrowView account={account} />}
-      {tab === "Lend" && <LendView account={account} />}
+      {tab === "Borrow" && <BorrowView account={account} onAccount={setAccount} />}
+      {tab === "Lend" && <LendView account={account} onAccount={setAccount} />}
       <UsageFooter />
     </main>
   );

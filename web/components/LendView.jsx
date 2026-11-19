@@ -3,12 +3,13 @@
 import { useState } from "react";
 import * as flow from "../lib/flow";
 import Progress from "./Progress";
+import { ensureSameAccount } from "../lib/wallet";
 import Term from "./Term";
 import { eventsOf, track } from "../lib/analytics";
 
 // Add liquidity to the pool. Withdrawing liquidity is not part of the current
 // protocol; the UI says so.
-export default function LendView({ account }) {
+export default function LendView({ account, onAccount }) {
   const [amount, setAmount] = useState("10");
   const [events, setEvents] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -25,9 +26,11 @@ export default function LendView({ account }) {
     setEvents([]);
     const seen = [];
     try {
+      await ensureSameAccount(account);
       await flow.addLiquidity((e) => { seen.push(e); setEvents((x) => [...x, e]); }, account, lovelace);
       track(eventsOf("liquidity", seen));
     } catch (e) {
+      if (e?.name === "AccountChanged") onAccount?.(e.account);
       track(eventsOf("liquidity", seen, e));
       setError(e?.info || e?.message || String(e));
     } finally {

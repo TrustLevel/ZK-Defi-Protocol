@@ -40,3 +40,10 @@ test("wallet names outside the known list are sent as other", () => {
   assert.equal(walletName("Eternl"), "eternl");
   assert.equal(walletName("my-custom-wallet"), "other");
 });
+
+test("a switched wallet account and missing funds have their own class", () => {
+  assert.equal(classifyError(Object.assign(new Error("switched"), { name: "AccountChanged" })), "account_changed");
+  assert.equal(classifyError({ code: -4, info: "account changed" }), "account_changed");
+  assert.equal(classifyError(new Error("UTxO Balance Insufficient")), "insufficient_funds");
+  assert.equal(classifyError(new Error("Not enough ADA leftover to include non-ADA assets")), "insufficient_funds");
+});

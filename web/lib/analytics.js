@@ -28,7 +28,9 @@ export function setEnabled(on) {
 // The class of a failure, never its message (messages can carry addresses).
 export function classifyError(e) {
   const text = String(e?.info || e?.message || e);
+  if (e?.name === "AccountChanged" || e?.code === -4 || /account.{0,20}chang/i.test(text)) return "account_changed";
   if (e?.code === 2 || e?.code === -3 || /declin|reject|cancel/i.test(text)) return "wallet_declined";
+  if (/insufficient|not enough|balance/i.test(text)) return "insufficient_funds";
   if (e?.code === "stale" || e?.code === "pool_moved" || /BadInputsUTxO|All inputs are spent|UnknownUtxo/i.test(text)) return "contention";
   if (e?.code === "evaluation_failed" || /evaluat/i.test(text)) return "evaluation";
   if (e?.status >= 400 && e?.status < 500) return "relay_rejected";
