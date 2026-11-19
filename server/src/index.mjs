@@ -8,6 +8,8 @@
  *                               routes are off
  *   HOST, PORT                  default 127.0.0.1:3001 (a reverse proxy faces the internet)
  *   REPO_ROOT                   where contracts/, circuits/ and packages/ live (default ../)
+ *   ANALYTICS_FILE              where the usage counters are kept (default server/data/analytics.json);
+ *                               "off" turns analytics off
  */
 import fs from "fs";
 import path from "path";
@@ -15,6 +17,7 @@ import { fileURLToPath } from "url";
 import { BlockfrostProvider, MeshWallet } from "@meshsdk/core";
 import { deriveScripts } from "@zk-defi/protocol/scripts";
 import { buildApp } from "./app.mjs";
+import { createAnalytics } from "./analytics.mjs";
 import { createChainService } from "./chain-service.mjs";
 import { createRelayer } from "./relayer.mjs";
 import { createTxRunner } from "./tx-runner.mjs";
@@ -78,5 +81,14 @@ if (seed) {
 // Build the index now, so the first visitor does not wait for it.
 chain.state().catch((e) => console.log(`initial index: ${e.message}`));
 
-const app = await buildApp({ chain, txService, relayer, deployment, logger: { level: "info" } });
+let analytics = null;
+if (process.env.ANALYTICS_FILE !== "off") {
+  const file = path.resolve(process.env.ANALYTICS_FILE || path.join(ROOT, "server/data/analytics.json"));
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  analytics = createAnalytics({ file });
+}
+
+// Request logs carry method, path and status only: no IP, port or user agent.
+const logger = { level: "info", serializers: { req: (r) => ({ method: r.method, url: r.url }) } };
+const app = await buildApp({ chain, txService, relayer, analytics, deployment, logger });
 await app.listen({ host: process.env.HOST || "127.0.0.1", port: Number(process.env.PORT || 3001) });

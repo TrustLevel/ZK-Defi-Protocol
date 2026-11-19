@@ -10,16 +10,20 @@
  *   POST /api/submit   {tx}  submit a transaction signed in the browser
  *   POST /api/relay/borrow   relayer builds, pays and submits a borrow (see relayer.mjs)
  *   POST /api/relay/unlock   relayer builds, pays and submits an unlock
+ *   POST /api/events         anonymous usage counters (see analytics.mjs)
+ *   GET  /api/analytics      the counters, public
  */
 import Fastify from "fastify";
 import rateLimit from "@fastify/rate-limit";
 import { IndexLagError } from "./chain-service.mjs";
+import { EVENT } from "./analytics.mjs";
 
 // BigInt-safe JSON: every integer of the protocol goes out as a decimal string.
 const toJson = (v) => JSON.parse(JSON.stringify(v, (_k, x) => (typeof x === "bigint" ? x.toString() : x)));
 
-export async function buildApp({ chain, txService, relayer, deployment, logger = false }) {
-  const app = Fastify({ logger, bodyLimit: 64 * 1024 });
+export async function buildApp({ chain, txService, relayer, analytics, deployment, logger = false }) {
+  // Unknown fields are refused, not silently dropped (Fastify's default).
+  const app = Fastify({ logger, bodyLimit: 64 * 1024, ajv: { customOptions: { removeAdditional: false } } });
   await app.register(rateLimit, { max: 120, timeWindow: "1 minute" });
 
   app.setErrorHandler((err, _req, reply) => {
@@ -61,6 +65,18 @@ export async function buildApp({ chain, txService, relayer, deployment, logger =
     const relayLimit = { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } };
     app.post("/api/relay/borrow", relayLimit, async (req) => relayer.borrow(req.body));
     app.post("/api/relay/unlock", relayLimit, async (req) => relayer.unlock(req.body));
+  }
+
+  if (analytics) {
+    // One request carries the events of one step only, so a request never links two steps.
+    app.post("/api/events", {
+      config: { rateLimit: { max: 30, timeWindow: "1 minute" } },
+      schema: { body: { type: "object", additionalProperties: false, required: ["events"], properties: { events: { type: "array", maxItems: 20, items: EVENT } } } },
+    }, async (req, reply) => {
+      for (const e of req.body.events) analytics.record(e);
+      return reply.code(204).send();
+    });
+    app.get("/api/analytics", async () => analytics.summary());
   }
   return app;
 }

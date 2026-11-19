@@ -167,3 +167,6 @@ circuits/collateral_proof_final.zkey
 
 # M4 CLI notes hold deposit secrets — never commit
 offchain/cli/m4/notes/
+
+# M4 backend runtime data (usage counters)
+/server/data/
