@@ -11,7 +11,7 @@ const hex = (v) => "0x" + BigInt(v).toString(16).slice(0, 10) + "…";
 // Row labels that have an explanation.
 const TERM = {
   Secret: "secret", "Your secret": "secret", Commitment: "commitment", "Loan nullifier": "nullifier",
-  "Repayment marker": "marker", "Which deposit": "anonymitySet", "Which repayment": "marker",
+  "Repayment marker": "marker", "Which collateral": "anonymitySet", "Which repayment": "marker",
   "Fee paid by": "relayer", Amount: "fixedAmounts", Loan: "fixedAmounts",
 };
 
@@ -34,10 +34,10 @@ function lenses({ note, status, state, account, recipient, warnings }) {
   switch (status) {
     case "new":
       return {
-        title: "Deposit",
+        title: "Lock collateral",
         know: [secret, ["Collateral", "20 ADA"], ["Returns to", account ? shortAddress(account.address) : "account A"]],
         chain: [
-          ["Amount", "20 ADA (every deposit is 20 ADA)"],
+          ["Amount", "20 ADA (every collateral is 20 ADA)"],
           ["Paid by", account ? shortAddress(account.address) : "account A"],
           ["Commitment", hex(note.commitment)],
           ["Your secret", "not on-chain", "hidden"],
@@ -46,12 +46,12 @@ function lenses({ note, status, state, account, recipient, warnings }) {
     case "deposited":
       return {
         title: "Borrow",
-        know: [secret, ["Backed by", `your deposit (${hex(note.commitment)})`], ["Loan to", recipient ? shortAddress(recipient) : "account B"]],
+        know: [secret, ["Backed by", `your collateral (${hex(note.commitment)})`], ["Loan to", recipient ? shortAddress(recipient) : "account B"]],
         chain: [
           ["Loan", "10 ADA (every loan is 10 ADA)"],
           ["Paid to", recipient ? shortAddress(recipient) : "account B", linked ? "link" : undefined],
           ["Loan nullifier", hex(N)],
-          ["Which deposit", `hidden: one of ${deposits}`, "hidden"],
+          ["Which collateral", `hidden: one of ${deposits}`, "hidden"],
           ["Fee paid by", "the relayer", "hidden"],
         ],
       };
@@ -64,7 +64,7 @@ function lenses({ note, status, state, account, recipient, warnings }) {
           ["Paid by", account ? shortAddress(account.address) : "account B", linked ? "link" : undefined],
           ["Loan nullifier", `${hex(N)} (same as the loan, by design)`],
           ["Repayment marker", hex(R)],
-          ["Which deposit", "hidden: the marker reveals none", "hidden"],
+          ["Which collateral", "hidden: the marker reveals none", "hidden"],
         ],
       };
     case "repaid":
@@ -72,8 +72,8 @@ function lenses({ note, status, state, account, recipient, warnings }) {
         title: "Unlock",
         know: [secret, ["Your repayment", "is in the repaid set"]],
         chain: [
-          ["Deposit spent", note.deposit ? `${note.deposit.txHash.slice(0, 10)}…#${note.deposit.outputIndex}` : "your deposit"],
-          ["Paid to", "the account that deposited"],
+          ["Collateral released", note.deposit ? `${note.deposit.txHash.slice(0, 10)}…#${note.deposit.outputIndex}` : "your collateral"],
+          ["Paid to", "the account that locked it"],
           ["Which repayment", `hidden: one of ${repaid}`, "hidden"],
           ["Link to the loan", "none", "hidden"],
           ["Fee paid by", "the relayer", "hidden"],

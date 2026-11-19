@@ -31,13 +31,13 @@ export function linkageWarnings(note, { step, keyHashes }) {
   if (step === "repay") {
     return [{
       code: "repay-from-deposit-account",
-      text: "This account paid the deposit. The repayment reveals the loan, so repaying from here links your deposit to your loan on-chain.",
+      text: "This account locked the collateral. The repayment reveals the loan, so repaying from here links your collateral to your loan on-chain.",
     }];
   }
   if (step === "borrow") {
     return [{
       code: "loan-to-deposit-account",
-      text: "This account paid the deposit. Paying the loan to it links your deposit to your loan on-chain.",
+      text: "This account locked the collateral. Paying the loan to it links your collateral to your loan on-chain.",
     }];
   }
   return [];

@@ -41,7 +41,8 @@ export default function LendView({ account, onAccount }) {
   return (
     <section className="space-y-4 rounded-lg border border-line bg-surface p-5">
       <p className="text-sm">
-        Lenders provide the ADA that borrowers receive. Each loan pays 5% interest into the pool.
+        Lenders provide the ADA that borrowers receive. Each loan pays 5% interest into the pool. This liquidity is
+        separate from borrowers' collateral, which only secures each borrower's own loan and is never lent out.
       </p>
       <p className="rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
         <Term id="withdraw">Withdrawing</Term> liquidity is not available yet. Only add test ADA you do not need back.

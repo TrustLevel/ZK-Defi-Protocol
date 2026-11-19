@@ -11,7 +11,7 @@ import Progress from "./Progress";
 import Lenses from "./Lenses";
 import Term from "./Term";
 
-const LABEL = { deposited: "Deposited", borrowed: "Borrowed", repaid: "Repaid", unlocked: "Unlocked" };
+const LABEL = { deposited: "Collateral locked", borrowed: "Borrowed", repaid: "Repaid", unlocked: "Unlocked" };
 
 function Stepper({ status }) {
   const reached = STEPS.indexOf(status);
@@ -91,7 +91,7 @@ export default function PositionCard({ note, status, state, account, onAccount, 
             </label>
           </div>
           <p className="text-sm text-muted">
-            Connect <strong><Term id="accountA">account A</Term></strong>, the account that holds your collateral. It pays exactly 20 ADA; the
+            Connect <strong><Term id="accountA">account A</Term></strong>. It locks exactly 20 ADA as <Term id="collateral">collateral</Term> for your own loan; the
             collateral returns to it when you unlock.
           </p>
           <div className="flex gap-2">
@@ -101,7 +101,7 @@ export default function PositionCard({ note, status, state, account, onAccount, 
                 saveNote({ ...note, deposit: dep, depositKeyHashes: account.keyHashes });
                 onChange();
               }), { signed: true })}>
-              Deposit 20 ADA{account ? ` from ${shortAddress(account.address)}` : ""}
+              Lock 20 ADA collateral{account ? ` from ${shortAddress(account.address)}` : ""}
             </button>
             {!busy && <button className="text-sm text-muted underline" onClick={() => { removeNote(note.id); onChange(); }}>Discard</button>}
           </div>
@@ -110,16 +110,16 @@ export default function PositionCard({ note, status, state, account, onAccount, 
 
       {status === "loading" && <p className="text-sm text-muted">Reading this position from the chain…</p>}
 
-      {status === "pending" && <p className="text-sm text-muted">The deposit was submitted. Waiting for it to appear on-chain…</p>}
+      {status === "pending" && <p className="text-sm text-muted">The collateral was submitted. Waiting for it to appear on-chain…</p>}
 
       {status === "deposited" && (
         <div className="space-y-3">
           <p className="text-sm">
-            Borrow 10 ADA against this deposit. The proof shows that <em>some</em> deposit in the pool backs the loan,
+            Borrow 10 ADA against this collateral. The proof shows that <em>some</em> locked collateral backs the loan,
             not which one. The <Term id="relayer">relayer</Term> pays the fee, so your wallet does not appear in this transaction.
           </p>
           <label className="block text-sm">
-            Pay the loan to <strong><Term id="accountB">account B</Term></strong> (a different account from the one that deposited):
+            Pay the loan to <strong><Term id="accountB">account B</Term></strong> (a different account from the one that locked the collateral):
             <div className="mt-1 flex gap-2">
               <input value={recipient} onChange={(e) => setRecipient(e.target.value.trim())} placeholder="addr_test1…"
                 className="w-full rounded-md border border-line px-2 py-1.5 font-mono text-xs" />
@@ -151,8 +151,8 @@ export default function PositionCard({ note, status, state, account, onAccount, 
       {status === "repaid" && (
         <div className="space-y-3">
           <p className="text-sm">
-            Unlock your 20 ADA. The proof shows that this deposit's loan was repaid without saying which repayment was
-            yours. The relayer pays the fee; the collateral returns to the account that deposited it.
+            Unlock your 20 ADA. The proof shows that the loan on this collateral was repaid without saying which repayment was
+            yours. The relayer pays the fee; the collateral returns to the account that locked it.
           </p>
           <button disabled={busy} className="rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-40"
             onClick={() => run("unlock", (on) => flow.unlock(on, note))}>

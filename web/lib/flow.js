@@ -97,7 +97,7 @@ export async function deposit(on, account, note, onSubmitted) {
   });
   // outputs: 0 = pool, 1 = the deposit
   onSubmitted({ txHash, outputIndex: 1 });
-  return waitFor(on, (s) => s.leaves.commitments.includes(note.commitment), "deposit");
+  return waitFor(on, (s) => s.leaves.commitments.includes(note.commitment), "collateral");
 }
 
 // 2. Borrow: the relayer submits; the loan goes to `recipient` (account B).

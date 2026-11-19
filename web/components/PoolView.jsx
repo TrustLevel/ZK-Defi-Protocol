@@ -25,12 +25,15 @@ const ago = (t) => {
 // What each transaction reveals: amounts are fixed, so only the kind and the
 // public tags differ; nothing says which deposit a loan or an unlock belongs to.
 const SHOWS = {
-  deposit: (a) => `20 ADA locked · commitment ${hex(a.commitment)}`,
-  borrow: (a) => `10 ADA out · nullifier ${hex(a.nullifier)} · deposit hidden`,
+  deposit: (a) => `20 ADA collateral locked · commitment ${hex(a.commitment)}`,
+  borrow: (a) => `10 ADA out · nullifier ${hex(a.nullifier)} · which collateral: hidden`,
   repay: (a) => `10.5 ADA in · nullifier ${hex(a.nullifier)} · marker ${hex(a.marker)}`,
-  unlock: () => "20 ADA returned · which repayment: hidden",
+  unlock: () => "20 ADA collateral returned · which repayment: hidden",
   liquidity: () => "liquidity added",
 };
+
+// What each kind of transaction is called in the feed.
+const KIND = { deposit: "Collateral", borrow: "Borrow", repay: "Repay", unlock: "Unlock", liquidity: "Liquidity" };
 
 // The commitment tree as a grid. No leaf is highlighted: the chain does not
 // know which one is yours, and neither does this page.
@@ -47,7 +50,7 @@ function AnonymitySet({ count }) {
         ))}
       </div>
       <p className="mt-2 text-xs text-muted">
-        Every deposit is one leaf. A loan proves it is backed by one of them, without saying which.
+        Every locked collateral is one leaf. A loan proves it is backed by one of them, without saying which.
       </p>
     </div>
   );
@@ -60,7 +63,7 @@ function Activity({ items }) {
       <ul className="mt-2 divide-y divide-line">
         {items.map((a) => (
           <li key={a.txHash} className="flex flex-wrap items-baseline gap-x-3 py-2 text-xs">
-            <span className="w-16 font-semibold capitalize">{a.type}</span>
+            <span className="w-20 font-semibold">{KIND[a.type] ?? a.type}</span>
             <span className="flex-1 font-mono text-muted">{SHOWS[a.type]?.(a)}</span>
             <a className="text-muted underline" href={`https://preprod.cardanoscan.io/transaction/${a.txHash}`} target="_blank" rel="noreferrer">{ago(a.time)}</a>
           </li>
@@ -98,9 +101,9 @@ export default function PoolView() {
         <Stat label="Open loans" value={d.open_loans.length} />
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Stat label={<Term id="fixedAmounts">Collateral unit</Term>} value={`${ada(d.collateral_denomination)} ADA`} hint="every deposit has this size" />
+        <Stat label={<Term id="fixedAmounts">Collateral unit</Term>} value={`${ada(d.collateral_denomination)} ADA`} hint="every collateral has this size" />
         <Stat label={<Term id="fixedAmounts">Loan unit</Term>} value={`${ada(d.loan_denomination)} ADA`} hint="every loan has this size" />
-        <Stat label="Locked deposits" value={state.deposits.size} hint="collateral currently held" />
+        <Stat label={<Term id="collateral">Locked collateral</Term>} value={state.deposits.size} hint="borrowers' own security, not pool funds" />
       </div>
       <AnonymitySet count={state.leaves.commitments.length} />
       <Activity items={state.activity} />

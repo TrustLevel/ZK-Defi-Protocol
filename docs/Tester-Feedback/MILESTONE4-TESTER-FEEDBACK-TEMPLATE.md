@@ -39,12 +39,12 @@ Two accounts in your wallet, each funded **separately** from the
 
 ## Part B — One full cycle in the UI (~20 min)
 
-Run deposit (A), borrow (to B), repay (B), unlock. Each step's progress list links the
+Run lock collateral (A), borrow (to B), repay (B), unlock. Each step's progress list links the
 transaction on cardanoscan; copy the hash.
 
 | Step | Tx hash | Worked first time? (Y/N) | Proof time shown | Notes |
 |---|---|---|---|---|
-| Deposit | | | | |
+| Lock collateral | | | | |
 | Borrow (relayer) | | | n/a | |
 | Repay | | | | |
 | Unlock (relayer) | | | n/a | |
@@ -57,7 +57,7 @@ transaction on cardanoscan; copy the hash.
 
 ## Part C — Privacy check (~15 min)
 
-1. **Pool tab:** can you tell which square of the anonymity set is your deposit? (Y/N):
+1. **Pool tab:** can you tell which square of the anonymity set is your collateral? (Y/N):
 2. **Borrow transaction on cardanoscan:** which addresses are inputs? Does account A appear
    anywhere? (list):
 3. **Unlock transaction on cardanoscan:** where did the 20 ADA go? Can you see which repayment
@@ -74,7 +74,7 @@ transaction on cardanoscan; copy the hash.
 
 ## Part D — Recovering a position (~5 min)
 
-Start a new position and deposit (or use one that is not unlocked yet). Then open the app in a
+Start a new position and lock its collateral (or use one that is not unlocked yet). Then open the app in a
 private window or another browser and **Import note**.
 
 - Did the imported position show the right step? (Y/N):
@@ -89,6 +89,7 @@ Hover or tap the underlined words. Rate how clear each explanation is (1=unclear
 
 | Term | Clarity | Comment |
 |---|---|---|
+| Collateral (vs. liquidity) | | |
 | Note | | |
 | Commitment | | |
 | Anonymity set | | |
@@ -114,7 +115,7 @@ This part decides the protocol update after the test.
 - Was there anything you wanted to do and could not? (free text):
 - Two features the current protocol does not have. How important would they be to you?
   (1=not needed … 5=essential)
-  - **Withdraw a deposit that never backed a loan** (today collateral only comes back through
+  - **Take back collateral that never backed a loan** (today collateral only comes back through
     borrow → repay → unlock):
   - **Withdraw liquidity as a lender**, including the interest earned:
 - Anything else you would change first?
@@ -123,7 +124,7 @@ This part decides the protocol update after the test.
 
 ## Part G — Assessment
 
-- Could you take a private loan and repay it **without revealing which deposit backed it**?
+- Could you take a private loan and repay it **without revealing which collateral backed it**?
   (Y/N + why):
 - Overall ease of use (1=hard … 5=easy):
 - Proof times acceptable? (Y/N):
