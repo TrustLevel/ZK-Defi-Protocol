@@ -6,6 +6,7 @@ import { deployment } from "../lib/flow";
 import { createNote, loadNotes, saveNote, parseNote } from "../lib/notes";
 import { positionOf } from "../lib/position";
 import PositionCard from "./PositionCard";
+import { track } from "../lib/analytics";
 
 // The user's positions (notes in this browser), each with its state derived
 // locally from the public chain data.
@@ -40,6 +41,7 @@ export default function BorrowView({ account }) {
       const note = parseNote(await file.text());
       if (note.policyId !== deployment.policyId) throw new Error("This note belongs to a different pool.");
       saveNote(note);
+      track([{ step: "note", event: "import" }]);
       refresh();
     } catch (e) {
       setError(e.message);

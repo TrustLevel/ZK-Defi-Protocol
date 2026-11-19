@@ -3,6 +3,7 @@
 import { useState } from "react";
 import * as flow from "../lib/flow";
 import Progress from "./Progress";
+import { eventsOf, track } from "../lib/analytics";
 
 // Add liquidity to the pool. Withdrawing liquidity is not part of the current
 // protocol; the UI says so.
@@ -21,9 +22,12 @@ export default function LendView({ account }) {
     setBusy(true);
     setError(null);
     setEvents([]);
+    const seen = [];
     try {
-      await flow.addLiquidity((e) => setEvents((x) => [...x, e]), account, lovelace);
+      await flow.addLiquidity((e) => { seen.push(e); setEvents((x) => [...x, e]); }, account, lovelace);
+      track(eventsOf("liquidity", seen));
     } catch (e) {
+      track(eventsOf("liquidity", seen, e));
       setError(e?.info || e?.message || String(e));
     } finally {
       setBusy(false);

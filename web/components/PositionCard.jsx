@@ -6,6 +6,7 @@ import * as flow from "../lib/flow";
 import { downloadNote, saveNote, removeNote } from "../lib/notes";
 import { STEPS, linkageWarnings } from "../lib/position";
 import { shortAddress } from "../lib/wallet";
+import { eventsOf, track } from "../lib/analytics";
 import Progress from "./Progress";
 import Lenses from "./Lenses";
 
@@ -38,15 +39,18 @@ export default function PositionCard({ note, status, state, account, onChange })
   const [backedUp, setBackedUp] = useState(false);
   const [recipient, setRecipient] = useState("");
 
-  async function run(step) {
+  async function run(name, step) {
     setBusy(true);
     setError(null);
     setEvents([]);
-    const on = (e) => setEvents((x) => [...x, e]);
+    const seen = [];
+    const on = (e) => { seen.push(e); setEvents((x) => [...x, e]); };
     try {
       await step(on);
+      track(eventsOf(name, seen));
       onChange();
     } catch (e) {
+      track(eventsOf(name, seen, e));
       setError(e?.info || e?.message || String(e));
     } finally {
       setBusy(false);
@@ -75,7 +79,7 @@ export default function PositionCard({ note, status, state, account, onChange })
             unlock the collateral, not even us.
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            <button className="rounded-md border border-line px-3 py-1.5 text-sm hover:bg-canvas" onClick={() => { downloadNote(note); setBackedUp(true); }}>
+            <button className="rounded-md border border-line px-3 py-1.5 text-sm hover:bg-canvas" onClick={() => { downloadNote(note); setBackedUp(true); track([{ step: "note", event: "download" }]); }}>
               Download note
             </button>
             <label className="flex items-center gap-2 text-sm">
@@ -89,7 +93,7 @@ export default function PositionCard({ note, status, state, account, onChange })
           <div className="flex gap-2">
             <button disabled={!backedUp || !account || busy}
               className="rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-40"
-              onClick={() => run((on) => flow.deposit(on, account, note, (dep) => {
+              onClick={() => run("deposit", (on) => flow.deposit(on, account, note, (dep) => {
                 saveNote({ ...note, deposit: dep, depositKeyHashes: account.keyHashes });
                 onChange();
               }))}>
@@ -119,7 +123,7 @@ export default function PositionCard({ note, status, state, account, onChange })
           {recipient && !recipientPkh && <Warning>This is not a wallet address.</Warning>}
           {recipientWarnings.map((w) => <Warning key={w.code}>{w.text}</Warning>)}
           <button disabled={!recipientPkh || busy} className="rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-40"
-            onClick={() => run((on) => flow.borrow(on, note, recipient))}>
+            onClick={() => run("borrow", (on) => flow.borrow(on, note, recipient))}>
             Borrow 10 ADA
           </button>
         </div>
@@ -132,7 +136,7 @@ export default function PositionCard({ note, status, state, account, onChange })
           </p>
           {accountWarnings.map((w) => <Warning key={w.code}>{w.text}</Warning>)}
           <button disabled={!account || busy} className="rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-40"
-            onClick={() => run((on) => flow.repay(on, account, note))}>
+            onClick={() => run("repay", (on) => flow.repay(on, account, note))}>
             Repay 10.5 ADA{account ? ` from ${shortAddress(account.address)}` : ""}
           </button>
         </div>
@@ -145,7 +149,7 @@ export default function PositionCard({ note, status, state, account, onChange })
             yours. The relayer pays the fee; the collateral returns to the account that deposited it.
           </p>
           <button disabled={busy} className="rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-40"
-            onClick={() => run((on) => flow.unlock(on, note))}>
+            onClick={() => run("unlock", (on) => flow.unlock(on, note))}>
             Unlock 20 ADA
           </button>
         </div>

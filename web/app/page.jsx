@@ -8,6 +8,7 @@ import PoolView from "../components/PoolView";
 const WalletBar = dynamic(() => import("../components/WalletBar"), { ssr: false });
 const BorrowView = dynamic(() => import("../components/BorrowView"), { ssr: false });
 const LendView = dynamic(() => import("../components/LendView"), { ssr: false });
+const UsageFooter = dynamic(() => import("../components/UsageFooter"), { ssr: false });
 
 const TABS = ["Pool", "Borrow", "Lend"];
 
@@ -34,6 +35,7 @@ export default function Home() {
       {tab === "Pool" && <PoolView />}
       {tab === "Borrow" && <BorrowView account={account} />}
       {tab === "Lend" && <LendView account={account} />}
+      <UsageFooter />
     </main>
   );
 }

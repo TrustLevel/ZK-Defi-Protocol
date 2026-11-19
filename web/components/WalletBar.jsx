@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { availableWallets, connectWallet, shortAddress } from "../lib/wallet";
+import { track, walletName } from "../lib/analytics";
 
 // Connect a CIP-30 wallet. One connection is one account: to use another
 // account, switch it in the wallet and press "Reconnect".
@@ -19,6 +20,7 @@ export default function WalletBar({ account, setAccount }) {
     setError(null);
     try {
       setAccount(await connectWallet(name));
+      track([{ step: "wallet", event: "connect", wallet: walletName(name) }]);
     } catch (e) {
       setError(e?.message || String(e));
     } finally {
