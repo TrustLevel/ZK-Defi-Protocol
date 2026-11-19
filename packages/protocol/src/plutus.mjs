@@ -10,10 +10,13 @@
  *                    collateral_ratio, group_root, group_next_index, repaid_root,
  *                    next_index, external_nullifier, repay_external_nullifier,
  *                    collateral_denomination, loan_denomination, open_loans: [Int],
- *                    used_nullifiers: [Int], last_updated]
- *   PoolRedeemerV5 : AddLiquidity 0 [] · DepositCollateral 1 [Int, Proof] ·
+ *                    used_nullifiers: [Int], last_updated, lender_root,
+ *                    lender_next_index, total_shares, lender_nullifiers: [Int],
+ *                    lender_external_nullifier, share_start_price, liquidity_reserve]
+ *   PoolRedeemerV5 : AddLiquidity 0 [Int, Proof] · DepositCollateral 1 [Int, Proof] ·
  *                    BorrowAnonymous 2 [Proof, Int, Int, ByteArray] ·
- *                    RepayAnonymous 3 [Proof, Int, Int, Int, Proof]
+ *                    RepayAnonymous 3 [Proof, Int, Int, Int, Proof] ·
+ *                    WithdrawLiquidity 4 [Proof, Int, ByteArray]
  *   CollateralRedeemerV5 : UnlockDeposit 0 [Proof, OutputReference]
  *   Proof          = Constr 0 [piA, piB, piC]   (compressed points)
  *   OutputReference= Constr 0 [txHash, index]
@@ -52,9 +55,13 @@ export function poolDatum(d) {
     int(d.collateral_denomination), int(d.loan_denomination),
     list((d.open_loans || []).map(int)), list((d.used_nullifiers || []).map(int)),
     int(d.last_updated),
+    int(d.lender_root), int(d.lender_next_index), int(d.total_shares),
+    list((d.lender_nullifiers || []).map(int)),
+    int(d.lender_external_nullifier), int(d.share_start_price), int(d.liquidity_reserve),
   ]);
 }
-// Inline datum on the loan payout output: the loan nullifier.
+// Inline datum on the loan payout output: the loan nullifier. The lender
+// withdraw payout is tagged the same way with its withdraw nullifier W.
 export function loanTag(loanNullifier) {
   return int(loanNullifier);
 }
@@ -75,7 +82,9 @@ export function vkeyDatum(curve, vkeyJson) {
   ]);
 }
 
-export const R_AddLiquidity = conStr(0, []);
+export function R_AddLiquidity(commitment, appendProof) {
+  return conStr(0, [int(commitment), proofData(appendProof)]);
+}
 export function R_DepositCollateral(commitment, appendProof) {
   return conStr(1, [int(commitment), proofData(appendProof)]);
 }
@@ -84,6 +93,9 @@ export function R_Borrow(proof, loanAmount, loanNullifier, recipientPkh) {
 }
 export function R_Repay(proof, repayAmount, loanNullifier, repayNullifier, appendProof) {
   return conStr(3, [proofData(proof), int(repayAmount), int(loanNullifier), int(repayNullifier), proofData(appendProof)]);
+}
+export function R_WithdrawLiquidity(proof, withdrawNullifier, recipientPkh) {
+  return conStr(4, [proofData(proof), int(withdrawNullifier), byteString(recipientPkh)]);
 }
 export function R_Unlock(proof, poolRefTx, poolRefIdx) {
   return conStr(0, [proofData(proof), outputReference(poolRefTx, poolRefIdx)]);
@@ -100,6 +112,8 @@ const POOL_FIELDS = [
   "total_deposited", "total_borrowed", "interest_rate", "collateral_ratio", "group_root",
   "group_next_index", "repaid_root", "next_index", "external_nullifier", "repay_external_nullifier",
   "collateral_denomination", "loan_denomination", "open_loans", "used_nullifiers", "last_updated",
+  "lender_root", "lender_next_index", "total_shares", "lender_nullifiers", "lender_external_nullifier",
+  "share_start_price", "liquidity_reserve",
 ];
 export function decodePoolDatum(cbor) {
   const d = deserializeDatum(cbor);
@@ -118,7 +132,7 @@ export function decodePoolRedeemer(cbor) {
   const d = deserializeDatum(cbor);
   const f = d.fields;
   switch (constrOf(d)) {
-    case 0: return { type: "AddLiquidity" };
+    case 0: return { type: "AddLiquidity", commitment: asInt(f[0]), appendProof: asProof(f[1]) };
     case 1: return { type: "DepositCollateral", commitment: asInt(f[0]), appendProof: asProof(f[1]) };
     case 2: return {
       type: "BorrowAnonymous", proof: asProof(f[0]), loanAmount: asInt(f[1]),
@@ -127,6 +141,9 @@ export function decodePoolRedeemer(cbor) {
     case 3: return {
       type: "RepayAnonymous", proof: asProof(f[0]), repayAmount: asInt(f[1]),
       loanNullifier: asInt(f[2]), repayNullifier: asInt(f[3]), appendProof: asProof(f[4]),
+    };
+    case 4: return {
+      type: "WithdrawLiquidity", proof: asProof(f[0]), withdrawNullifier: asInt(f[1]), recipient: f[2].bytes,
     };
     default: throw new Error(`unknown pool redeemer constructor ${constrOf(d)}`);
   }

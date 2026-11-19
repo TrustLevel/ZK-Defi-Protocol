@@ -11,7 +11,7 @@
  */
 import {
   poolDatum, depositDatum, loanTag, outputReference,
-  R_AddLiquidity, R_DepositCollateral, R_Borrow, R_Repay, R_Unlock,
+  R_AddLiquidity, R_DepositCollateral, R_Borrow, R_Repay, R_Unlock, R_WithdrawLiquidity,
 } from "./plutus.mjs";
 
 const lovelaceOf = (utxo) => BigInt(utxo.output.amount.find((a) => a.unit === "lovelace").quantity);
@@ -49,6 +49,33 @@ export function hasCollateral(utxos) {
 export function repayAmount(datum) {
   const principal = datum.loan_denomination;
   return principal + (principal * datum.interest_rate) / 10000n;
+}
+
+// Free liquidity, share value and share prices, as the validator computes them
+// from the pool datum and the pool UTxO's lovelace.
+export function freeLiquidity(datum, poolLovelace) {
+  return BigInt(poolLovelace) - datum.liquidity_reserve;
+}
+export function shareValue(datum, poolLovelace) {
+  return freeLiquidity(datum, poolLovelace) + datum.total_borrowed;
+}
+// Price of buying one share, rounded up; the start price while no share is out.
+export function sharePriceUp(datum, poolLovelace) {
+  if (datum.total_shares === 0n) return datum.share_start_price;
+  return (shareValue(datum, poolLovelace) + datum.total_shares - 1n) / datum.total_shares;
+}
+// Payout for one share, rounded down.
+export function sharePriceDown(datum, poolLovelace) {
+  if (datum.total_shares <= 0n) return 0n;
+  return shareValue(datum, poolLovelace) / datum.total_shares;
+}
+// Shares that can be withdrawn one after another from the free liquidity now
+// (each withdrawal pays the same price; rounding only grows the remainder).
+export function withdrawableShares(datum, poolLovelace) {
+  const price = sharePriceDown(datum, poolLovelace);
+  if (price === 0n) return 0n;
+  const byLiquidity = freeLiquidity(datum, poolLovelace) / price;
+  return byLiquidity < datum.total_shares ? byLiquidity : datum.total_shares;
 }
 
 function spendPool(txb, S, pool, redeemer, network) {
@@ -139,12 +166,39 @@ export function buildUnlock(txb, { S, deployment, pool, deposit, unlockTo, proof
   return payWith(txb, payer);
 }
 
-// AddLiquidity: a lender adds lovelace; only total_deposited grows.
-export function buildAddLiquidity(txb, { S, pool, amount, payer, now = Date.now(), network = "preprod" }) {
+// AddLiquidity: buy one share at the current price (rounded up); the append
+// proof inserts the lender note's leaf into lender_root (newLenderRoot).
+export function buildAddLiquidity(txb, { S, deployment, pool, commitment, appendProof, newLenderRoot, payer, now = Date.now(), network = "preprod" }) {
   const d = pool.datum;
-  const cont = { ...d, total_deposited: d.total_deposited + BigInt(amount), last_updated: now };
-  spendPool(txb, S, pool, R_AddLiquidity, network)
-    .txOut(S.POOL_ADDRESS, poolAmount(S, lovelaceOf(pool.utxo) + BigInt(amount)))
+  const price = sharePriceUp(d, lovelaceOf(pool.utxo));
+  const cont = {
+    ...d, total_deposited: d.total_deposited + price, total_shares: d.total_shares + 1n,
+    lender_root: newLenderRoot, lender_next_index: d.lender_next_index + 1n, last_updated: now,
+  };
+  spendPool(txb, S, pool, R_AddLiquidity(commitment, appendProof), network)
+    .readOnlyTxInReference(deployment.vkeys.txHash, deployment.vkeys.appendIdx)
+    .txOut(S.POOL_ADDRESS, poolAmount(S, lovelaceOf(pool.utxo) + price))
     .txOutInlineDatumValue(poolDatum(cont), "JSON");
+  return payWith(txb, payer);
+}
+
+// WithdrawLiquidity: one share out at the current price (rounded down) to the
+// recipient key the proof is bound to, tagged with the withdraw nullifier W,
+// which enters lender_nullifiers. Submitted by the relayer.
+export function buildWithdrawLiquidity(txb, { S, deployment, pool, proof, nullifier, recipient, recipientPkh, payer, now = Date.now(), network = "preprod" }) {
+  const d = pool.datum;
+  const bal = lovelaceOf(pool.utxo);
+  const price = sharePriceDown(d, bal);
+  if (price === 0n || price > freeLiquidity(d, bal)) throw new Error("not enough free liquidity for a share");
+  const cont = {
+    ...d, total_shares: d.total_shares - 1n,
+    lender_nullifiers: [BigInt(nullifier), ...d.lender_nullifiers], last_updated: now,
+  };
+  spendPool(txb, S, pool, R_WithdrawLiquidity(proof, nullifier, recipientPkh), network)
+    .readOnlyTxInReference(deployment.vkeys.lender.txHash, deployment.vkeys.lender.index)
+    .txOut(S.POOL_ADDRESS, poolAmount(S, bal - price))
+    .txOutInlineDatumValue(poolDatum(cont), "JSON")
+    .txOut(recipient, [{ unit: "lovelace", quantity: String(price) }])
+    .txOutInlineDatumValue(loanTag(nullifier), "JSON");
   return payWith(txb, payer);
 }
