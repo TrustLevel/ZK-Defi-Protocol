@@ -9,6 +9,7 @@
     "./plutus": "./src/plutus.mjs",
     "./scripts": "./src/scripts.mjs",
     "./deployments/preprod-m4.json": "./deployments/preprod-m4.json",
+    "./deployments/preprod-m4-lend.json": "./deployments/preprod-m4-lend.json",
     "./tx": "./src/tx.mjs",
     "./chain": "./src/chain.mjs"
   },

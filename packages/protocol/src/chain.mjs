@@ -41,20 +41,25 @@ export async function poolRedeemerOf(bf, S, txHash) {
   return decodePoolRedeemer(cbor);
 }
 
-// Leaves of both append-only trees, in insertion order: the commitments of all
-// deposits (group_root) and the repayment nullifiers R of all repays (repaid_root).
+// Leaves of the three append-only trees, in insertion order: the commitments of
+// all collateral deposits (group_root), the repayment nullifiers R of all repays
+// (repaid_root) and the lender notes of all shares bought (lender_root).
 export async function fetchLeaves(bf, S) {
-  const commitments = [], repaid = [];
+  const commitments = [], repaid = [], lenders = [];
   for (const t of await poolHistory(bf, S)) {
     const r = await poolRedeemerOf(bf, S, t.tx_hash);
     if (r?.type === "DepositCollateral") commitments.push(r.commitment);
     if (r?.type === "RepayAnonymous") repaid.push(r.repayNullifier);
+    if (r?.type === "AddLiquidity") lenders.push(r.commitment);
   }
-  return { commitments, repaid };
+  return { commitments, repaid, lenders };
 }
 
 // The leaves must rebuild the roots in the live pool datum, or the index is stale.
-export function checkLeaves(datum, { commitments, repaid }) {
+export function checkLeaves(datum, { commitments, repaid, lenders }) {
+  if (BigInt(lenders.length) !== datum.lender_next_index || merkleRoot(lenders) !== datum.lender_root) {
+    throw new Error("lender leaves do not match the pool's lender_root");
+  }
   if (BigInt(commitments.length) !== datum.group_next_index || merkleRoot(commitments) !== datum.group_root) {
     throw new Error("commitment leaves do not match the pool's group_root");
   }
