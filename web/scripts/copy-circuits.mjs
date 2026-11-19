@@ -12,6 +12,7 @@ const CIRCUITS = {
   borrow: ["collateral_semaphore", "verification_key_semaphore"],
   repay: ["repay_proof", "verification_key_repay"],
   settlement: ["settlement_proof", "verification_key_settlement"],
+  lender: ["lender_withdraw", "verification_key_lender_withdraw"],
 };
 
 fs.mkdirSync(OUT, { recursive: true });

@@ -1,7 +1,7 @@
 // Client for the M4 backend. Everything it sends or receives is public chain
 // data or a proof; notes and secrets never leave the browser.
 
-const INT_LISTS = ["open_loans", "used_nullifiers"];
+const INT_LISTS = ["open_loans", "used_nullifiers", "lender_nullifiers"];
 
 export class ApiError extends Error {
   constructor(status, code, message) {
@@ -30,7 +30,7 @@ async function call(method, path, body) {
   throw new ApiError(503, "indexing", "The backend is still catching up with the chain.");
 }
 
-// Pool and both trees with integers as BigInt.
+// Pool and the three trees with integers as BigInt.
 export async function getState() {
   const s = await call("GET", "/api/state");
   const datum = Object.fromEntries(
@@ -39,7 +39,9 @@ export async function getState() {
   return {
     deployment: s.deployment,
     pool: { utxo: s.pool.utxo, datum },
-    leaves: { commitments: s.leaves.commitments.map(BigInt), repaid: s.leaves.repaid.map(BigInt) },
+    leaves: {
+      commitments: s.leaves.commitments.map(BigInt), repaid: s.leaves.repaid.map(BigInt), lenders: s.leaves.lenders.map(BigInt),
+    },
     // unspent deposits as "txHash#index"
     deposits: new Set(s.deposits),
     // recent protocol transactions as the chain shows them (newest first)
@@ -65,3 +67,5 @@ export const relayBorrow = (proof, publicSignals, recipient) =>
   call("POST", "/api/relay/borrow", { proof, publicSignals, recipient });
 export const relayUnlock = (proof, publicSignals, deposit) =>
   call("POST", "/api/relay/unlock", { proof, publicSignals, deposit });
+export const relayWithdraw = (proof, publicSignals, recipient) =>
+  call("POST", "/api/relay/withdraw", { proof, publicSignals, recipient });

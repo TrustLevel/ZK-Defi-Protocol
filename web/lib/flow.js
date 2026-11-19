@@ -1,6 +1,7 @@
-// The four steps of a position, as run from the browser. Proofs are generated
-// here (Web Worker); deposit and repay are built here and signed by the
-// connected account; borrow and unlock go to the relayer as proofs.
+// The four steps of a position and the two of a pool share, as run from the
+// browser. Proofs are generated here (Web Worker); deposit, repay and buying a
+// share are built here and signed by the connected account; borrow, unlock and
+// withdrawing a share go to the relayer as proofs.
 //
 // on(event) reports progress for the UI:
 //   { type: "proof", kind, stage }       witness | proving | verifying | done
@@ -10,13 +11,13 @@
 //   { type: "retry", reason }            the pool moved; proving again
 import { MeshTxBuilder, deserializeAddress } from "@meshsdk/core";
 import {
-  appendInput, borrowInput, repayInput, settlementInput, computeRepayNullifier,
+  appendInput, borrowInput, repayInput, settlementInput, lenderWithdrawInput, computeRepayNullifier,
 } from "@zk-defi/protocol/crypto";
 import { deriveScripts } from "@zk-defi/protocol/scripts";
 import { buildDeposit, buildRepay, buildAddLiquidity, buildCollateralSplit, hasCollateral } from "@zk-defi/protocol/tx";
-import deployment from "@zk-defi/protocol/deployments/preprod-m4.json";
+import deployment from "@zk-defi/protocol/deployments/preprod-m4-lend.json";
 import blueprint from "../../contracts/plutus.json";
-import { getState, fetcher, evaluator, submitTx, relayBorrow, relayUnlock, ApiError } from "./api";
+import { getState, fetcher, evaluator, submitTx, relayBorrow, relayUnlock, relayWithdraw, ApiError } from "./api";
 import { prove } from "./prover";
 import { payerOf } from "./wallet";
 
@@ -155,15 +156,41 @@ export async function unlock(on, note) {
   return waitFor(on, (s) => !s.deposits.has(ref), "unlock");
 }
 
-// Lend: add liquidity from the connected account.
-export async function addLiquidity(on, account, lovelace) {
+// Lend: buy one pool share from the connected account (account A) at the
+// current price; the note's leaf enters the lender tree. The note must already
+// be backed up. onSubmitted(txHash) lets the caller store it at once.
+export async function lend(on, account, note, onSubmitted) {
   await ensureCollateral(on, account);
-  let before;
-  await withRetry(on, async () => {
+  const txHash = await withRetry(on, async () => {
     const state = await getState();
-    before = state.pool.datum.total_deposited;
-    const unsigned = await buildAddLiquidity(newBuilder(), { S, pool: state.pool, amount: lovelace, payer: await payerOf(account) });
+    const a = appendInput({ leavesBefore: state.leaves.lenders, leaf: note.commitment });
+    const { compressed } = await proveStep(on, "append", a.input);
+    const unsigned = await buildAddLiquidity(newBuilder(), {
+      S, deployment, pool: state.pool, commitment: note.commitment, appendProof: compressed,
+      newLenderRoot: a.newRoot, payer: await payerOf(account),
+    });
     return signAndSubmit(on, account, unsigned);
   });
-  return waitFor(on, (s) => s.pool.datum.total_deposited >= before + lovelace, "liquidity");
+  onSubmitted(txHash);
+  return waitFor(on, (s) => s.leaves.lenders.includes(note.commitment), "share");
+}
+
+// Withdraw one share: the relayer submits; the current share price goes to
+// `recipient` (account B).
+export async function withdraw(on, note, recipient) {
+  const recipientPkh = deserializeAddress(recipient).pubKeyHash;
+  if (!recipientPkh) throw new Error("The withdrawal must go to a wallet address.");
+  let nullifier;
+  await withRetry(on, async () => {
+    const state = await getState();
+    const w = lenderWithdrawInput({
+      notes: state.leaves.lenders, index: state.leaves.lenders.indexOf(note.commitment), secret: note.secret, recipientPkh,
+    });
+    nullifier = w.nullifier;
+    const { proof, publicSignals } = await proveStep(on, "lender", w.input);
+    on({ type: "relaying" });
+    const { txHash } = await relayWithdraw(proof, publicSignals, recipient);
+    on({ type: "submitted", txHash });
+  });
+  return waitFor(on, (s) => s.pool.datum.lender_nullifiers.includes(nullifier), "withdrawal");
 }

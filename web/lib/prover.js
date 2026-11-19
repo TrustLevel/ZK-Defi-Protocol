@@ -1,6 +1,6 @@
 // Main-thread side of the proving worker: one worker, one request per id.
 // prove(kind, input, onStage) -> { proof, publicSignals, compressed, timings }
-//   kind: "append" | "borrow" | "repay" | "settlement"
+//   kind: "append" | "borrow" | "repay" | "settlement" | "lender"
 //   onStage("witness" | "proving" | "verifying")
 
 let worker;
