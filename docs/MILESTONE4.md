@@ -181,6 +181,9 @@ What stays visible, stated in the UI and the docs:
 - Timing and the size of the anonymity set (MILESTONE3 §5, items 1 and 2).
 - The relayer sees the borrow and unlock transactions it pays for, which are public
   anyway; it learns no secret.
+- The backend of the hosted preview receives the requests of every step and could, in
+  principle, connect them by IP address. It does not log IP addresses, but a user who
+  does not want to rely on that runs the stack themselves (§9) or connects through Tor.
 
 ---
 
@@ -192,9 +195,15 @@ transaction lands first, the UI rebuilds the proof against the new state and sub
 again. Between steps it waits for the indexer to catch up. When the wallet has no
 pure-ADA UTxO for script collateral, the UI creates one.
 
-**Analytics without identifying data.** The UI records per-step funnel events, in-browser
-proof times, error classes and retry counts. It records no addresses, transaction hashes,
-commitments or nullifiers. Results are published in `docs/m4/` as data and a report.
+**Analytics without identifying data.** The backend keeps counters per day and nothing
+else: which step started, was signed, submitted, confirmed or failed (with an error class,
+never the message), proof times in 100 ms buckets, retries and the wallet's name. No
+event is stored on its own, one request carries one step so nothing links two steps of a
+position, and anything outside this vocabulary (addresses, transaction hashes,
+commitments, nullifiers, free text) is refused. The counters are public at
+`/api/analytics`. Testers can switch counting off in the page footer, which also lists
+every request their browser sent. Results are published in `docs/m4/` as data and a
+report.
 
 **Feedback.** Testers follow a short task script (deposit, borrow, repay, unlock, add
 liquidity) and answer a structured questionnaire, including what they expected to be
