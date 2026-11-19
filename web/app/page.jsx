@@ -4,6 +4,7 @@ import { useState } from "react";
 import dynamic from "next/dynamic";
 import PoolView from "../components/PoolView";
 import Term from "../components/Term";
+import PocNotice from "../components/PocNotice";
 
 // Wallet and protocol code use browser-only APIs (CIP-30, WebAssembly, Workers).
 const WalletBar = dynamic(() => import("../components/WalletBar"), { ssr: false });
@@ -18,9 +19,10 @@ export default function Home() {
   const [account, setAccount] = useState(null);
   return (
     <main className="mx-auto max-w-4xl px-4 py-8">
+      <PocNotice />
       <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">ZK Lending</h1>
+          <h1 className="text-2xl font-semibold">ZK Lending <span className="align-middle text-xs font-normal uppercase tracking-wide text-muted">proof of concept</span></h1>
           <p className="text-sm text-muted">Private loans on Cardano Preprod. Every <Term id="proof">proof</Term> is generated in your browser.</p>
         </div>
         <WalletBar account={account} setAccount={setAccount} />

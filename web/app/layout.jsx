@@ -2,7 +2,7 @@ import "./globals.css";
 
 export const metadata = {
   title: "ZK Lending",
-  description: "Private lending on Cardano Preprod with zero-knowledge proofs generated in your browser.",
+  description: "Proof of concept: private lending on Cardano Preprod with zero-knowledge proofs generated in your browser. Test ADA only.",
 };
 
 export default function RootLayout({ children }) {

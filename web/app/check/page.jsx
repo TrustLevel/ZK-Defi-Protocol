@@ -7,6 +7,7 @@ import {
   computeCommitment, computeRepayNullifier, borrowInput, repayInput, settlementInput, appendInput,
 } from "@zk-defi/protocol/crypto";
 import { prove } from "../../lib/prover";
+import PocNotice from "../../components/PocNotice";
 
 function inputs() {
   const secret = BigInt("0x" + Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join(""));
@@ -46,6 +47,7 @@ export default function Check() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
+      <PocNotice />
       <h1 className="text-2xl font-semibold">Browser check</h1>
       <p className="mt-1 text-sm text-muted">
         Generates one zero-knowledge proof of each kind with throwaway inputs, in this browser, and verifies it. Nothing is sent anywhere.
