@@ -112,6 +112,28 @@ pub fn verify_append_proof(
   groth_verify(vkey, proof, [old_root, new_root, leaf, index])
 }
 
+/// Verify a lender withdraw proof: the lender note is a member of `lender_root`
+/// and `withdraw_nullifier` comes from the same secret, bound to the payout key.
+/// Public-signal order MUST match `circuits/lender_withdraw.circom`:
+///   [lender_root, withdraw_nullifier, lender_external_nullifier, recipient]
+/// lender_root / lender_external_nullifier are bound to trusted pool state;
+/// withdraw_nullifier to the redeemer, checked against the spent set; recipient
+/// to the key the validator requires the share to be paid to.
+pub fn verify_lender_withdraw_proof(
+  vkey: SnarkVerificationKey,
+  proof: Proof,
+  lender_root: Int,
+  withdraw_nullifier: Int,
+  lender_external_nullifier: Int,
+  recipient: Int,
+) -> Bool {
+  groth_verify(
+    vkey,
+    proof,
+    [lender_root, withdraw_nullifier, lender_external_nullifier, recipient],
+  )
+}
+
 /// Resolve the trusted verification key from the reference input pinned by `vkey_ref`.
 /// The VKey UTxO is parked at an always-false address and set once at pool init, so
 /// referencing it by OutputReference from the (continuity-enforced) pool datum is trusted.
