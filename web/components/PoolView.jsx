@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getState } from "../lib/api";
+import Term from "./Term";
 
 const ada = (lovelace) => (Number(lovelace) / 1e6).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
@@ -37,7 +38,7 @@ function AnonymitySet({ count }) {
   return (
     <div className="rounded-lg border border-line bg-surface p-4">
       <div className="flex items-baseline justify-between">
-        <div className="text-xs uppercase tracking-wide text-muted">Anonymity set</div>
+        <div className="text-xs uppercase tracking-wide text-muted"><Term id="anonymitySet" /></div>
         <div className="text-xs text-muted">{count} of 1024 slots</div>
       </div>
       <div className="mt-3 grid grid-cols-[repeat(32,minmax(0,1fr))] gap-[3px]">
@@ -93,12 +94,12 @@ export default function PoolView() {
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Available" value={`${ada(lovelace)} ADA`} hint="lovelace in the pool UTxO" />
         <Stat label="Borrowed" value={`${ada(d.total_borrowed)} ADA`} hint={`${utilization}% utilization`} />
-        <Stat label="Interest" value={`${Number(d.interest_rate) / 100}%`} hint="flat, per loan" />
+        <Stat label={<Term id="interest" />} value={`${Number(d.interest_rate) / 100}%`} hint="flat, per loan" />
         <Stat label="Open loans" value={d.open_loans.length} />
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Stat label="Collateral unit" value={`${ada(d.collateral_denomination)} ADA`} hint="every deposit has this size" />
-        <Stat label="Loan unit" value={`${ada(d.loan_denomination)} ADA`} hint="every loan has this size" />
+        <Stat label={<Term id="fixedAmounts">Collateral unit</Term>} value={`${ada(d.collateral_denomination)} ADA`} hint="every deposit has this size" />
+        <Stat label={<Term id="fixedAmounts">Loan unit</Term>} value={`${ada(d.loan_denomination)} ADA`} hint="every loan has this size" />
         <Stat label="Locked deposits" value={state.deposits.size} hint="collateral currently held" />
       </div>
       <AnonymitySet count={state.leaves.commitments.length} />

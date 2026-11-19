@@ -4,13 +4,21 @@
 // transaction puts on-chain. Values are the real ones for this position.
 import { computeNullifier, computeRepayNullifier } from "@zk-defi/protocol/crypto";
 import { shortAddress } from "../lib/wallet";
+import Term from "./Term";
 
 const hex = (v) => "0x" + BigInt(v).toString(16).slice(0, 10) + "…";
+
+// Row labels that have an explanation.
+const TERM = {
+  Secret: "secret", "Your secret": "secret", Commitment: "commitment", "Loan nullifier": "nullifier",
+  "Repayment marker": "marker", "Which deposit": "anonymitySet", "Which repayment": "marker",
+  "Fee paid by": "relayer", Amount: "fixedAmounts", Loan: "fixedAmounts",
+};
 
 function Row({ label, value, tone }) {
   return (
     <div className="flex justify-between gap-3 py-1 text-xs">
-      <span className="text-muted">{label}</span>
+      <span className="text-muted">{TERM[label] ? <Term id={TERM[label]}>{label}</Term> : label}</span>
       <span className={`text-right font-mono ${tone === "hidden" ? "text-accent" : tone === "link" ? "text-warn" : ""}`}>{value}</span>
     </div>
   );

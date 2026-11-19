@@ -1,5 +1,7 @@
 "use client";
 
+import Term from "./Term";
+
 // Progress of a running step, from the events lib/flow.js reports.
 const PROOF_NAME = { append: "append proof", borrow: "borrow proof", repay: "repay proof", settlement: "settlement proof" };
 
@@ -11,7 +13,7 @@ function line(e) {
         return `✓ ${PROOF_NAME[e.kind]} generated and verified in your browser${t}`;
       }
       return `${PROOF_NAME[e.kind]}: ${e.stage}…`;
-    case "collateral": return "Your account has no pure-ADA output for script collateral; creating one (sign once).";
+    case "collateral": return <>Your account has no pure-ADA output for <Term id="scriptCollateral">script collateral</Term>; creating one (sign once).</>;
     case "sign": return "Waiting for your wallet's signature…";
     case "relaying": return "Sending the proof to the relayer (it pays the fee)…";
     case "submitted": return `✓ Submitted ${e.txHash.slice(0, 10)}…`;

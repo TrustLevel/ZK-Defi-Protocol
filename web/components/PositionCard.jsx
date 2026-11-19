@@ -9,6 +9,7 @@ import { shortAddress } from "../lib/wallet";
 import { eventsOf, track } from "../lib/analytics";
 import Progress from "./Progress";
 import Lenses from "./Lenses";
+import Term from "./Term";
 
 const LABEL = { deposited: "Deposited", borrowed: "Borrowed", repaid: "Repaid", unlocked: "Unlocked" };
 
@@ -75,7 +76,7 @@ export default function PositionCard({ note, status, state, account, onChange })
       {status === "new" && (
         <div className="space-y-3">
           <p className="text-sm">
-            This position is a secret in your browser. <strong>Save the note file now.</strong> Without it, nobody can
+            This position is a secret in your browser. <strong>Save the <Term id="note">note</Term> file now.</strong> Without it, nobody can
             unlock the collateral, not even us.
           </p>
           <div className="flex flex-wrap items-center gap-3">
@@ -87,7 +88,7 @@ export default function PositionCard({ note, status, state, account, onChange })
             </label>
           </div>
           <p className="text-sm text-muted">
-            Connect <strong>account A</strong>, the account that holds your collateral. It pays exactly 20 ADA; the
+            Connect <strong><Term id="accountA">account A</Term></strong>, the account that holds your collateral. It pays exactly 20 ADA; the
             collateral returns to it when you unlock.
           </p>
           <div className="flex gap-2">
@@ -104,16 +105,18 @@ export default function PositionCard({ note, status, state, account, onChange })
         </div>
       )}
 
+      {status === "loading" && <p className="text-sm text-muted">Reading this position from the chain…</p>}
+
       {status === "pending" && <p className="text-sm text-muted">The deposit was submitted. Waiting for it to appear on-chain…</p>}
 
       {status === "deposited" && (
         <div className="space-y-3">
           <p className="text-sm">
             Borrow 10 ADA against this deposit. The proof shows that <em>some</em> deposit in the pool backs the loan,
-            not which one. The relayer pays the fee, so your wallet does not appear in this transaction.
+            not which one. The <Term id="relayer">relayer</Term> pays the fee, so your wallet does not appear in this transaction.
           </p>
           <label className="block text-sm">
-            Pay the loan to <strong>account B</strong> (a different account from the one that deposited):
+            Pay the loan to <strong><Term id="accountB">account B</Term></strong> (a different account from the one that deposited):
             <div className="mt-1 flex gap-2">
               <input value={recipient} onChange={(e) => setRecipient(e.target.value.trim())} placeholder="addr_test1…"
                 className="w-full rounded-md border border-line px-2 py-1.5 font-mono text-xs" />
@@ -132,7 +135,7 @@ export default function PositionCard({ note, status, state, account, onChange })
       {status === "borrowed" && (
         <div className="space-y-3">
           <p className="text-sm">
-            Repay 10.5 ADA (10 ADA + 5% interest) from <strong>account B</strong>, the account that received the loan.
+            Repay 10.5 ADA (10 ADA + 5% <Term id="interest">interest</Term>) from <strong><Term id="accountB">account B</Term></strong>, the account that received the loan.
           </p>
           {accountWarnings.map((w) => <Warning key={w.code}>{w.text}</Warning>)}
           <button disabled={!account || busy} className="rounded-md bg-accent px-4 py-2 text-sm text-white disabled:opacity-40"

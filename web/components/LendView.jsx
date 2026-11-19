@@ -3,6 +3,7 @@
 import { useState } from "react";
 import * as flow from "../lib/flow";
 import Progress from "./Progress";
+import Term from "./Term";
 import { eventsOf, track } from "../lib/analytics";
 
 // Add liquidity to the pool. Withdrawing liquidity is not part of the current
@@ -40,7 +41,7 @@ export default function LendView({ account }) {
         Lenders provide the ADA that borrowers receive. Each loan pays 5% interest into the pool.
       </p>
       <p className="rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
-        Withdrawing liquidity is not available yet. Only add test ADA you do not need back.
+        <Term id="withdraw">Withdrawing</Term> liquidity is not available yet. Only add test ADA you do not need back.
       </p>
       <div className="flex items-center gap-2">
         <input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal"

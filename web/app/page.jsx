@@ -3,6 +3,7 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import PoolView from "../components/PoolView";
+import Term from "../components/Term";
 
 // Wallet and protocol code use browser-only APIs (CIP-30, WebAssembly, Workers).
 const WalletBar = dynamic(() => import("../components/WalletBar"), { ssr: false });
@@ -20,7 +21,7 @@ export default function Home() {
       <header className="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">ZK Lending</h1>
-          <p className="text-sm text-muted">Private loans on Cardano Preprod. Every proof is generated in your browser.</p>
+          <p className="text-sm text-muted">Private loans on Cardano Preprod. Every <Term id="proof">proof</Term> is generated in your browser.</p>
         </div>
         <WalletBar account={account} setAccount={setAccount} />
       </header>
