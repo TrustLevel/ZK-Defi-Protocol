@@ -1,5 +1,21 @@
 # SITE_ADDRESS: a domain (preview.example.org) for automatic HTTPS, or ":80"
-# (default) for plain HTTP on a local machine. No access log is written.
+# (default) for plain HTTP on a local machine. No access log is written, and the
+# error log (e.g. a 502 while the backend starts) is kept free of the client's
+# address, port and headers.
+{
+	log default {
+		format filter {
+			wrap json
+			fields {
+				request>remote_ip delete
+				request>remote_port delete
+				request>client_ip delete
+				request>headers delete
+			}
+		}
+	}
+}
+
 {$SITE_ADDRESS::80} {
 	encode zstd gzip
 
