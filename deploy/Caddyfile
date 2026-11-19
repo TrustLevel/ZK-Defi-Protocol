@@ -3,6 +3,12 @@
 # error log (e.g. a 502 while the backend starts) is kept free of the client's
 # address, port and headers.
 {
+	# Behind a host-level proxy (e.g. a shared Caddy on the VPS), keep the client
+	# address it forwards; the backend's rate limit counts per client. Only
+	# private networks are trusted, so a client on the internet cannot set it.
+	servers {
+		trusted_proxies static private_ranges
+	}
 	log default {
 		format filter {
 			wrap json
