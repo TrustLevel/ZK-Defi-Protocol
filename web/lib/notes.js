@@ -1,8 +1,10 @@
-// A note is the user's position: the secret behind one deposit. Whoever holds it
-// can borrow against the deposit and, after repaying, unlock it; whoever loses it
-// loses the collateral. Notes are kept in this browser (localStorage) and
-// exported as a file; they are never sent to the backend.
-import { computeCommitment, COLLATERAL_DENOMINATION } from "@zk-defi/protocol/crypto";
+// A note is the secret behind one position. A collateral note (kind
+// "collateral") is a borrower's locked collateral: whoever holds it can borrow
+// against it and, after repaying, unlock it. A lender note (kind "lender") is one
+// pool share: whoever holds it can withdraw the share. Whoever loses a note loses
+// what it stands for. Notes are kept in this browser (localStorage) and exported
+// as a file; they are never sent to the backend.
+import { computeCommitment, computeLenderCommitment, COLLATERAL_DENOMINATION } from "@zk-defi/protocol/crypto";
 
 const VERSION = 1;
 
@@ -17,12 +19,28 @@ function randomSecret() {
 export function createNote({ network, policyId, depositKeyHashes = [] }) {
   const secret = randomSecret();
   return {
-    version: VERSION, network, policyId,
+    version: VERSION, kind: "collateral", network, policyId,
     id: computeCommitment(COLLATERAL_DENOMINATION, secret).toString(16).slice(0, 12),
     secret, commitment: computeCommitment(COLLATERAL_DENOMINATION, secret),
     deposit: null, depositKeyHashes, createdAt: new Date().toISOString(),
   };
 }
+
+// addKeyHashes: payment key hashes of the account that buys the share, kept so
+// the app can warn when the withdrawal would pay back to it.
+export function createLenderNote({ network, policyId, addKeyHashes = [] }) {
+  const secret = randomSecret();
+  const commitment = computeLenderCommitment(secret);
+  return {
+    version: VERSION, kind: "lender", network, policyId, id: "L" + commitment.toString(16).slice(0, 11),
+    secret, commitment, added: null, addKeyHashes, createdAt: new Date().toISOString(),
+  };
+}
+
+const kindOf = (note) => note.kind ?? "collateral";
+const commitmentOf = (note) =>
+  (kindOf(note) === "lender" ? computeLenderCommitment(note.secret) : computeCommitment(COLLATERAL_DENOMINATION, note.secret));
+export const notesOfKind = (notes, kind) => notes.filter((n) => kindOf(n) === kind);
 
 export function serializeNote(note) {
   return JSON.stringify({ ...note, secret: note.secret.toString(), commitment: note.commitment.toString() }, null, 2);
@@ -37,7 +55,8 @@ export function parseNote(text) {
   }
   if (raw?.version !== VERSION || !raw.secret || !raw.commitment) throw new Error("This is not a note file.");
   const note = { ...raw, secret: BigInt(raw.secret), commitment: BigInt(raw.commitment) };
-  if (computeCommitment(COLLATERAL_DENOMINATION, note.secret) !== note.commitment) {
+  if (!["collateral", "lender"].includes(kindOf(note))) throw new Error("This is not a note file.");
+  if (commitmentOf(note) !== note.commitment) {
     throw new Error("The note's secret does not match its commitment; the file is damaged.");
   }
   return note;
@@ -53,8 +72,8 @@ function readAll() {
     return [];
   }
 }
-export function loadNotes(policyId) {
-  return readAll().filter((n) => n.policyId === policyId);
+export function loadNotes(policyId, kind = "collateral") {
+  return notesOfKind(readAll().filter((n) => n.policyId === policyId), kind);
 }
 export function saveNote(note) {
   const others = readAll().filter((n) => n.id !== note.id);
