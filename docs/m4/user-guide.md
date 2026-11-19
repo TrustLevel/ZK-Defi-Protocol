@@ -1,7 +1,8 @@
 # ZK Lending: user guide
 
 ZK Lending lets you borrow ADA against collateral without the chain learning which collateral
-backs which loan. Every proof is made in your browser. This guide walks through one full
+backs which loan, and lend ADA without the chain learning which withdrawal is yours. Every
+proof is made in your browser. This guide walks through one full
 cycle on Cardano **Preprod** (test network, test ADA only).
 
 **Preview:** <https://lending.trustlevel.io> · **Run it yourself:** [self-hosting.md](self-hosting.md)
@@ -41,7 +42,7 @@ your loan through that account. With two accounts, your collateral (A) and your 
 ## The cycle
 
 The app has three tabs. **Pool** shows what everyone can see. **Borrow** holds your
-positions. **Lend** adds liquidity. Each position card shows two panels: *What you know*
+positions. **Lend** holds your pool shares. Each position card shows two panels: *What you know*
 and *What the chain sees* for the next step. Words with a dotted underline have an
 explanation on hover or tap.
 
@@ -96,14 +97,37 @@ the collateral, as fixed when it was locked.
 The note file is your position. The app also keeps it in this browser's storage, but that
 storage belongs to this browser and this site only.
 
-- **Another browser or device:** Borrow tab → **Import note** and choose the file. The app
+- **Another browser or device:** Borrow tab (collateral note) or Lend tab (share note) →
+  **Import note** and choose the file. The app
   reads the position's state from the chain and shows the next step.
-- **Lost the note:** the collateral cannot be unlocked. There is no admin and no recovery.
+- **Lost the note:** the collateral cannot be unlocked, the share cannot be withdrawn. There is
+  no admin and no recovery.
 
 ## Lending
 
-The Lend tab adds ADA to the pool; each loan pays 5% interest into it. Taking liquidity out
-again is not part of the protocol yet, so only add test ADA you do not need back.
+You lend in **shares**. One share is one note, like a position. The **share price** is
+everything the pool owns (the ADA in it plus the loans that are out) divided by the number of
+shares. Each repayment's 5% interest raises it for every share at once.
+
+1. **Lend tab → New share.** Download the note and tick that you stored it.
+2. **Buy one share from account A.** Account A pays the current price (10 ADA while the pool has
+   no shares, more once interest has come in). The chain sees that A bought a share.
+3. **Withdraw to account B.** Paste account B's address and press **Withdraw**. Your browser
+   proves that one of the shares in the pool is yours, without saying which; the relayer
+   submits it and pays the fee. B receives the current share price.
+
+What the chain cannot see: which withdrawal belongs to which purchase, how long you lent and
+what you earned. Everyone who withdraws against the same pool state receives the same amount.
+The app warns you if B is the account that bought the share, and when only a few shares are in
+the pool.
+
+**When you can withdraw.** Withdrawals are paid from the ADA that is actually in the pool, not
+lent out. When most of it is lent out, the Lend tab shows that no share is withdrawable right
+now; it comes back as borrowers repay. Loans have no deadline, a design decision for privacy:
+a loan that is never repaid is missing for the lenders who withdraw last.
+
+To lend more, buy several shares. Withdrawing them close together lets an observer guess they
+belong together.
 
 ## Usage counts
 
@@ -117,5 +141,6 @@ switch, lists everything your browser sent, and links the public totals.
 |---|---|
 | "Your wallet switched to …" | You changed the account in the wallet. Check it is the right one for this step and press the button again. |
 | "Someone else used the pool at the same moment" | Nothing to do: the app proves again on the new state. |
+| "The pool's free liquidity does not cover a share" | Most of the pool is lent out. Wait for repayments, then withdraw. |
 | "Reading this position from the chain…" for long | The backend is catching up with the chain; wait a minute. |
 | The wallet does not open | Open the wallet extension yourself; the request may be waiting there. |

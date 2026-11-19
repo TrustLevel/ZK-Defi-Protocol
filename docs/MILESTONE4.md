@@ -211,24 +211,58 @@ able to do and could not.
 
 ---
 
-## 7. Protocol updates after testing
+## 7. Protocol update after testing
 
-The protocol update in M4 follows from the test round. Two gaps in the current protocol
-are expected to come up and are asked about directly in the questionnaire:
+The protocol update collects every finding from the test round and from our own review,
+with equal weight. Each block states how the protocol behaves, what for, and where it is
+shown. Every change goes through adversarial validator tests in the M3 style before it
+ships. Design detail: `docs/m4/withdraw-design.md` §2.
 
-1. **Withdraw for a deposit that never borrowed.** Unlock requires a repayment nullifier
-   in `repaid_root`, so collateral that never backed a loan cannot be reclaimed today. A
-   withdraw path must prove ownership of the deposit and that no loan was taken against
-   it, without linking it to any borrow. The linkage analysis comes before the design.
-2. **Withdraw for lenders.** The pool supports `AddLiquidity` only; lenders cannot take
-   out their liquidity or the interest it earned. A withdraw path needs a lender share
-   (for example an LP token representing the share including interest).
+### Private lending: pool shares in and out
 
-Until then the UI warns before a deposit that collateral is reclaimed through repay and
-unlock, and the Lend area states that withdrawing liquidity is not available yet. Each
-update goes through the same adversarial tests as the M3 hardening before it ships.
+- **How it works.** A lender note is one pool share. Adding liquidity pays exactly the
+  current share price and appends the note's leaf to the pool's lender tree
+  (`lender_root`) with the append proof. Withdrawing proves in zero knowledge that the
+  note is in the lender tree (`lender_withdraw` circuit), reveals a one-time withdraw
+  nullifier, and pays the current share price to the key the proof is bound to: account B,
+  through the relayer. Share value = pool lovelace − reserve + outstanding loans, so the
+  interest from every repayment raises the price of every share at once. Payouts come from
+  free liquidity only; while loans are out, lenders wait for repayments. Loans have no
+  deadline, a design decision for privacy: no loan carries a timestamp or a write-off, so
+  all loans stay indistinguishable. A loan that is never repaid is therefore missing for
+  the lenders who withdraw last.
+- **What for.** Lenders get their liquidity and its interest back, and nobody can link a
+  withdrawal to the liquidity deposit it belongs to, see where it went, or tell how long a
+  lender stayed and what they earned. Every share bought against the same pool state costs
+  the same, and every share withdrawn against the same pool state pays the same, so amounts
+  carry no fingerprint.
+- **Where.** Commits `7673d35` (circuit), `c641e74` (on-chain verification), `a48ed7b`
+  (tests), `bf8ca12` (validator), `c3a4fdc`/`13c9332` (protocol module), `d2a8407` (CLI),
+  `a294f68` (golden tests on the Preprod cycle). Tests: `circuits/tests/lender-withdraw.test.mjs`,
+  `contracts/lib/lender_onchain_test.ak`, `contracts/validators/tests/lender_test.ak`,
+  `packages/protocol/test/lender.test.mjs`, `packages/protocol/test/plutus.test.mjs`.
+  Preprod, pool `packages/protocol/deployments/preprod-m4-lend.json` (lender key parked
+  `a5d6c715…`, pool initialised `f96703ed…`): two shares at 10 ADA (`869599d8…`,
+  `c07238ca…`), collateral `8f369d4b…`, borrow `2571b27c…`, repay `6638066e…` (share price
+  10 → 10.25 ADA), a third share at 10.25 ADA (`1f134c4b…`), one share withdrawn to
+  account B through the relayer for 10.25 ADA (`277bc0a9…`; the lender's wallet does not
+  appear in it), unlock `e67177ce…`.
 
----
+### Loans paid from free liquidity
+
+- **How it works.** A loan is paid if it fits into the free liquidity: the lovelace in the
+  pool UTxO above the fixed reserve. Lender withdrawals use the same rule.
+- **What for.** Lent-out lovelace has already left the pool UTxO; subtracting outstanding
+  loans from it a second time would let the pool lend only about half of its liquidity.
+- **Where.** Commit `bf8ca12`; test `borrow_lends_more_than_half_the_liquidity` in
+  `contracts/validators/tests/lender_test.ak`. Preprod: borrow `2571b27c…` on the
+  lender-side pool.
+
+### Collateral that never backed a loan
+
+Collateral is returned through borrow → repay → unlock. Collateral that never backed a loan
+is reclaimed the same way, with an immediate repayment (cost: one loan's interest), so the
+protocol needs no separate path for it.
 
 ## 8. Documentation, tooltips, video
 
