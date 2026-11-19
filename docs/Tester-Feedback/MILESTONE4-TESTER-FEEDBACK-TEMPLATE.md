@@ -1,0 +1,138 @@
+# Milestone 4 — Independent Tester Feedback
+
+**Purpose:** Independent testers use the web app for one full private loan cycle and report
+what worked, what was unclear and what they missed. The milestone claims: *a simple web UI
+lets users request loans, verify collateral and repay with zk-SNARK proofs, privately,
+with understandable documentation and tooltips.* Your answers also decide the protocol
+update that follows the test (Part F).
+
+**How to use:** Copy this file to `MILESTONE4-TESTER-FEEDBACK-<yourname>.md`, fill every
+section, and return it. You need a browser wallet and about 40 test ADA. Read
+[docs/m4/user-guide.md](../m4/user-guide.md) first, or try without it and tell us where you
+got stuck (both are useful).
+
+**App:** <https://lending.trustlevel.io> (Cardano Preprod, test ADA only)
+
+---
+
+## Tester
+- Name / handle:
+- Background (dev / cardano / zk / non-technical):
+- Date (YYYY-MM-DD):
+- Time spent:
+- Wallet and browser (e.g. Eternl, Chrome 131):
+- Did you read the user guide before starting? (Y/N):
+
+---
+
+## Part A — Setup (~10 min)
+
+Two accounts in your wallet, each funded **separately** from the
+[Preprod faucet](https://docs.cardano.org/cardano-testnets/tools/faucet): account A about
+30 test ADA, account B about 10 test ADA.
+
+- Setting up two accounts was (1=hard … 5=easy):
+- Was it clear **why** the app wants two accounts? (Y/N):
+- **A. Notes:**
+
+---
+
+## Part B — One full cycle in the UI (~20 min)
+
+Run deposit (A), borrow (to B), repay (B), unlock. Each step's progress list links the
+transaction on cardanoscan; copy the hash.
+
+| Step | Tx hash | Worked first time? (Y/N) | Proof time shown | Notes |
+|---|---|---|---|---|
+| Deposit | | | | |
+| Borrow (relayer) | | | n/a | |
+| Repay | | | | |
+| Unlock (relayer) | | | n/a | |
+
+- Did you always know **which account** to use for the next step? (Y/N):
+- Did any step fail or confuse you? What did the screen say?
+- **B. Notes:**
+
+---
+
+## Part C — Privacy check (~15 min)
+
+1. **Pool tab:** can you tell which square of the anonymity set is your deposit? (Y/N):
+2. **Borrow transaction on cardanoscan:** which addresses are inputs? Does account A appear
+   anywhere? (list):
+3. **Unlock transaction on cardanoscan:** where did the 20 ADA go? Can you see which repayment
+   it belongs to? (Y/N + why):
+4. **Two lenses:** did "What the chain sees" match what cardanoscan showed? (Y/N + differences):
+5. Try one step from the "wrong" account (for example: repay from account A, or send the loan to
+   A). Did the app warn you before you signed? (Y/N, you can cancel before signing):
+6. In your own words: what can an observer learn about you from this cycle, and what not?
+
+- Privacy design understandable (1=unclear … 5=very clear):
+- **C. Notes:**
+
+---
+
+## Part D — Recovering a position (~5 min)
+
+Start a new position and deposit (or use one that is not unlocked yet). Then open the app in a
+private window or another browser and **Import note**.
+
+- Did the imported position show the right step? (Y/N):
+- Was it clear that losing the note means losing the collateral? (Y/N):
+- **D. Notes:**
+
+---
+
+## Part E — Tooltips and documentation (~10 min)
+
+Hover or tap the underlined words. Rate how clear each explanation is (1=unclear … 5=clear):
+
+| Term | Clarity | Comment |
+|---|---|---|
+| Note | | |
+| Commitment | | |
+| Anonymity set | | |
+| Loan nullifier | | |
+| Repayment marker | | |
+| Fixed amounts | | |
+| Relayer | | |
+| Account A / Account B | | |
+| Script collateral (if you saw it) | | |
+| Proof | | |
+
+- User guide (`docs/m4/user-guide.md`) clarity (1=unclear … 5=very clear):
+- Footer "usage counts": did what your browser sent match what the app says it counts? (Y/N):
+- Terms or steps that need an explanation and have none:
+- **E. Notes:**
+
+---
+
+## Part F — What did you expect and could not do?
+
+This part decides the protocol update after the test.
+
+- Was there anything you wanted to do and could not? (free text):
+- Two features the current protocol does not have. How important would they be to you?
+  (1=not needed … 5=essential)
+  - **Withdraw a deposit that never backed a loan** (today collateral only comes back through
+    borrow → repay → unlock):
+  - **Withdraw liquidity as a lender**, including the interest earned:
+- Anything else you would change first?
+
+---
+
+## Part G — Assessment
+
+- Could you take a private loan and repay it **without revealing which deposit backed it**?
+  (Y/N + why):
+- Overall ease of use (1=hard … 5=easy):
+- Proof times acceptable? (Y/N):
+- Issues / bugs found:
+- Suggestions:
+
+### Overall verdict
+- [ ] Pass
+- [ ] Pass with notes (list above)
+- [ ] Fail (explain)
+
+**Signature / handle + date:**
