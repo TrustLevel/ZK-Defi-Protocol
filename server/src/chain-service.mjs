@@ -1,5 +1,6 @@
 /**
- * Cached view of the protocol state: the live pool and the leaves of both trees.
+ * Cached view of the protocol state: the live pool and the leaves of its three
+ * trees (collateral commitments, repayment nullifiers, lender notes).
  * Leaves are indexed incrementally from the pool NFT's history; a snapshot is
  * served only when the leaves rebuild the roots in the live pool datum, so the
  * web app never builds a proof against a stale tree.
@@ -19,7 +20,8 @@ function activityOf(t, r) {
     case "DepositCollateral": return { ...base, type: "deposit", commitment: r.commitment };
     case "BorrowAnonymous": return { ...base, type: "borrow", nullifier: r.loanNullifier };
     case "RepayAnonymous": return { ...base, type: "repay", nullifier: r.loanNullifier, marker: r.repayNullifier };
-    case "AddLiquidity": return { ...base, type: "liquidity" };
+    case "AddLiquidity": return { ...base, type: "liquidity", commitment: r.commitment };
+    case "WithdrawLiquidity": return { ...base, type: "withdraw", nullifier: r.withdrawNullifier };
     default: return null;
   }
 }
@@ -27,7 +29,7 @@ function activityOf(t, r) {
 export function createChainService({ provider, bf, S, maxAgeMs = 10_000, feedSize = 30 }) {
   const seen = new Set(); // pool transactions (they define the leaves)
   const seenAtCollateral = new Set(); // transactions at the collateral address
-  let leaves = { commitments: [], repaid: [] };
+  let leaves = { commitments: [], repaid: [], lenders: [] };
   let activity = [];
   let snapshot = null;
   let inflight = null;
@@ -38,6 +40,7 @@ export function createChainService({ provider, bf, S, maxAgeMs = 10_000, feedSiz
       const r = await poolRedeemerOf(bf, S, t.tx_hash);
       if (r?.type === "DepositCollateral") leaves.commitments.push(r.commitment);
       if (r?.type === "RepayAnonymous") leaves.repaid.push(r.repayNullifier);
+      if (r?.type === "AddLiquidity") leaves.lenders.push(r.commitment);
       const a = activityOf(t, r);
       if (a) activity.push(a);
       seen.add(t.tx_hash);
@@ -78,7 +81,7 @@ export function createChainService({ provider, bf, S, maxAgeMs = 10_000, feedSiz
     }
     snapshot = {
       ref, pool, deposits, activity: [...activity], at: Date.now(),
-      leaves: { commitments: [...leaves.commitments], repaid: [...leaves.repaid] },
+      leaves: { commitments: [...leaves.commitments], repaid: [...leaves.repaid], lenders: [...leaves.lenders] },
     };
     return snapshot;
   }
