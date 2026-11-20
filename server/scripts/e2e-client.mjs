@@ -2,8 +2,9 @@
  * End-to-end check of the backend, acting as the web app would: it talks only
  * to the API (no Blockfrost key), builds deposit and repay without a chain
  * fetcher and has them evaluated by POST /api/evaluate, and sends borrow and
- * unlock as proofs to the relayer. Two Mesh wallets stand in for the browser
- * wallet's accounts A and B.
+ * unlock as proofs to the relayer; then buys one pool share from account A and
+ * withdraws it to account B through the relayer. Two Mesh wallets stand in for
+ * the browser wallet's accounts A and B.
  *
  *   node --env-file=../.env scripts/e2e-client.mjs http://127.0.0.1:3101
  *
@@ -17,16 +18,16 @@ import * as snarkjs from "snarkjs";
 import * as ff from "ffjavascript";
 import {
   computeCommitment, compressProof, appendInput, borrowInput, repayInput, settlementInput,
-  computeRepayNullifier, COLLATERAL_DENOMINATION,
+  computeRepayNullifier, COLLATERAL_DENOMINATION, computeLenderCommitment, lenderWithdrawInput,
 } from "@zk-defi/protocol/crypto";
 import { paymentKeyHash } from "@zk-defi/protocol/plutus";
 import { deriveScripts } from "@zk-defi/protocol/scripts";
-import { buildDeposit, buildRepay, buildCollateralSplit, hasCollateral } from "@zk-defi/protocol/tx";
+import { buildDeposit, buildRepay, buildAddLiquidity, buildCollateralSplit, hasCollateral } from "@zk-defi/protocol/tx";
 
 const API = process.argv[2] || "http://127.0.0.1:3101";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const read = (rel) => JSON.parse(fs.readFileSync(path.join(ROOT, rel), "utf8"));
-const deployment = read("packages/protocol/deployments/preprod-m4.json");
+const deployment = read(process.env.DEPLOYMENT_FILE || "packages/protocol/deployments/preprod-m4-lend.json");
 const S = deriveScripts(read("contracts/plutus.json"), deployment.seed, deployment.vkeys);
 
 // ── API client (what the web app's client does) ──────────────────────────────
@@ -40,13 +41,13 @@ async function api(method, p, body) {
   }
   throw new Error(`${p}: still indexing`);
 }
-const INT_LISTS = ["open_loans", "used_nullifiers"];
+const INT_LISTS = ["open_loans", "used_nullifiers", "lender_nullifiers"];
 async function state() {
   const s = await api("GET", "/api/state");
   const datum = Object.fromEntries(Object.entries(s.pool.datum).map(([k, v]) => [k, INT_LISTS.includes(k) ? v.map(BigInt) : BigInt(v)]));
   return {
     pool: { utxo: s.pool.utxo, datum },
-    leaves: { commitments: s.leaves.commitments.map(BigInt), repaid: s.leaves.repaid.map(BigInt) },
+    leaves: { commitments: s.leaves.commitments.map(BigInt), repaid: s.leaves.repaid.map(BigInt), lenders: s.leaves.lenders.map(BigInt) },
   };
 }
 const evaluator = {
@@ -89,7 +90,7 @@ async function ensureCollateral(acc) {
 }
 
 // ── proving (the web app does this in a Web Worker) ──────────────────────────
-const CIRCUIT = { append: "append_proof", borrow: "collateral_semaphore", repay: "repay_proof", settlement: "settlement_proof" };
+const CIRCUIT = { append: "append_proof", borrow: "collateral_semaphore", repay: "repay_proof", settlement: "settlement_proof", lender: "lender_withdraw" };
 const prove = (kind, input) => snarkjs.groth16.fullProve(input,
   path.join(ROOT, `circuits/${CIRCUIT[kind]}_js/${CIRCUIT[kind]}.wasm`), path.join(ROOT, `circuits/keys/${CIRCUIT[kind]}_final.zkey`));
 const curve = await ff.getCurveFromName("bls12381");
@@ -139,6 +140,27 @@ s = await until((x) => x.leaves.repaid.includes(r.R), "repay indexed");
 const R = computeRepayNullifier(secret);
 const sp = await prove("settlement", settlementInput({ commitment, secret, repaid: s.leaves.repaid, index: s.leaves.repaid.indexOf(R) }).input);
 log("unlock relayed", (await api("POST", "/api/relay/unlock", { ...sp, deposit: { txHash: depHash, outputIndex: 1 } })).txHash);
+
+// 5. lend — account A buys one share; the append proof puts the lender note into lender_root
+s = await state();
+const lenderSecret = BigInt("0x" + Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("hex"));
+const lenderLeaf = computeLenderCommitment(lenderSecret);
+const la = appendInput({ leavesBefore: s.leaves.lenders, leaf: lenderLeaf });
+const lendTx = await buildAddLiquidity(new MeshTxBuilder({ fetcher, evaluator }), {
+  S, deployment, pool: s.pool, commitment: lenderLeaf, newLenderRoot: la.newRoot, payer: await A.payer(),
+  appendProof: compressProof(curve, (await prove("append", la.input)).proof),
+});
+log("share bought", (await api("POST", "/api/submit", { tx: await A.w.signTx(lendTx) })).txHash);
+s = await until((x) => x.leaves.lenders.includes(lenderLeaf), "share indexed");
+
+// 6. withdraw — proof to the relayer; one share's value to account B
+const lw = lenderWithdrawInput({
+  notes: s.leaves.lenders, index: s.leaves.lenders.indexOf(lenderLeaf), secret: lenderSecret,
+  recipientPkh: paymentKeyHash(B.address), lenderExternalNullifier: s.pool.datum.lender_external_nullifier,
+});
+const wp = await prove("lender", lw.input);
+log("withdraw relayed", (await api("POST", "/api/relay/withdraw", { ...wp, recipient: B.address })).txHash);
+await until((x) => x.pool.datum.lender_nullifiers.includes(lw.nullifier), "withdraw indexed");
 
 await curve.terminate();
 await globalThis.curve_bls12381?.terminate();
