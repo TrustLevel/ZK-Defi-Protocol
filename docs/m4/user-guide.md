@@ -29,7 +29,7 @@ accounts under the same recovery phrase:
 
 | Account | Role | Needs |
 |---|---|---|
-| **A** | Locks the collateral, gets it back | about 30 test ADA |
+| **A** | Locks the collateral, gets it back; buys a share if you lend | about 30 test ADA, about 45 to also lend |
 | **B** | Receives the loan and repays it | about 10 test ADA |
 
 Why two? The loan and its repayment carry the same public tag by design. If the account that

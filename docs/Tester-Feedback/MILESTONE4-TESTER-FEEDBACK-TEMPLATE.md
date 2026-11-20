@@ -7,7 +7,7 @@ with understandable documentation and tooltips.* Your answers also decide the pr
 update that follows the test (Part F).
 
 **How to use:** Copy this file to `MILESTONE4-TESTER-FEEDBACK-<yourname>.md`, fill every
-section, and return it. You need a browser wallet and about 40 test ADA. Read
+section, and return it. You need a browser wallet and about 55 test ADA. Read
 [docs/m4/user-guide.md](../m4/user-guide.md) first, or try without it and tell us where you
 got stuck (both are useful).
 
@@ -29,7 +29,7 @@ got stuck (both are useful).
 
 Two accounts in your wallet, each funded **separately** from the
 [Preprod faucet](https://docs.cardano.org/cardano-testnets/tools/faucet): account A about
-30 test ADA, account B about 10 test ADA.
+45 test ADA, account B about 10 test ADA.
 
 - Setting up two accounts was (1=hard … 5=easy):
 - Was it clear **why** the app wants two accounts? (Y/N):
@@ -83,13 +83,32 @@ private window or another browser and **Import note**.
 
 ---
 
-## Part E — Tooltips and documentation (~10 min)
+## Part E — Lending: buy and withdraw a share (~15 min)
+
+Lend tab. Buy one share from **account A**, then withdraw it to **account B** (see "Lending" in
+the user guide). If a loan was repaid in between, the share price has gone up.
+
+| Step | Tx hash | Worked first time? (Y/N) | Price / amount shown | Notes |
+|---|---|---|---|---|
+| Buy share (A) | | | | |
+| Withdraw (relayer → B) | | | | |
+
+- **Withdraw transaction on cardanoscan:** does account A appear anywhere? Can you tell which
+  purchase it belongs to? (Y/N + why):
+- Was it clear what a share is and how its price grows? (1=unclear … 5=very clear):
+- Was it clear when a share can be withdrawn (free liquidity)? (Y/N):
+- **E. Notes:**
+
+---
+
+## Part F — Tooltips and documentation (~10 min)
 
 Hover or tap the underlined words. Rate how clear each explanation is (1=unclear … 5=clear):
 
 | Term | Clarity | Comment |
 |---|---|---|
 | Collateral (vs. liquidity) | | |
+| Share / share price | | |
 | Note | | |
 | Commitment | | |
 | Anonymity set | | |
@@ -104,28 +123,27 @@ Hover or tap the underlined words. Rate how clear each explanation is (1=unclear
 - User guide (`docs/m4/user-guide.md`) clarity (1=unclear … 5=very clear):
 - Footer "usage counts": did what your browser sent match what the app says it counts? (Y/N):
 - Terms or steps that need an explanation and have none:
-- **E. Notes:**
+- **F. Notes:**
 
 ---
 
-## Part F — What did you expect and could not do?
+## Part G — What did you expect and could not do?
 
-This part decides the protocol update after the test.
+Everything you list here goes into the protocol update list.
 
 - Was there anything you wanted to do and could not? (free text):
-- Two features the current protocol does not have. How important would they be to you?
-  (1=not needed … 5=essential)
-  - **Take back collateral that never backed a loan** (today collateral only comes back through
-    borrow → repay → unlock):
-  - **Withdraw liquidity as a lender**, including the interest earned:
+- Collateral comes back only through borrow → repay → unlock. Taking it back without a loan
+  works by borrowing and repaying right away (costs the 0.5 ADA interest). Is that acceptable,
+  or would you want a direct way? (1=fine as is … 5=need a direct way):
 - Anything else you would change first?
 
 ---
 
-## Part G — Assessment
+## Part H — Assessment
 
 - Could you take a private loan and repay it **without revealing which collateral backed it**?
   (Y/N + why):
+- Could you lend and withdraw **without the withdrawal pointing back to your purchase**? (Y/N + why):
 - Overall ease of use (1=hard … 5=easy):
 - Proof times acceptable? (Y/N):
 - Issues / bugs found:
