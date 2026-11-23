@@ -63,7 +63,7 @@ performance and tester feedback: `docs/MILESTONE3-TEST-RESULTS.md`.
 | Protocol + privacy model + zk mechanism + on-chain design + trust assumptions + non-goals + privacy boundary + note to reviewer | `docs/MILESTONE3.md` |
 | Test results | `docs/MILESTONE3-TEST-RESULTS.md` |
 | This evidence index | `docs/MILESTONE3-EVIDENCE.md` |
-| Break-it runbook for testers | `docs/Tester-Feedback/MILESTONE3-TESTER-RUNBOOK-3-breakit.md` |
+| Break-it runbook for testers | `docs/Tester-Feedback/MILESTONE3-TESTER-RUNBOOK-4-breakit.md` |
 | Approved M1 / M2 POAs (re-published) | `docs/poa/M1-POA.pdf`, `docs/poa/M2-POA.pdf` |
 
 ### Independent tester reports

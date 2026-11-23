@@ -1,6 +1,6 @@
 # M3 Tester Runbook 2 — Break it (pumbiii)
 
-> **Archived runbook.** The text below is the break-it runbook as issued on 2026-08-31 (commit `b99606d`). It is the runbook pumbiii followed for [`../MILESTONE3-TESTER-FEEDBACK-pumbiii-v6.md`](../MILESTONE3-TESTER-FEEDBACK-pumbiii-v6.md) (2026-09-01). The current tester runbook is [`../MILESTONE3-TESTER-RUNBOOK-3-breakit.md`](../MILESTONE3-TESTER-RUNBOOK-3-breakit.md).
+> **Archived runbook.** The text below is the break-it runbook as issued on 2026-08-31 (commit `b99606d`). It is the runbook pumbiii followed for [`../MILESTONE3-TESTER-FEEDBACK-pumbiii-v6.md`](../MILESTONE3-TESTER-FEEDBACK-pumbiii-v6.md) (2026-09-01). The current tester runbook is [`../MILESTONE3-TESTER-RUNBOOK-4-breakit.md`](../MILESTONE3-TESTER-RUNBOOK-4-breakit.md).
 
 
 **Your role:** try to **break** the protocol. Do the setup from Runbook 1 (§B) first
