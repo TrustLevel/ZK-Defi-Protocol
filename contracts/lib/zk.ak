@@ -130,7 +130,10 @@ pub fn verify_lender_withdraw_proof(
 /// Resolve the trusted verification key from the reference input pinned by `vkey_ref`.
 /// The VKey UTxO is parked at an always-false address and set once at pool init, so
 /// referencing it by OutputReference from the (continuity-enforced) pool datum is trusted.
-pub fn get_vkey(tx: Transaction, vkey_ref: OutputReference) -> SnarkVerificationKey {
+pub fn get_vkey(
+  tx: Transaction,
+  vkey_ref: OutputReference,
+) -> SnarkVerificationKey {
   expect Some(ref_input) =
     list.find(tx.reference_inputs, fn(i) { i.output_reference == vkey_ref })
   expect InlineDatum(vkey_data) = ref_input.output.datum

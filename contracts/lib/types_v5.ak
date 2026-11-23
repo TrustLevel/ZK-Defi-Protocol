@@ -3,10 +3,15 @@
 //// ============================================
 //// The proof is the authorization: there is no admin and no signature on any
 //// path. Privacy model:
-////   - collateral_amount is NEVER on-chain (private circuit witness; the UTxO uses
-////     a fixed denomination), so amounts are confidential.
+////   - Every amount is a fixed denomination of the pool, so amounts carry no
+////     per-position information.
+////   - A pool lends one asset (`loan_asset`, ADA or a native token) and accepts
+////     several collateral assets (`collateral_assets`), each with its own fixed
+////     denomination. Deposits of all of them share one commitment set, and every
+////     leaf has the same form Poseidon255(COLLATERAL_LEAF_TAG, secret), so a
+////     loan does not reveal which asset backs it.
 ////   - A collateral deposit goes through the pool (DepositCollateral): the pool
-////     checks the fixed collateral denomination on-chain and appends the
+////     checks the denomination of the named asset on-chain and appends the
 ////     commitment to `group_root` via a ZK append proof — permissionless.
 ////   - Borrow proves MEMBERSHIP of the commitment in `group_root` (Merkle) — it
 ////     does not reference a specific deposit UTxO, so deposit<->borrow is unlinkable.
@@ -25,17 +30,31 @@
 //// (permissionless — no admin), so the whole borrow/repay/unlock path needs no
 //// signature.
 
-use ak_381/groth16.{Proof}
 use aiken/crypto.{VerificationKeyHash}
+use ak_381/groth16.{Proof}
 use cardano/address.{Address}
+use cardano/assets.{AssetName, PolicyId}
 use cardano/transaction.{OutputReference}
 
 /// Asset name of the one-shot pool NFT (see validators/v5/pool_nft.ak). The
 /// pool UTxO carries it; the validators use it to recognise the real pool.
 pub const pool_nft_name: ByteArray = "POOL"
 
-/// Collateral deposit datum (v6). No amount — the commitment (Merkle leaf =
-/// Poseidon255(collateral_amount, secret)), a timestamp, and `unlock_to`: the
+/// A native asset, or ADA as ("", "").
+pub type Asset {
+  policy_id: PolicyId,
+  asset_name: AssetName,
+}
+
+/// An accepted collateral asset and the fixed amount every deposit of it locks.
+pub type CollateralAsset {
+  policy_id: PolicyId,
+  asset_name: AssetName,
+  denomination: Int,
+}
+
+/// Collateral deposit datum (v6). No amount and no asset — the commitment
+/// (Merkle leaf = Poseidon255(COLLATERAL_LEAF_TAG, secret)), a timestamp, and `unlock_to`: the
 /// address the collateral is paid to on unlock. Fixing the recipient at deposit
 /// means a copied unlock proof cannot redirect the collateral (front-running);
 /// it reveals nothing new, since unlock spends this very deposit anyway.
@@ -59,10 +78,13 @@ pub type DepositDatumV5 {
 /// `repay_external_nullifier` -> DISTINCT protocol constant scoping repayment
 ///                          nullifiers, so R cannot be correlated with the
 ///                          borrow-time loan_nullifier
-/// `collateral_denomination` -> every collateral deposit is exactly this many
-///                          lovelace (checked on-chain at DepositCollateral);
-///                          Borrow checks it covers loan_denomination at the ratio
-/// `loan_denomination`   -> every loan is exactly this size, so loan amounts are
+/// `loan_asset`          -> the asset the pool lends: liquidity, loans,
+///                          repayments and shares are all measured in it
+/// `collateral_assets`   -> accepted collateral assets with their fixed
+///                          denominations (checked on-chain at DepositCollateral).
+///                          Each denomination is chosen at init to cover one loan;
+///                          the pool has no price feed
+/// `loan_denomination`   -> every loan is exactly this size (in loan_asset), so loan amounts are
 ///                          uniform (carry no per-loan information) and open_loans
 ///                          need only store nullifiers, not principals.
 /// `open_loans`          -> outstanding loan nullifiers (what Repay may settle)
@@ -71,7 +93,7 @@ pub type DepositDatumV5 {
 ///                          repaid deposit's R can never cover a later loan
 ///
 /// Lender side (one lender note = one pool share):
-/// `total_deposited`     -> cumulative lovelace paid in by AddLiquidity
+/// `total_deposited`     -> cumulative loan_asset paid in by AddLiquidity
 /// `lender_root`         -> append-only Merkle root of lender note leaves; grown by
 ///                          AddLiquidity via a ZK append proof
 /// `lender_next_index`   -> next free leaf position in the lender tree
@@ -80,22 +102,25 @@ pub type DepositDatumV5 {
 ///                          shrinks, so each note pays out once
 /// `lender_external_nullifier` -> protocol constant scoping W
 /// `share_start_price`   -> price of a share while no share is outstanding
-/// `liquidity_reserve`   -> lovelace that stays in the pool UTxO (min UTxO); it is
-///                          neither lendable nor part of the share value
-/// Share value = pool lovelace - liquidity_reserve + total_borrowed (outstanding
-/// loans are pool assets). Free liquidity = pool lovelace - liquidity_reserve.
+/// `liquidity_reserve`   -> loan_asset that stays in the pool UTxO (for an ADA
+///                          pool its min UTxO); neither lendable nor part of the
+///                          share value. A token pool's ADA is not loan_asset and
+///                          never moves, so its reserve can be 0
+/// Share value = pool balance - liquidity_reserve + total_borrowed (outstanding
+/// loans are pool assets). Free liquidity = pool balance - liquidity_reserve,
+/// with the balance measured in loan_asset.
 pub type PoolDatumV5 {
   total_deposited: Int,
   total_borrowed: Int,
   interest_rate: Int,
-  collateral_ratio: Int,
   group_root: Int,
   group_next_index: Int,
   repaid_root: Int,
   next_index: Int,
   external_nullifier: Int,
   repay_external_nullifier: Int,
-  collateral_denomination: Int,
+  loan_asset: Asset,
+  collateral_assets: List<CollateralAsset>,
   loan_denomination: Int,
   open_loans: List<Int>,
   used_nullifiers: List<Int>,
@@ -116,27 +141,25 @@ pub type PoolDatumV5 {
 /// `WithdrawLiquidity`: `proof` attests a note in `lender_root` with withdraw
 /// nullifier `withdraw_nullifier`, bound to `recipient`; the pool pays the current
 /// share price (rounded down) to that key, from free liquidity.
-/// `DepositCollateral`: a collateral output of exactly `collateral_denomination`
-/// with this `commitment` is created, and `append_proof` attests the commitment
+/// `DepositCollateral`: a collateral output of exactly the denomination of
+/// `collateral_assets[asset_index]` with this `commitment` is created, and `append_proof` attests the commitment
 /// is appended at `group_next_index`, taking group_root -> out.group_root.
-/// `BorrowAnonymous`: the proof is bound to `recipient`; the loan must be paid
-/// to that key (front-running protection).
-/// `RepayAnonymous`: `proof` is a repay proof binding `loan_nullifier` AND
+/// `BorrowAnonymous`: the proof is bound to `recipient`; the loan (exactly
+/// `loan_denomination`) must be paid to that key (front-running protection).
+/// `RepayAnonymous`: pays exactly principal + interest. `proof` is a repay proof binding `loan_nullifier` AND
 /// `repay_nullifier` to one secret. `repay_nullifier` = R = Poseidon255(secret, repay_external_nullifier);
 /// `append_proof` attests R is appended at `next_index`, taking repaid_root ->
 /// out.repaid_root (permissionless — no admin signature on repay).
 pub type PoolRedeemerV5 {
   AddLiquidity { commitment: Int, append_proof: Proof }
-  DepositCollateral { commitment: Int, append_proof: Proof }
+  DepositCollateral { commitment: Int, asset_index: Int, append_proof: Proof }
   BorrowAnonymous {
     proof: Proof,
-    loan_amount: Int,
     loan_nullifier: Int,
     recipient: VerificationKeyHash,
   }
   RepayAnonymous {
     proof: Proof,
-    repay_amount: Int,
     loan_nullifier: Int,
     repay_nullifier: Int,
     append_proof: Proof,

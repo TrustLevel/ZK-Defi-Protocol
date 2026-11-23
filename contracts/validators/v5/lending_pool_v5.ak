@@ -11,9 +11,14 @@
 //// zero-knowledge append proof — PERMISSIONLESSLY, no admin — which is what lets
 //// them later prove settlement (in ZK) at unlock.
 ////
+//// A pool lends one asset (`loan_asset`, ADA or a native token): liquidity,
+//// loans, repayments and shares are all measured in it. Every spend moves only
+//// that asset, by exactly the action's amount; everything else in the pool UTxO
+//// (the NFT, a token pool's min ADA) stays as it is.
+////
 //// Collateral enters through the pool too (DepositCollateral): the tx must pay
-//// exactly `collateral_denomination` with the commitment to the collateral
-//// script, and an append proof inserts the commitment into `group_root`. So the
+//// exactly the denomination of one accepted collateral asset with the
+//// commitment to the collateral script, and an append proof inserts the commitment into `group_root`. So the
 //// deposit anonymity set grows PERMISSIONLESSLY and only from real deposits —
 //// there is no admin and no signature on any path.
 ////
@@ -26,21 +31,22 @@
 //// proof). WithdrawLiquidity proves a note in `lender_root` in zero knowledge,
 //// records its withdraw nullifier and pays the current share price to the key
 //// the proof is bound to — so a withdrawal is not linkable to the liquidity
-//// deposit it belongs to. Share value = pool lovelace - liquidity_reserve +
+//// deposit it belongs to. Share value = pool balance - liquidity_reserve +
 //// total_borrowed; repayment interest raises it for every share at once. Loans
-//// and lender withdrawals are paid only from free liquidity (pool lovelace -
-//// liquidity_reserve).
+//// and lender withdrawals are paid only from free liquidity (pool balance -
+//// liquidity_reserve). Balances are in loan_asset.
 
 use aiken/collection/list
 use aiken/crypto.{ScriptHash, VerificationKeyHash}
 use aiken/primitive/bytearray
 use cardano/address.{Script, VerificationKey}
-use cardano/assets.{PolicyId, lovelace_of, quantity_of}
+use cardano/assets.{PolicyId, Value, quantity_of}
 use cardano/script_context.{ScriptContext}
 use cardano/transaction.{InlineDatum, Output, OutputReference, Transaction}
 use types_v5.{
-  AddLiquidity, BorrowAnonymous, DepositCollateral, DepositDatumV5, PoolDatumV5,
-  PoolRedeemerV5, RepayAnonymous, WithdrawLiquidity, pool_nft_name,
+  AddLiquidity, Asset, BorrowAnonymous, CollateralAsset, DepositCollateral,
+  DepositDatumV5, PoolDatumV5, PoolRedeemerV5, RepayAnonymous, WithdrawLiquidity,
+  pool_nft_name,
 }
 use zk.{
   get_vkey, verify_append_proof, verify_borrow_proof,
@@ -72,8 +78,10 @@ validator lending_pool_v5(
     expect InlineDatum(out_data) = pool_output.datum
     expect out: PoolDatumV5 = out_data
 
-    let bal_in = lovelace_of(pool_input.output.value)
-    let bal_out = lovelace_of(pool_output.value)
+    let value_in = pool_input.output.value
+    let value_out = pool_output.value
+    let asset = pool_datum.loan_asset
+    let bal_in = balance(value_in, asset)
 
     when redeemer is {
       // AddLiquidity: a lender buys ONE share. The pool takes exactly the
@@ -95,7 +103,7 @@ validator lending_pool_v5(
         and {
           append_ok?,
           (out.lender_next_index == pool_datum.lender_next_index + 1)?,
-          (bal_out == bal_in + price)?,
+          moves_only_loan_asset(value_in, value_out, asset, price)?,
           (out.total_shares == pool_datum.total_shares + 1)?,
           (out.lender_nullifiers == pool_datum.lender_nullifiers)?,
           (out.total_deposited == pool_datum.total_deposited + price)?,
@@ -132,8 +140,8 @@ validator lending_pool_v5(
           fresh?,
           (price > 0)?,
           (price <= free_liquidity(pool_datum, bal_in))?,
-          pays_loan(tx, recipient, price, withdraw_nullifier)?,
-          (bal_out == bal_in - price)?,
+          pays_loan(tx, recipient, asset, price, withdraw_nullifier)?,
+          moves_only_loan_asset(value_in, value_out, asset, -price)?,
           (out.total_shares == pool_datum.total_shares - 1)?,
           (out.lender_nullifiers == [
             withdraw_nullifier,
@@ -151,12 +159,15 @@ validator lending_pool_v5(
         }
       }
 
-      // DepositCollateral: the tx pays exactly collateral_denomination with this
-      // commitment to the collateral script, and the append proof inserts the
+      // DepositCollateral: the tx pays exactly the denomination of the accepted
+      // collateral asset at `asset_index`, with this commitment, to the collateral
+      // script, and the append proof inserts the
       // commitment at group_next_index, taking group_root -> out.group_root.
       // Permissionless: the commitment set only grows from real, fixed-size
       // deposits. The pool's own value and everything else stay unchanged.
-      DepositCollateral { commitment, append_proof } -> {
+      DepositCollateral { commitment, asset_index, append_proof } -> {
+        expect Some(collateral) =
+          list.at(pool_datum.collateral_assets, asset_index)
         let append_vkey = get_vkey(tx, append_vkey_ref)
         let append_ok =
           verify_append_proof(
@@ -170,13 +181,8 @@ validator lending_pool_v5(
         and {
           append_ok?,
           (out.group_next_index == pool_datum.group_next_index + 1)?,
-          pays_collateral(
-            tx,
-            collateral_hash,
-            commitment,
-            pool_datum.collateral_denomination,
-          )?,
-          (bal_out == bal_in)?,
+          pays_collateral(tx, collateral_hash, commitment, collateral)?,
+          moves_only_loan_asset(value_in, value_out, asset, 0)?,
           (out.total_deposited == pool_datum.total_deposited)?,
           (out.total_borrowed == pool_datum.total_borrowed)?,
           repaid_frozen(pool_datum, out)?,
@@ -191,7 +197,12 @@ validator lending_pool_v5(
       // recorded as open AND as used; no collateral UTxO is referenced (unlinkable).
       // A nullifier that was EVER used cannot borrow again — not even after its
       // loan was repaid — so a repaid deposit's R never covers a later loan.
-      BorrowAnonymous { proof, loan_amount, loan_nullifier, recipient } -> {
+      // Every loan is exactly loan_denomination, so loan amounts are uniform and
+      // carry no per-loan information. Sufficiency needs no check here: every
+      // leaf of group_root came from a deposit of an accepted denomination, and
+      // each denomination covers one loan (pool configuration).
+      BorrowAnonymous { proof, loan_nullifier, recipient } -> {
+        let loan_amount = pool_datum.loan_denomination
         let vkey = get_vkey(tx, vkey_ref)
         let proof_ok =
           verify_borrow_proof(
@@ -203,29 +214,20 @@ validator lending_pool_v5(
             bytearray.to_int_big_endian(recipient),
           )
         let fresh = !has_nullifier(pool_datum.used_nullifiers, loan_nullifier)
-        // Paid from free liquidity: the lent-out lovelace has already left the
+        // Paid from free liquidity: the lent-out amount has already left the
         // pool UTxO, so it is not subtracted again.
         let liquidity = loan_amount <= free_liquidity(pool_datum, bal_in)
-        // Fixed denomination: every loan is exactly loan_denomination, so loan
-        // amounts are uniform and carry no per-loan information.
-        let denominated = loan_amount == pool_datum.loan_denomination
-        // The fixed collateral denomination must cover the loan at the ratio
-        // (the deposit amount itself is enforced on-chain at DepositCollateral).
-        let covered =
-          loan_amount * pool_datum.collateral_ratio <= pool_datum.collateral_denomination * 100
         and {
           proof_ok?,
           fresh?,
           liquidity?,
-          denominated?,
-          covered?,
           // The loan goes to the key the proof is bound to (front-running).
-          pays_loan(tx, recipient, loan_amount, loan_nullifier)?,
+          pays_loan(tx, recipient, asset, loan_amount, loan_nullifier)?,
           (out.open_loans == [loan_nullifier, ..pool_datum.open_loans])?,
           (out.used_nullifiers == [loan_nullifier, ..pool_datum.used_nullifiers])?,
           (out.total_borrowed == pool_datum.total_borrowed + loan_amount)?,
           (out.total_deposited == pool_datum.total_deposited)?,
-          (bal_out == bal_in - loan_amount)?,
+          moves_only_loan_asset(value_in, value_out, asset, -loan_amount)?,
           group_frozen(pool_datum, out)?,
           repaid_frozen(pool_datum, out)?,
           lender_frozen(pool_datum, out)?,
@@ -240,20 +242,14 @@ validator lending_pool_v5(
       // append proof binds old_root = repaid_root, new_root = out.repaid_root,
       // leaf = R, index = next_index — so the settlement set grows only with the
       // R of the loan actually repaid, and its deposit can later unlock.
-      RepayAnonymous {
-        proof,
-        repay_amount,
-        loan_nullifier,
-        repay_nullifier,
-        append_proof,
-      } -> {
+      RepayAnonymous { proof, loan_nullifier, repay_nullifier, append_proof } -> {
         let outstanding = has_nullifier(pool_datum.open_loans, loan_nullifier)
         let principal = pool_datum.loan_denomination
         let vkey = get_vkey(tx, repay_vkey_ref)
         // The repay proof binds the loan nullifier AND the appended repayment
         // nullifier R to ONE secret (for the fixed loan denomination), so a repay
         // can only release its own deposit; a (public) borrow proof is not a repay
-        // proof. repay_amount is enforced by the pool accounting below.
+        // proof.
         let proof_ok =
           verify_repay_proof(
             vkey,
@@ -280,14 +276,13 @@ validator lending_pool_v5(
           proof_ok?,
           append_ok?,
           outstanding?,
-          // Fixed repayment: exactly principal + interest, so every repay tx
-          // carries the same amount (no per-borrower fingerprint).
-          (repay_amount == due)?,
           (out.open_loans == remove_loan(pool_datum.open_loans, loan_nullifier))?,
           same_used_nullifiers(pool_datum, out)?,
           (out.total_borrowed == pool_datum.total_borrowed - principal)?,
           (out.total_deposited == pool_datum.total_deposited)?,
-          (bal_out == bal_in + repay_amount)?,
+          // Fixed repayment: exactly principal + interest, so every repay tx
+          // carries the same amount (no per-borrower fingerprint).
+          moves_only_loan_asset(value_in, value_out, asset, due)?,
           group_frozen(pool_datum, out)?,
           (out.next_index == pool_datum.next_index + 1)?,
           lender_frozen(pool_datum, out)?,
@@ -313,10 +308,10 @@ fn interest_of(principal: Int, interest_rate: Int) -> Int {
 fn pool_static_preserved(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
   and {
     new.interest_rate == old.interest_rate,
-    new.collateral_ratio == old.collateral_ratio,
     new.external_nullifier == old.external_nullifier,
     new.repay_external_nullifier == old.repay_external_nullifier,
-    new.collateral_denomination == old.collateral_denomination,
+    new.loan_asset == old.loan_asset,
+    new.collateral_assets == old.collateral_assets,
     new.loan_denomination == old.loan_denomination,
     new.lender_external_nullifier == old.lender_external_nullifier,
     new.share_start_price == old.share_start_price,
@@ -335,8 +330,8 @@ fn lender_frozen(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
   }
 }
 
-/// Lovelace that loans and lender withdrawals may take: everything in the pool
-/// UTxO above the fixed reserve.
+/// What loans and lender withdrawals may take: the pool's loan_asset balance
+/// above the fixed reserve.
 fn free_liquidity(pool: PoolDatumV5, bal_in: Int) -> Int {
   bal_in - pool.liquidity_reserve
 }
@@ -399,13 +394,30 @@ fn remove_loan(loans: List<Int>, n: Int) -> List<Int> {
   list.filter(loans, fn(x) { x != n })
 }
 
-/// Some output pays exactly `denomination` lovelace to the collateral script
-/// with an inline deposit datum carrying `commitment`.
+/// The pool's balance of its loan asset.
+fn balance(value: Value, asset: Asset) -> Int {
+  quantity_of(value, asset.policy_id, asset.asset_name)
+}
+
+/// The pool output holds exactly the input value with the loan asset moved by
+/// `delta`: the NFT stays, nothing else enters or leaves (for a token pool its
+/// ADA does not move), and the action pays or takes exactly its amount.
+fn moves_only_loan_asset(
+  value_in: Value,
+  value_out: Value,
+  asset: Asset,
+  delta: Int,
+) -> Bool {
+  value_out == assets.add(value_in, asset.policy_id, asset.asset_name, delta)
+}
+
+/// Some output pays exactly the denomination of `collateral` (in its asset) to
+/// the collateral script with an inline deposit datum carrying `commitment`.
 fn pays_collateral(
   tx: Transaction,
   collateral_hash: ScriptHash,
   commitment: Int,
-  denomination: Int,
+  collateral: CollateralAsset,
 ) -> Bool {
   list.any(
     tx.outputs,
@@ -415,7 +427,11 @@ fn pays_collateral(
           if data is DepositDatumV5 {
             and {
               output.address.payment_credential == Script(collateral_hash),
-              lovelace_of(output.value) == denomination,
+              quantity_of(
+                output.value,
+                collateral.policy_id,
+                collateral.asset_name,
+              ) == collateral.denomination,
               data.commitment == commitment,
             }
           } else {
@@ -427,11 +443,12 @@ fn pays_collateral(
   )
 }
 
-/// Some output pays at least `amount` lovelace to the `recipient` key, tagged
-/// with the loan nullifier as inline datum.
+/// Some output pays at least `amount` of `asset` to the `recipient` key, tagged
+/// with the nullifier as inline datum.
 fn pays_loan(
   tx: Transaction,
   recipient: VerificationKeyHash,
+  asset: Asset,
   amount: Int,
   loan_nullifier: Int,
 ) -> Bool {
@@ -440,7 +457,7 @@ fn pays_loan(
     fn(output) {
       and {
         output.address.payment_credential == VerificationKey(recipient),
-        lovelace_of(output.value) >= amount,
+        balance(output.value, asset) >= amount,
         output.datum == InlineDatum(loan_nullifier),
       }
     },

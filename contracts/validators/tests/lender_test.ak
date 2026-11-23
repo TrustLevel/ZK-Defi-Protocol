@@ -14,25 +14,34 @@ use cardano/transaction.{
   InlineDatum, Input, Output, OutputReference, Transaction, placeholder,
 }
 use lender_onchain_test.{
-  lender_append_1, lender_append_2, lender_empty_root, lender_ext,
-  lender_note_1, lender_note_2, lender_recipient_pkh, lender_root_1,
-  lender_root_2, lender_withdraw_proof, lender_withdraw_vkey, withdraw_null,
+  lender_append_1, lender_append_2, lender_empty_root, lender_ext, lender_note_1,
+  lender_note_2, lender_recipient_pkh, lender_root_1, lender_root_2,
+  lender_withdraw_proof, lender_withdraw_vkey, withdraw_null,
 }
 use semaphore_onchain_test.{
   append_vkey, ext, group_root, loan_amt, loan_null, old_repaid_root, proof,
-  ratio, recipient_pkh, repay_ext, vkey,
+  recipient_pkh, repay_ext, vkey,
 }
 use types_v5.{
-  AddLiquidity, BorrowAnonymous, PoolDatumV5, PoolRedeemerV5, WithdrawLiquidity,
-  pool_nft_name,
+  AddLiquidity, Asset, BorrowAnonymous, CollateralAsset, PoolDatumV5,
+  PoolRedeemerV5, WithdrawLiquidity, pool_nft_name,
 }
 use v5/lending_pool_v5
 
-const pool_hash: ByteArray = #"a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"
+/// ADA as the pool's loan asset, and ADA collateral of 20 ADA per deposit.
+const ada: Asset = Asset { policy_id: #"", asset_name: #"" }
 
-const nft_policy: ByteArray = #"d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"
+const ada_collateral: CollateralAsset =
+  CollateralAsset { policy_id: #"", asset_name: #"", denomination: 20_000_000 }
 
-const coll_hash: ByteArray = #"c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0"
+const pool_hash: ByteArray =
+  #"a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"
+
+const nft_policy: ByteArray =
+  #"d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"
+
+const coll_hash: ByteArray =
+  #"c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0"
 
 const pool_oref: OutputReference =
   OutputReference { transaction_id: #"b0", output_index: 0 }
@@ -68,14 +77,14 @@ fn lender_pool(
     total_deposited: 0,
     total_borrowed,
     interest_rate: 500,
-    collateral_ratio: ratio,
     group_root,
     group_next_index: 1,
     repaid_root: old_repaid_root,
     next_index: 0,
     external_nullifier: ext,
     repay_external_nullifier: repay_ext,
-    collateral_denomination: 20_000_000,
+    loan_asset: ada,
+    collateral_assets: [ada_collateral],
     loan_denomination: loan_amt,
     open_loans: [],
     used_nullifiers: [],
@@ -150,7 +159,12 @@ fn run(pd: PoolDatumV5, r: PoolRedeemerV5, tx: Transaction) -> Bool {
 
 // ---- AddLiquidity: buy one share --------------------------------------------
 
-fn add_tx(pd: PoolDatumV5, bal_in: Int, out: PoolDatumV5, bal_out: Int) -> Transaction {
+fn add_tx(
+  pd: PoolDatumV5,
+  bal_in: Int,
+  out: PoolDatumV5,
+  bal_out: Int,
+) -> Transaction {
   Transaction {
     ..placeholder,
     inputs: [pool_input(pd, bal_in)],
@@ -160,10 +174,7 @@ fn add_tx(pd: PoolDatumV5, bal_in: Int, out: PoolDatumV5, bal_out: Int) -> Trans
 }
 
 fn first_share_out(paid: Int) -> PoolDatumV5 {
-  PoolDatumV5 {
-    ..lender_pool(lender_root_1, 1, 1, 0),
-    total_deposited: paid,
-  }
+  PoolDatumV5 { ..lender_pool(lender_root_1, 1, 1, 0), total_deposited: paid }
 }
 
 fn add_first(out: PoolDatumV5, paid: Int) -> Bool {
@@ -323,8 +334,7 @@ test withdraw_share_succeeds() {
 }
 
 test withdraw_same_note_twice_fails() {
-  let pd =
-    PoolDatumV5 { ..two_shares(0), lender_nullifiers: [withdraw_null] }
+  let pd = PoolDatumV5 { ..two_shares(0), lender_nullifiers: [withdraw_null] }
   let bal_in = reserve + 21_000_000
   !run(
     pd,
@@ -437,7 +447,6 @@ fn borrow_with(pd: PoolDatumV5, bal_in: Int, out: PoolDatumV5) -> Bool {
     pd,
     BorrowAnonymous {
       proof: proof(),
-      loan_amount: loan_amt,
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
     },

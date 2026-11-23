@@ -1,8 +1,9 @@
 //// ============================================
 //// COLLATERAL V6 — private ZK collateral (Milestone 3)
 //// ============================================
-//// Holds user collateral (fixed denomination) with a Poseidon255 commitment.
-//// There is no owner and no on-chain amount. A deposit is spent only via
+//// Holds user collateral (the fixed denomination of one accepted collateral
+//// asset) with a Poseidon255 commitment. There is no owner, and neither the
+//// amount nor the asset is in the datum. A deposit is spent only via
 //// UnlockDeposit, authorized by a SETTLEMENT proof: a single ZK proof that binds
 //// to the spent commitment AND proves Merkle membership of a PRIVATE repayment
 //// nullifier R = Poseidon255(secret, repay_external_nullifier) in the pool's
@@ -16,7 +17,8 @@
 //// loan_nullifier, and the proof's public signals share nothing with the borrow,
 //// so borrow<->unlock is unlinkable.
 ////
-//// The unlock pays the full collateral to the deposit's `unlock_to` address in
+//// The unlock pays the full value of the deposit (its asset and its min ADA) to
+//// the deposit's `unlock_to` address in
 //// an output tagged (inline datum) with the spent deposit's OutputReference, so
 //// a copied proof cannot redirect the funds and one output cannot settle two
 //// deposits (double satisfaction).
@@ -28,11 +30,12 @@
 
 use aiken/collection/list
 use cardano/address.{Address}
-use cardano/assets.{PolicyId, lovelace_of, quantity_of}
+use cardano/assets.{PolicyId, Value, quantity_of}
 use cardano/script_context.{ScriptContext}
 use cardano/transaction.{InlineDatum, Input, OutputReference, Transaction}
 use types_v5.{
-  CollateralRedeemerV5, DepositDatumV5, PoolDatumV5, UnlockDeposit, pool_nft_name,
+  CollateralRedeemerV5, DepositDatumV5, PoolDatumV5, UnlockDeposit,
+  pool_nft_name,
 }
 use zk.{get_vkey, verify_settlement_proof}
 
@@ -73,7 +76,7 @@ validator collateral_v5(
       pays_recipient(
         tx,
         collateral_datum.unlock_to,
-        lovelace_of(own_input.output.value),
+        own_input.output.value,
         output_ref,
       )?,
     }
@@ -84,12 +87,13 @@ validator collateral_v5(
   }
 }
 
-/// Some output pays at least `amount` lovelace to `to`, tagged with the spent
-/// deposit's reference as inline datum (one output per deposit).
+/// Some output pays at least the whole `value` (every asset in it) to `to`,
+/// tagged with the spent deposit's reference as inline datum (one output per
+/// deposit).
 fn pays_recipient(
   tx: Transaction,
   to: Address,
-  amount: Int,
+  value: Value,
   tag: OutputReference,
 ) -> Bool {
   list.any(
@@ -97,9 +101,20 @@ fn pays_recipient(
     fn(output) {
       and {
         output.address == to,
-        lovelace_of(output.value) >= amount,
+        contains(output.value, value),
         output.datum == InlineDatum(tag),
       }
+    },
+  )
+}
+
+/// `outer` holds at least every asset of `inner`.
+fn contains(outer: Value, inner: Value) -> Bool {
+  list.all(
+    assets.flatten(inner),
+    fn(entry) {
+      let (policy, name, qty) = entry
+      quantity_of(outer, policy, name) >= qty
     },
   )
 }

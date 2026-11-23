@@ -233,9 +233,8 @@ use zk.{
 // Real public-signal values, exported so validator tests can build fixtures.
 pub const group_root: Int = ${g_root}
 pub const loan_null: Int = ${g_null}
-// Loan denomination and collateral ratio of the test pools (not proof signals).
+// Loan denomination of the test pools (not a proof signal).
 pub const loan_amt: Int = 10_000_000
-pub const ratio: Int = 125
 pub const ext: Int = ${g_ext}
 // Borrow payout key hash; the proof's recipient signal is its big-endian integer.
 pub const recipient_pkh: ByteArray = #"${RECIPIENT_PKH}"

@@ -13,30 +13,38 @@ use cardano/assets.{Value, from_asset, from_lovelace, merge}
 use cardano/transaction.{
   InlineDatum, Input, NoDatum, Output, OutputReference, Transaction, placeholder,
 }
-use types_v5.{
-  AddLiquidity, BorrowAnonymous, DepositCollateral, DepositDatumV5, PoolDatumV5,
-  RepayAnonymous, UnlockDeposit, pool_nft_name,
-}
 use semaphore_onchain_test.{
   append_proof, append_proof_d, append_vkey, commitment, ext, group_append_proof,
-  group_root, loan_amt, loan_null,
-  old_repaid_root, proof, ratio, recipient_pkh, repaid_root, repaid_root_d,
-  repay_ext, repay_null, repay_null_d, repay_proof, repay_vkey,
-  settlement_proof, settlement_vkey, vkey,
+  group_root, loan_amt, loan_null, old_repaid_root, proof, recipient_pkh,
+  repaid_root, repaid_root_d, repay_ext, repay_null, repay_null_d, repay_proof,
+  repay_vkey, settlement_proof, settlement_vkey, vkey,
+}
+use types_v5.{
+  AddLiquidity, Asset, BorrowAnonymous, CollateralAsset, DepositCollateral,
+  DepositDatumV5, PoolDatumV5, RepayAnonymous, UnlockDeposit, pool_nft_name,
 }
 use v5/collateral_v5
 use v5/lending_pool_v5
 
-const pool_hash: ByteArray = #"a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"
+/// ADA as the pool's loan asset, and ADA collateral of 20 ADA per deposit.
+const ada: Asset = Asset { policy_id: #"", asset_name: #"" }
 
-const nft_policy: ByteArray = #"d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"
+const ada_collateral: CollateralAsset =
+  CollateralAsset { policy_id: #"", asset_name: #"", denomination: 20_000_000 }
+
+const pool_hash: ByteArray =
+  #"a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0"
+
+const nft_policy: ByteArray =
+  #"d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0"
 
 /// Lovelace plus the one-shot pool NFT — the value of the REAL pool UTxO.
 fn pool_value(lovelace: Int) -> Value {
   merge(from_lovelace(lovelace), from_asset(nft_policy, pool_nft_name, 1))
 }
 
-const coll_hash: ByteArray = #"c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0"
+const coll_hash: ByteArray =
+  #"c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0"
 
 const pool_oref: OutputReference =
   OutputReference { transaction_id: #"b0", output_index: 0 }
@@ -70,14 +78,14 @@ fn pool_datum(
     total_deposited: 100_000_000,
     total_borrowed,
     interest_rate: 500,
-    collateral_ratio: ratio,
     group_root,
     group_next_index: 1,
     repaid_root: repaid,
     next_index: nidx,
     external_nullifier: ext,
     repay_external_nullifier: repay_ext,
-    collateral_denomination: 20_000_000,
+    loan_asset: ada,
+    collateral_assets: [ada_collateral],
     loan_denomination: loan_amt,
     open_loans,
     used_nullifiers: used,
@@ -184,7 +192,6 @@ test borrow_membership_succeeds() {
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
-      loan_amount: loan_amt,
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
     },
@@ -198,7 +205,13 @@ test borrow_reused_nullifier_fails() {
   let existing = loan_null
   let pd = pool_datum(loan_amt, [existing], old_repaid_root, 0, [existing])
   let out =
-    pool_datum(loan_amt * 2, [existing, existing], old_repaid_root, 0, [existing, existing])
+    pool_datum(
+      loan_amt * 2,
+      [existing, existing],
+      old_repaid_root,
+      0,
+      [existing, existing],
+    )
   let tx =
     Transaction {
       ..placeholder,
@@ -216,7 +229,6 @@ test borrow_reused_nullifier_fails() {
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
-      loan_amount: loan_amt,
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
     },
@@ -230,7 +242,8 @@ test borrow_after_repay_same_secret_fails() {
   // of open_loans, R in repaid_root) the same secret must not borrow again —
   // otherwise the stale R would let it unlock while the new loan stays open.
   let pd = pool_datum(0, [], repaid_root, 1, [loan_null])
-  let out = pool_datum(loan_amt, [loan_null], repaid_root, 1, [loan_null, loan_null])
+  let out =
+    pool_datum(loan_amt, [loan_null], repaid_root, 1, [loan_null, loan_null])
   let tx =
     Transaction {
       ..placeholder,
@@ -248,7 +261,6 @@ test borrow_after_repay_same_secret_fails() {
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
-      loan_amount: loan_amt,
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
     },
@@ -279,7 +291,6 @@ test borrow_not_recorded_as_used_fails() {
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
-      loan_amount: loan_amt,
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
     },
@@ -315,7 +326,6 @@ test repay_principal_plus_interest_succeeds() {
     Some(pd),
     RepayAnonymous {
       proof: repay_proof(),
-      repay_amount: repay,
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
       append_proof: append_proof(),
@@ -349,7 +359,6 @@ test repay_clearing_used_nullifier_fails() {
     Some(pd),
     RepayAnonymous {
       proof: repay_proof(),
-      repay_amount: repay,
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
       append_proof: append_proof(),
@@ -382,7 +391,6 @@ test repay_below_interest_fails() {
     Some(pd),
     RepayAnonymous {
       proof: repay_proof(),
-      repay_amount: repay,
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
       append_proof: append_proof(),
@@ -416,7 +424,6 @@ test repay_overpay_fails() {
     Some(pd),
     RepayAnonymous {
       proof: repay_proof(),
-      repay_amount: repay,
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
       append_proof: append_proof(),
@@ -451,7 +458,6 @@ test repay_bogus_append_fails() {
     Some(pd),
     RepayAnonymous {
       proof: repay_proof(),
-      repay_amount: repay,
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
       append_proof: append_proof(),
@@ -476,7 +482,9 @@ fn loan_payout() -> Output {
 
 /// The depositor's chosen unlock recipient (a fresh key address).
 fn owner_addr() -> Address {
-  from_verification_key(#"0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e")
+  from_verification_key(
+    #"0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e",
+  )
 }
 
 fn deposit_datum(cmt: Int) -> DepositDatumV5 {
@@ -622,7 +630,10 @@ test unlock_with_vkey_at_other_ref_fails() fail {
   // so the unlock cannot be authorized against an attacker-chosen key.
   let attacker_vk =
     Input {
-      output_reference: OutputReference { transaction_id: #"ad", output_index: 0 },
+      output_reference: OutputReference {
+        transaction_id: #"ad",
+        output_index: 0,
+      },
       output: Output {
         address: from_script(#"bad0bad0"),
         value: from_lovelace(2_000_000),
@@ -678,7 +689,6 @@ test spend_pool_without_nft_fails() fail {
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
-      loan_amount: loan_amt,
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
     },
@@ -723,7 +733,6 @@ test continuing_output_without_nft_fails() fail {
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
-      loan_amount: loan_amt,
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
     },
@@ -760,7 +769,6 @@ test continuing_output_other_address_fails() fail {
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
-      loan_amount: loan_amt,
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
     },
@@ -776,7 +784,10 @@ test borrow_with_vkey_at_other_ref_fails() fail {
   let out = pool_datum(loan_amt, [loan_null], old_repaid_root, 0, [loan_null])
   let attacker_vk =
     Input {
-      output_reference: OutputReference { transaction_id: #"ad", output_index: 1 },
+      output_reference: OutputReference {
+        transaction_id: #"ad",
+        output_index: 1,
+      },
       output: Output {
         address: from_script(#"bad0bad0"),
         value: from_lovelace(2_000_000),
@@ -801,7 +812,6 @@ test borrow_with_vkey_at_other_ref_fails() fail {
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
-      loan_amount: loan_amt,
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
     },
@@ -880,7 +890,11 @@ fn run_deposit(tx: Transaction) -> Bool {
     avk_oref,
     lwvk_oref,
     Some(empty_group_pool()),
-    DepositCollateral { commitment, append_proof: group_append_proof() },
+    DepositCollateral {
+      commitment,
+      asset_index: 0,
+      append_proof: group_append_proof(),
+    },
     pool_oref,
     tx,
   )
@@ -894,21 +908,30 @@ test deposit_collateral_succeeds() {
   // Exactly 20 ADA with the commitment to the collateral script, and the append
   // proof takes the empty commitment set to group_root (commitment at index 0).
   run_deposit(
-    deposit_tx(deposited_pool(), collateral_out(commitment, 20_000_000, coll_hash)),
+    deposit_tx(
+      deposited_pool(),
+      collateral_out(commitment, 20_000_000, coll_hash),
+    ),
   )
 }
 
 test deposit_collateral_wrong_amount_fails() {
   // 19 ADA instead of the fixed 20 ADA denomination.
   !run_deposit(
-    deposit_tx(deposited_pool(), collateral_out(commitment, 19_000_000, coll_hash)),
+    deposit_tx(
+      deposited_pool(),
+      collateral_out(commitment, 19_000_000, coll_hash),
+    ),
   )
 }
 
 test deposit_collateral_wrong_address_fails() {
   // The collateral is paid somewhere other than the collateral script.
   !run_deposit(
-    deposit_tx(deposited_pool(), collateral_out(commitment, 20_000_000, #"7e1f7e1f")),
+    deposit_tx(
+      deposited_pool(),
+      collateral_out(commitment, 20_000_000, #"7e1f7e1f"),
+    ),
   )
 }
 
@@ -925,50 +948,15 @@ test deposit_collateral_commitment_mismatch_fails() {
 test deposit_collateral_bogus_append_fails() {
   // The out datum claims a group_root the append proof does not attest.
   let out = PoolDatumV5 { ..deposited_pool(), group_root: group_root + 1 }
-  !run_deposit(deposit_tx(out, collateral_out(commitment, 20_000_000, coll_hash)))
+  !run_deposit(
+    deposit_tx(out, collateral_out(commitment, 20_000_000, coll_hash)),
+  )
 }
 
 test deposit_collateral_index_not_advanced_fails() {
   let out = PoolDatumV5 { ..deposited_pool(), group_next_index: 0 }
-  !run_deposit(deposit_tx(out, collateral_out(commitment, 20_000_000, coll_hash)))
-}
-
-test borrow_collateral_denomination_too_small_fails() {
-  // A pool configured with collateral (10 ADA) that does not cover the 10 ADA
-  // loan at 125 % must refuse to lend.
-  let pd =
-    PoolDatumV5 {
-      ..pool_datum(0, [], old_repaid_root, 0, []),
-      collateral_denomination: 10_000_000,
-    }
-  let out =
-    PoolDatumV5 {
-      ..pool_datum(loan_amt, [loan_null], old_repaid_root, 0, [loan_null]),
-      collateral_denomination: 10_000_000,
-    }
-  let tx =
-    Transaction {
-      ..placeholder,
-      inputs: [pool_input(pd, 100_000_000)],
-      reference_inputs: [vk_ref_input()],
-      outputs: [pool_out(out, 100_000_000 - loan_amt), loan_payout()],
-    }
-  !lending_pool_v5.lending_pool_v5.spend(
-    nft_policy,
-    coll_hash,
-    vk_oref,
-    rvk_oref,
-    avk_oref,
-    lwvk_oref,
-    Some(pd),
-    BorrowAnonymous {
-      proof: proof(),
-      loan_amount: loan_amt,
-      loan_nullifier: loan_null,
-      recipient: recipient_pkh,
-    },
-    pool_oref,
-    tx,
+  !run_deposit(
+    deposit_tx(out, collateral_out(commitment, 20_000_000, coll_hash)),
   )
 }
 
@@ -1050,7 +1038,9 @@ test borrow_payout_to_other_key_fails() {
   let out = pool_datum(loan_amt, [loan_null], old_repaid_root, 0, [loan_null])
   let thief =
     Output {
-      address: from_verification_key(#"7e1f7e1f7e1f7e1f7e1f7e1f7e1f7e1f7e1f7e1f7e1f7e1f7e1f7e1f"),
+      address: from_verification_key(
+        #"7e1f7e1f7e1f7e1f7e1f7e1f7e1f7e1f7e1f7e1f7e1f7e1f7e1f7e1f",
+      ),
       value: from_lovelace(loan_amt),
       datum: InlineDatum(loan_null),
       reference_script: None,
@@ -1072,7 +1062,6 @@ test borrow_payout_to_other_key_fails() {
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
-      loan_amount: loan_amt,
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
     },
@@ -1104,7 +1093,6 @@ test borrow_underpays_recipient_fails() {
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
-      loan_amount: loan_amt,
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
     },
@@ -1138,7 +1126,6 @@ test borrow_redeemer_recipient_swapped_fails() {
     Some(pd),
     BorrowAnonymous {
       proof: proof(),
-      loan_amount: loan_amt,
       loan_nullifier: loan_null,
       recipient: thief_pkh,
     },
@@ -1174,7 +1161,6 @@ test repay_with_foreign_repay_nullifier_fails() {
     Some(pd),
     RepayAnonymous {
       proof: repay_proof(),
-      repay_amount: repay,
       loan_nullifier: loan_null,
       repay_nullifier: repay_null_d,
       append_proof: append_proof_d(),
@@ -1209,7 +1195,6 @@ test repay_with_copied_borrow_proof_fails() {
     Some(pd),
     RepayAnonymous {
       proof: proof(),
-      repay_amount: repay,
       loan_nullifier: loan_null,
       repay_nullifier: repay_null_d,
       append_proof: append_proof_d(),
