@@ -1,8 +1,9 @@
 // Golden tests against the M3 asset-pool cycles on Preprod (fixtures fetched by
 // scripts/fetch-cycle.mjs): every transaction was accepted, the protocol module
 // re-encodes every pool datum, deposit datum and redeemer to its on-chain hash,
-// the scripts derive to the deployed addresses, and each pool spend moved only
-// the loan asset, by exactly the action's amount.
+// the scripts derive to the deployed addresses, each pool spend moved only the
+// loan asset, by exactly the action's amount, the nullifier sets rebuilt from the
+// history match every pool datum, and the pool datum kept its size.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
@@ -14,6 +15,7 @@ import {
 } from "../src/plutus.mjs";
 import { deriveScripts } from "../src/scripts.mjs";
 import { quantityOf, unitOf, repayAmount, sharePriceUp, sharePriceDown } from "../src/tx.mjs";
+import { buildSets } from "../src/mpf.mjs";
 
 const read = (rel) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
 const blueprint = read("../../../contracts/plutus.json");
@@ -28,9 +30,9 @@ function redeemerOf(R) {
   switch (R.type) {
     case "AddLiquidity": return R_AddLiquidity(R.commitment, R.appendProof);
     case "DepositCollateral": return R_DepositCollateral(R.commitment, R.assetIndex, R.appendProof);
-    case "BorrowAnonymous": return R_Borrow(R.proof, R.loanNullifier, R.recipient);
-    case "RepayAnonymous": return R_Repay(R.proof, R.loanNullifier, R.repayNullifier, R.appendProof);
-    case "WithdrawLiquidity": return R_WithdrawLiquidity(R.proof, R.withdrawNullifier, R.recipient);
+    case "BorrowAnonymous": return R_Borrow(R.proof, R.loanNullifier, R.recipient, R.loansProof);
+    case "RepayAnonymous": return R_Repay(R.proof, R.loanNullifier, R.repayNullifier, R.appendProof, R.loansProof);
+    case "WithdrawLiquidity": return R_WithdrawLiquidity(R.proof, R.withdrawNullifier, R.recipient, R.withdrawnProof);
     default: throw new Error(R.type);
   }
 }
@@ -88,6 +90,32 @@ for (const { name, fixture, deployment } of CYCLES) {
       assert.equal(delta, expected, tx.label);
       const others = (v) => v.filter((a) => a.unit !== unitOf(L)).map((a) => `${a.unit}:${a.quantity}`).sort();
       assert.deepEqual(others(vout), others(vin), `${tx.label}: nothing but the loan asset moved`);
+    }
+  });
+
+  test(`${name}: the nullifier sets rebuilt from the history match every pool datum`, async () => {
+    const events = [];
+    for (const tx of poolSpends) {
+      const R = decodePoolRedeemer(tx.redeemers.find((x) => decodeSafe(x.cbor)).cbor);
+      if (R.type === "BorrowAnonymous") events.push({ type: "borrow", nullifier: R.loanNullifier });
+      if (R.type === "RepayAnonymous") events.push({ type: "repay", nullifier: R.loanNullifier });
+      if (R.type === "WithdrawLiquidity") events.push({ type: "withdraw", nullifier: R.withdrawNullifier });
+      const d = decodePoolDatum(poolOut(tx).cbor);
+      const sets = await buildSets(events);
+      assert.equal(d.loans, sets.loansRoot, tx.label);
+      assert.equal(d.withdrawn, sets.withdrawnRoot, tx.label);
+    }
+  });
+
+  test(`${name}: the pool datum kept its size through the cycle`, () => {
+    const sizes = txs.filter(poolOut).map((tx) => poolOut(tx).cbor.length);
+    // Integers may gain a few bytes as totals grow; a list entry would add 38 bytes.
+    assert.ok(Math.max(...sizes) - Math.min(...sizes) <= 32, `datum sizes (hex chars) ${sizes}`);
+  });
+
+  test(`${name}: pool and collateral scripts are spent by reference`, () => {
+    for (const tx of [...poolSpends, cycle.unlock]) {
+      assert.ok(tx.inputs.some((i) => i.reference && i.txHash === D.refScripts.pool.txHash), tx.label ?? "unlock");
     }
   });
 

@@ -1,0 +1,52 @@
+{
+  "network": "preprod",
+  "description": "Pool lending ada, collateral ada:20,537a02f3e1f878c9e814bf6dc8ebbd584c04b5d49c310331879020b5544f4b:500. Created by offchain/cli/m4/run.mjs deploy on 2026-11-23.",
+  "seed": {
+    "txHash": "beecbdeef8a939bd476bd5f3c4a5d666552476d9b121efe7a390d914689adcd3",
+    "outputIndex": 0
+  },
+  "vkeys": {
+    "txHash": "c4e8e1b7acf51d67bb2ebeb0561ee8b86a71778a4b1e9842ef51a1a9afd90b7d",
+    "borrowIdx": 0,
+    "settlementIdx": 1,
+    "appendIdx": 2,
+    "repayIdx": 3,
+    "lender": {
+      "txHash": "c4e8e1b7acf51d67bb2ebeb0561ee8b86a71778a4b1e9842ef51a1a9afd90b7d",
+      "index": 4
+    }
+  },
+  "vkeyParkAddress": "addr_test1wzl94ddu5xplr7p8f55ldtxjvw6cqqsh57jkj4vndwthtkgdw2fq8",
+  "initTx": "3acf4248a5cbffb2c3571ae7aa1c52154602d8a7fa52daf1c29d4c8bd6d5e059",
+  "refScripts": {
+    "pool": {
+      "txHash": "5d90207c5c14d9185d0f97ae76c585cd45dca7b118048cc07cddaeb3a3d50791",
+      "index": 0
+    },
+    "collateral": {
+      "txHash": "5d90207c5c14d9185d0f97ae76c585cd45dca7b118048cc07cddaeb3a3d50791",
+      "index": 1
+    }
+  },
+  "loanAsset": {
+    "policy_id": "",
+    "asset_name": ""
+  },
+  "collateralAssets": [
+    {
+      "policy_id": "",
+      "asset_name": "",
+      "denomination": "20000000"
+    },
+    {
+      "policy_id": "537a02f3e1f878c9e814bf6dc8ebbd584c04b5d49c310331879020b5",
+      "asset_name": "544f4b",
+      "denomination": "500"
+    }
+  ],
+  "policyId": "1c00069bd09cb3e6a5d32f5a8e7b852144a8004ede70963e14c20b1a",
+  "poolHash": "9a81be8900f34a86e80c1a7f6345abe5bd86f60b4700a047e513a3b0",
+  "poolAddress": "addr_test1wzdgr05fqre54phgpsd87c6940jmmphkpdrspgz8u5f68vquqlfkw",
+  "collateralHash": "388d33810aee0ba246179fd2d970f76a790f72f771159e0c5301698a",
+  "collateralAddress": "addr_test1wqug6vuppthqhgjxz70a9kts7a48jrmj7ac3t8sv2vqknzs9dx5e8"
+}

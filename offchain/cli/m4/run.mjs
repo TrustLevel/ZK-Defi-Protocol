@@ -17,6 +17,7 @@
  *                                                       its scripts published as reference scripts
  *   node run.mjs mint-token --name <ascii> --amount <n> signer: deployer; a test token (one-signature policy)
  *   node run.mjs send      --to <addr> --unit <lovelace|unit> --amount <n>   test funding
+ *   node run.mjs address                              the signer's address
  *
  * The pool is the one in DEPLOYMENT (default packages/protocol/deployments/preprod-m3-ada.json);
  * deploy writes that file. Amounts are in the asset's base unit (lovelace for ADA),
@@ -46,6 +47,7 @@ import { fetchPool, fetchLeaves, verifyPool } from "@zk-defi/protocol/chain";
 import {
   buildDeposit, buildBorrow, buildRepay, buildUnlock, buildAddLiquidity, buildWithdrawLiquidity, repayAmount,
   sharePriceUp, sharePriceDown, withdrawableShares, poolBalance, initialPoolValue, isAda, ADA,
+  buildCollateralSplit, hasCollateral,
 } from "@zk-defi/protocol/tx";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -82,7 +84,15 @@ async function signer() {
   });
   await wallet.init();
   const address = await wallet.getChangeAddress();
-  return { wallet, payer: { address, utxos: await provider.fetchAddressUTxOs(address) } };
+  let utxos = await provider.fetchAddressUTxOs(address);
+  // Script transactions need a pure-ADA UTxO as collateral; a wallet whose
+  // outputs all carry tokens first pays itself one.
+  if (utxos.length && !hasCollateral(utxos)) {
+    console.log("creating a pure-ADA UTxO for script collateral");
+    await submit(wallet, await buildCollateralSplit(new MeshTxBuilder({ fetcher: provider }), { payer: { address, utxos } }));
+    utxos = await provider.fetchAddressUTxOs(address);
+  }
+  return { wallet, payer: { address, utxos } };
 }
 // The verification keys in circuits/keys as the datums they are parked with.
 async function localVkeyDatums() {
@@ -448,6 +458,12 @@ step.deploy = async ({
   console.log(`deployment written: ${DEPLOYMENT_PATH}`);
 };
 
+// ── address: the signer's address (WALLET_SEED / WALLET_ACCOUNT) ────────────
+step.address = async () => {
+  const { payer } = await signer();
+  console.log(payer.address);
+};
+
 // ── send: pay a token (with min ADA) or ADA to an address, e.g. test funding ─
 step.send = async ({ to, unit, amount }) => {
   if (!to || !unit || !amount) throw new Error("--to <addr> --unit <lovelace|unit> --amount <n>");
@@ -486,6 +502,6 @@ if (!step[cmd]) {
   console.error("usage: node run.mjs <deposit|borrow|repay|unlock|lend|withdraw|status|deploy|mint-token> [--note name] [--to addr] [--asset i] (see the header for deploy and mint-token)");
   process.exit(1);
 }
-if (!["deploy", "mint-token", "send"].includes(cmd) && !DEPLOYMENT) throw new Error(`no deployment at ${DEPLOYMENT_PATH}; run deploy first`);
+if (!["deploy", "mint-token", "send", "address"].includes(cmd) && !DEPLOYMENT) throw new Error(`no deployment at ${DEPLOYMENT_PATH}; run deploy first`);
 await step[cmd](args);
 process.exit(0);
