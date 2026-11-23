@@ -13,7 +13,6 @@ on-chain pairing builtins), not BN254.
 | `settlement_proof_final.zkey` / `verification_key_settlement.json` | yes | Unlock circuit (3 public signals) |
 | `append_proof_final.zkey` / `verification_key_append.json` | yes | Append circuit (4 public signals) |
 | `lender_withdraw_final.zkey` / `verification_key_lender_withdraw.json` | yes | Lender withdraw circuit (4 public signals) |
-| `collateral_proof_final.zkey` / `verification_key.json` | yes | Legacy fixture circuit |
 | `pot14b_final.ptau` | no (gitignored) | BLS12-381 Powers of Tau (power 14; large enough for every circuit) |
 
 The `verification_key_*.json` files are what the deployed vkey reference UTxOs hold.

@@ -14,7 +14,6 @@ Aiken validators (see [`../contracts/`](../contracts/)), so everything targets t
 | `settlement_proof.circom` | Unlock | `[commitment, repaid_root, repay_external_nullifier]` | Knowledge of the secret behind `commitment = Poseidon255(COLLATERAL_LEAF_TAG, secret)`, and membership of the private `R = Poseidon255(secret, repay_external_nullifier)` in the repaid set (depth 10). |
 | `lender_withdraw.circom` | Lender withdraw | `[lender_root, withdraw_nullifier, lender_external_nullifier, recipient]` | The note leaf `Poseidon255(LENDER_LEAF_TAG, secret)` is a member of the lender set (depth 10); `withdraw_nullifier = Poseidon255(secret, lender_external_nullifier)`; bound to `recipient`. |
 | `append_proof.circom` | Add liquidity, Deposit, Repay | `[old_root, new_root, leaf, index]` | `leaf` was inserted at the empty position `index`, taking the root from `old_root` to `new_root` (depth 10). |
-| `collateral_proof.circom` | none (legacy fixture) | `[commitment, loan_amount, collateral_ratio]` | Commitment opening + sufficiency; kept for the `zk_onchain_test` fixture. |
 
 The leaf tags (`COLLATERAL_LEAF_TAG = 5555`, `LENDER_LEAF_TAG = 6666`) must match
 `packages/protocol/src/crypto.mjs`. Private inputs (secrets, Merkle paths) never touch
@@ -59,7 +58,6 @@ collateral_semaphore.circom    borrow circuit
 repay_proof.circom             repay circuit
 settlement_proof.circom        unlock circuit
 append_proof.circom            append circuit (commitment set + repaid set)
-collateral_proof.circom        legacy circuit (fixture only)
 *_js/                          compiled witness generators (wasm)
 lib/poseidon255*.circom        BLS12-381 Poseidon
 keys/                          proving + verification keys

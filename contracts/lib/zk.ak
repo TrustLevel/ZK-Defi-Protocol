@@ -1,24 +1,13 @@
 //// ============================================
-//// ZK — on-chain Groth16 verification helpers (v5)
+//// ZK — on-chain Groth16 verification helpers
 //// ============================================
-//// Wraps the generic modulo-p/ak-381 Groth16 verifier for the collateral proof.
-//// This is the real on-chain verification that Milestone 3 requires.
+//// Wraps the generic modulo-p/ak-381 Groth16 verifier for the five circuits
+//// (borrow, repay, settlement, append, lender withdraw). The public-signal order
+//// of each wrapper mirrors its circuit.
 
 use aiken/collection/list
 use ak_381/groth16.{Proof, SnarkVerificationKey, groth_verify}
 use cardano/transaction.{InlineDatum, OutputReference, Transaction}
-
-/// Verify a collateral-ownership proof.
-/// Public-signal order MUST match the circuit: [commitment, loan_amount, collateral_ratio].
-pub fn verify_collateral_proof(
-  vkey: SnarkVerificationKey,
-  proof: Proof,
-  commitment: Int,
-  loan_amount: Int,
-  collateral_ratio: Int,
-) -> Bool {
-  groth_verify(vkey, proof, [commitment, loan_amount, collateral_ratio])
-}
 
 /// Verify a borrow proof: membership of the collateral leaf + loan nullifier,
 /// bound to the payout key. Public-signal order MUST match
@@ -127,9 +116,9 @@ pub fn verify_lender_withdraw_proof(
   )
 }
 
-/// Resolve the trusted verification key from the reference input pinned by `vkey_ref`.
-/// The VKey UTxO is parked at an always-false address and set once at pool init, so
-/// referencing it by OutputReference from the (continuity-enforced) pool datum is trusted.
+/// Resolve the verification key from the reference input at `vkey_ref`. The key
+/// UTxO is parked at an always-false address (it can never move), and `vkey_ref`
+/// is a script parameter, so no datum or redeemer can point at another key.
 pub fn get_vkey(
   tx: Transaction,
   vkey_ref: OutputReference,

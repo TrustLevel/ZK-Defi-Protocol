@@ -4,8 +4,8 @@
   "description": "BLS12-381 Groth16 circuits for the ZK privacy lending protocol (Milestone 3)",
   "type": "module",
   "scripts": {
-    "test": "node tests/gate-bls12381.cjs",
-    "gen-onchain-fixture": "node tests/gen-onchain-fixture.cjs"
+    "test": "node --test tests/collateral-circuits.test.mjs tests/lender-withdraw.test.mjs",
+    "gen-fixtures": "node tests/gen-semaphore-fixture.cjs && node tests/gen-lender-fixture.cjs"
   },
   "dependencies": {
     "ffjavascript": "^0.3.0",
