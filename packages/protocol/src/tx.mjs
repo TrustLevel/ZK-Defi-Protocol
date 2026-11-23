@@ -59,11 +59,15 @@ export function assetValue(asset, quantity) {
     { unit: unitOf(asset), quantity: String(quantity) },
   ];
 }
-// Value of the initial pool output: its ADA, the NFT and the initial liquidity.
-export function initialPoolValue(S, loanAsset, liquidity, poolAda = MIN_ADA_TOKEN_OUTPUT) {
+// ADA a token pool's UTxO keeps for good (min UTxO for the NFT, the loan token
+// and the pool datum, which grows with the nullifier lists).
+export const TOKEN_POOL_ADA = 5_000_000n;
+// Value of the initial pool output: its ADA, the NFT and the initial liquidity
+// (for a token pool, its ADA and the NFT; liquidity arrives with the first share).
+export function initialPoolValue(S, loanAsset, liquidity, poolAda = TOKEN_POOL_ADA) {
   const nft = { unit: S.POOL_NFT_UNIT, quantity: "1" };
   if (isAda(loanAsset)) return [{ unit: "lovelace", quantity: String(liquidity) }, nft];
-  return [{ unit: "lovelace", quantity: String(poolAda) }, nft, { unit: unitOf(loanAsset), quantity: String(liquidity) }];
+  return moveAsset([{ unit: "lovelace", quantity: String(poolAda) }, nft], loanAsset, liquidity);
 }
 // A pure-ADA UTxO (>= 5 ADA) to post as script collateral.
 export function pickCollateral(utxos, minLovelace = 5_000_000n) {

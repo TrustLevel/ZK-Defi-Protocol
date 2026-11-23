@@ -11,9 +11,11 @@
  *   node run.mjs withdraw  --note <name> --to <addr>   signer: relayer; one share to <addr>
  *   node run.mjs status   [--note <name>]
  *   node run.mjs deploy    [--loan ada|<unit>] [--collateral ada:20,<unit>:500]
- *                          [--loan-denomination <n>] [--reserve <n>] [--vkeys-from <deployment.json>]
+ *                          [--loan-denomination <n>] [--reserve <n>]
+ *                          [--vkeys-from <deployment.json> | --vkeys-tx <park tx hash>]
  *                                                       signer: deployer; parks the five keys, new pool
  *   node run.mjs mint-token --name <ascii> --amount <n> signer: deployer; a test token (one-signature policy)
+ *   node run.mjs send      --to <addr> --unit <lovelace|unit> --amount <n>   test funding
  *
  * The pool is the one in DEPLOYMENT (default packages/protocol/deployments/preprod-m4-lend.json);
  * deploy writes that file. Amounts are in the asset's base unit (lovelace for ADA),
@@ -326,12 +328,35 @@ async function parkVkeys(wallet, payer) {
     await curve.terminate();
   }
   const parkTx = await submit(wallet, await txb.changeAddress(payer.address).selectUtxosFrom(payer.utxos).complete());
-  return { txHash: parkTx, borrowIdx: 0, settlementIdx: 1, appendIdx: 2, repayIdx: 3, lender: { txHash: parkTx, index: 4 } };
+  return parkedVkeys(parkTx);
+}
+// The vkey references of a park transaction (outputs in VKEY_FILES order).
+const parkedVkeys = (parkTx) =>
+  ({ txHash: parkTx, borrowIdx: 0, settlementIdx: 1, appendIdx: 2, repayIdx: 3, lender: { txHash: parkTx, index: 4 } });
+
+// Two pure-ADA UTxOs (>= 5 ADA): the seed of the one-shot NFT and the script
+// collateral. Creates them with a payment to oneself when the wallet lacks them.
+async function seedAndCollateral(wallet, payer) {
+  const pureOf = (utxos) => utxos.filter((u) => u.output.amount.length === 1 && BigInt(u.output.amount[0].quantity) >= 5_000_000n);
+  let utxos = await provider.fetchAddressUTxOs(payer.address);
+  if (pureOf(utxos).length < 2) {
+    const split = await new MeshTxBuilder({ fetcher: provider })
+      .setNetwork("preprod")
+      .txOut(payer.address, [{ unit: "lovelace", quantity: "10000000" }])
+      .txOut(payer.address, [{ unit: "lovelace", quantity: "10000000" }])
+      .changeAddress(payer.address)
+      .selectUtxosFrom(utxos)
+      .complete();
+    await submit(wallet, split);
+    utxos = await provider.fetchAddressUTxOs(payer.address);
+  }
+  const [seedUtxo, collUtxo] = pureOf(utxos);
+  return { utxos, seedUtxo, collUtxo };
 }
 
 step.deploy = async ({
   loan = "ada", collateral = "ada:20", "loan-denomination": loanDenomination = String(LOAN_DENOMINATION),
-  reserve, "vkeys-from": vkeysFrom,
+  reserve, "vkeys-from": vkeysFrom, "vkeys-tx": vkeysTx,
 }) => {
   if (DEPLOYMENT) throw new Error(`${DEPLOYMENT_PATH} exists; set DEPLOYMENT to a new path`);
   const loanAsset = parseAsset(loan);
@@ -341,13 +366,12 @@ step.deploy = async ({
   // the loan asset and never moves, so its reserve is 0.
   const reserveAmount = BigInt(reserve ?? (isAda(loanAsset) ? "10000000" : "0"));
   const { wallet, payer } = await signer();
-  const vkeys = vkeysFrom ? read(path.resolve(vkeysFrom)).vkeys : await parkVkeys(wallet, payer);
+  const vkeys = vkeysFrom ? read(path.resolve(vkeysFrom)).vkeys
+    : vkeysTx ? parkedVkeys(vkeysTx)
+      : await parkVkeys(wallet, payer);
+  console.log(`verification keys: ${vkeys.txHash}`);
 
-  // Seed (one-shot NFT) and script collateral: two distinct pure-ADA UTxOs.
-  const utxos = await provider.fetchAddressUTxOs(payer.address);
-  const pure = utxos.filter((u) => u.output.amount.length === 1 && BigInt(u.output.amount[0].quantity) >= 5_000_000n);
-  if (pure.length < 2) throw new Error("need two pure-ADA UTxOs (>= 5 ADA): seed + collateral");
-  const [seedUtxo, collUtxo] = pure;
+  const { utxos, seedUtxo, collUtxo } = await seedAndCollateral(wallet, payer);
   const seed = { txHash: seedUtxo.input.txHash, outputIndex: seedUtxo.input.outputIndex };
   const scripts = deriveScripts(BLUEPRINT, seed, vkeys);
   const empty = merkleRoot([]);
@@ -388,6 +412,17 @@ step.deploy = async ({
   console.log(`deployment written: ${DEPLOYMENT_PATH}`);
 };
 
+// ── send: pay a token (with min ADA) or ADA to an address, e.g. test funding ─
+step.send = async ({ to, unit, amount }) => {
+  if (!to || !unit || !amount) throw new Error("--to <addr> --unit <lovelace|unit> --amount <n>");
+  const { wallet, payer } = await signer();
+  const value = unit === "lovelace" ? [{ unit, quantity: String(amount) }]
+    : [{ unit: "lovelace", quantity: "2000000" }, { unit, quantity: String(amount) }];
+  const unsigned = await new MeshTxBuilder({ fetcher: provider })
+    .setNetwork("preprod").txOut(to, value).changeAddress(payer.address).selectUtxosFrom(payer.utxos).complete();
+  await submit(wallet, unsigned);
+};
+
 // ── mint-token: a test token under a one-signature policy of the signer ─────
 step["mint-token"] = async ({ name, amount }) => {
   if (!name || !amount) throw new Error("--name <ascii> --amount <n>");
@@ -415,6 +450,6 @@ if (!step[cmd]) {
   console.error("usage: node run.mjs <deposit|borrow|repay|unlock|lend|withdraw|status|deploy|mint-token> [--note name] [--to addr] [--asset i] (see the header for deploy and mint-token)");
   process.exit(1);
 }
-if (cmd !== "deploy" && cmd !== "mint-token" && !DEPLOYMENT) throw new Error(`no deployment at ${DEPLOYMENT_PATH}; run deploy first`);
+if (!["deploy", "mint-token", "send"].includes(cmd) && !DEPLOYMENT) throw new Error(`no deployment at ${DEPLOYMENT_PATH}; run deploy first`);
 await step[cmd](args);
 process.exit(0);

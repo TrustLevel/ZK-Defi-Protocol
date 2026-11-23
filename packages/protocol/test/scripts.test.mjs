@@ -2,7 +2,7 @@
 // blueprint (policy, hashes and addresses as created on-chain). The pool NFT
 // policy is unchanged since the lender-side M4 deployment, so it is checked
 // against that one; the validator hashes changed with the asset pools and are
-// checked against the asset-pool deployment once it exists.
+// checked against the asset-pool deployments in m3-cycle.test.mjs.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -18,4 +18,4 @@ test("deriveScripts reproduces the pool NFT policy of the lender-side M4 deploym
   assert.equal(S.POOL_NFT_UNIT, m4.policyId + "504f4f4c");
 });
 
-test.todo("deriveScripts reproduces the asset-pool deployment (hashes and addresses)");
+// The asset-pool deployments (hashes and addresses) are checked in m3-cycle.test.mjs.
