@@ -199,8 +199,6 @@ validator lending_pool_v5(
             proof,
             pool_datum.group_root,
             loan_nullifier,
-            loan_amount,
-            pool_datum.collateral_ratio,
             pool_datum.external_nullifier,
             bytearray.to_int_big_endian(recipient),
           )
@@ -263,8 +261,6 @@ validator lending_pool_v5(
             pool_datum.group_root,
             loan_nullifier,
             repay_nullifier,
-            principal,
-            pool_datum.collateral_ratio,
             pool_datum.external_nullifier,
             pool_datum.repay_external_nullifier,
           )

@@ -20,39 +20,34 @@ pub fn verify_collateral_proof(
   groth_verify(vkey, proof, [commitment, loan_amount, collateral_ratio])
 }
 
-/// Verify a v6 privacy borrow/repay proof (membership + nullifier + sufficiency).
-/// Public-signal order MUST match `circuits/collateral_semaphore.circom`:
-///   [group_merkle_root, loan_nullifier, loan_amount, collateral_ratio,
-///    external_nullifier, recipient]
-/// group_merkle_root / external_nullifier / collateral_ratio are bound to trusted
-/// on-chain state; loan_nullifier / loan_amount to the redeemer, cross-checked by
-/// the validator against the nullifier sets and the pool value delta; recipient
-/// to the payout key the validator requires the loan to be paid to.
+/// Verify a borrow proof: membership of the collateral leaf + loan nullifier,
+/// bound to the payout key. Public-signal order MUST match
+/// `circuits/collateral_semaphore.circom`:
+///   [group_merkle_root, loan_nullifier, external_nullifier, recipient]
+/// group_merkle_root / external_nullifier are bound to trusted pool state;
+/// loan_nullifier to the redeemer, checked against the nullifier sets; recipient
+/// to the payout key the validator requires the loan to be paid to. The proof
+/// carries no amount: the loan is the pool's fixed denomination.
 pub fn verify_borrow_proof(
   vkey: SnarkVerificationKey,
   proof: Proof,
   group_merkle_root: Int,
   loan_nullifier: Int,
-  loan_amount: Int,
-  collateral_ratio: Int,
   external_nullifier: Int,
   recipient: Int,
 ) -> Bool {
   groth_verify(
     vkey,
     proof,
-    [
-      group_merkle_root, loan_nullifier, loan_amount, collateral_ratio,
-      external_nullifier, recipient,
-    ],
+    [group_merkle_root, loan_nullifier, external_nullifier, recipient],
   )
 }
 
 /// Verify a repay proof: membership + the loan nullifier N AND the repayment
 /// nullifier R, both from the SAME secret. Public-signal order MUST match
 /// `circuits/repay_proof.circom`:
-///   [group_merkle_root, loan_nullifier, repay_nullifier, loan_amount,
-///    collateral_ratio, external_nullifier, repay_external_nullifier]
+///   [group_merkle_root, loan_nullifier, repay_nullifier, external_nullifier,
+///    repay_external_nullifier]
 /// Binds the R a repay appends to the loan it settles. It has its own
 /// verification key, so a borrow proof is never a valid repay proof.
 pub fn verify_repay_proof(
@@ -61,8 +56,6 @@ pub fn verify_repay_proof(
   group_merkle_root: Int,
   loan_nullifier: Int,
   repay_nullifier: Int,
-  loan_amount: Int,
-  collateral_ratio: Int,
   external_nullifier: Int,
   repay_external_nullifier: Int,
 ) -> Bool {
@@ -70,8 +63,8 @@ pub fn verify_repay_proof(
     vkey,
     proof,
     [
-      group_merkle_root, loan_nullifier, repay_nullifier, loan_amount,
-      collateral_ratio, external_nullifier, repay_external_nullifier,
+      group_merkle_root, loan_nullifier, repay_nullifier, external_nullifier,
+      repay_external_nullifier,
     ],
   )
 }
