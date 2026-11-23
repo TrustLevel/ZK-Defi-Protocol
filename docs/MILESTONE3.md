@@ -19,7 +19,7 @@ any path**: the proof is the authorization. Three Plutus V3 scripts implement it
 | Script | Role |
 |---|---|
 | `pool_nft` (minting policy, parameterised by a seed UTxO) | Mints exactly one `POOL` token, once, in the transaction that spends the seed. The pool UTxO carries it, so the validators can tell the real pool from any UTxO someone pays to the pool address. |
-| `lending_pool_v5` (parameterised by the NFT policy, the collateral script hash and the vkey refs) | Pool liquidity and state. Authorizes `AddLiquidity`, `WithdrawLiquidity`, `DepositCollateral`, `BorrowAnonymous` and `RepayAnonymous`. Keeps the lender set (`lender_root`), the collateral set (`group_root`), the open and used loan nullifiers, the withdraw nullifiers and the append-only repaid set (`repaid_root`). |
+| `lending_pool_v5` (parameterised by the NFT policy, the collateral script hash and the vkey refs) | Pool liquidity and state. Authorizes `AddLiquidity`, `WithdrawLiquidity`, `DepositCollateral`, `BorrowAnonymous` and `RepayAnonymous`. Keeps the lender set (`lender_root`), the collateral set (`group_root`), the append-only repaid set (`repaid_root`) and two nullifier sets as Merkle Patricia Forestry roots: `loans` (every loan nullifier, open or settled) and `withdrawn` (the withdraw nullifiers of paid-out notes). |
 | `collateral_v5` (parameterised by the NFT policy and the settlement vkey ref) | Holds collateral (one fixed denomination of an accepted asset) under a commitment. Authorizes `UnlockDeposit` via a settlement proof against the NFT-bearing pool. |
 
 **Assets.** A pool is configured at initialization with:
@@ -44,13 +44,13 @@ parameters**, never from a datum.
 2. **Asset confidentiality.** Deposits of every accepted collateral asset share one
    collateral set, and every leaf has the same form,
    `commitment = Poseidon255(COLLATERAL_LEAF_TAG, secret)`. The borrow proof shows
-   membership in that set without revealing the leaf. A loan therefore does not reveal which asset backs it, and the anonymity
-   set is every deposit of every accepted asset.
+   membership in that set without revealing the leaf. A loan therefore does not reveal
+   which asset backs it, and the anonymity set is every deposit of every accepted asset.
 3. **Deposit ↔ borrow unlinkability.** A borrow proves the collateral commitment is a
    **member of the on-chain commitment set** (a Merkle root). It does **not** reference
    a specific deposit UTxO, so nobody can tell which deposit backs a loan.
-4. **Settlement-gated, unlinkable unlock.** Repaying a loan settles its
-   `loan_nullifier`. In the same transaction the repayer inserts a distinct
+4. **Settlement-gated, unlinkable unlock.** Repaying a loan marks its
+   `loan_nullifier` settled. In the same transaction the repayer inserts a distinct
    **repayment nullifier** `R = Poseidon255(secret, repay_external_nullifier)` into the
    append-only `repaid_root`, with a zero-knowledge append proof. The repay proof
    binds this `R` to the loan being repaid (same secret). Unlock then proves, in zero
@@ -67,43 +67,60 @@ parameters**, never from a datum.
    user, and their proofs fix where the money goes (the borrow and withdraw proofs are
    bound to a recipient key, the unlock pays the deposit's own `unlock_to`). A
    third-party relayer can therefore pay the fees and submit them without being able
-   to redirect funds, and the user's wallet does not appear in these transactions.
-   The reference relayer is `server/src/relayer.mjs`.
+   to redirect funds; no wallet of the user pays for or signs these transactions. The
+   reference relayer is `server/src/relayer.mjs`.
 
-Together, 3 to 6 mean that the actions of one user cannot be grouped on-chain: deposit,
-borrow, unlock, liquidity deposit and withdrawal are pairwise unlinkable, so neither the
-history nor the frequency of a user's activity can be reconstructed. Repay is linked to
-its own borrow by design (both carry the loan nullifier); it is paid by the account
-that received the loan.
+**What links and what does not.** Each pair of actions, as the chain shows it:
+
+| Pair | Linked? | Why |
+|---|---|---|
+| Deposit ↔ borrow | no | the borrow proves membership in the set, without a deposit reference (3) |
+| Borrow ↔ repay | yes | both carry the loan nullifier, by design |
+| Borrow ↔ unlock | no | the unlock shares no public value with the borrow (4) |
+| Repay ↔ unlock | no | the unlock proves membership of a private `R` (4) |
+| Deposit ↔ unlock | yes | the unlock spends the deposit UTxO itself |
+| Liquidity deposit ↔ withdrawal | no | the withdrawal proves membership in the note set (5) |
+
+So a borrower's activity falls into two groups that the chain cannot join: deposit
+and unlock on one side, borrow and repay on the other; a lender's share purchase and
+withdrawal cannot be joined either. This holds when each group uses its own address:
+the deposit is paid from one wallet and `unlock_to` is a fresh address, the loan goes
+to another, and the share payout to a third; funding one of these addresses from
+another links them. The live cycle below uses separate addresses for every role.
 
 ### The full private lending cycle (confirmed live on Preprod)
 
-Two pools run on the same scripts and verification keys. Account A deposits and
-lends, account B (an unrelated wallet) receives the loan and the share payout and
-repays, and a relayer submits borrow, unlock and withdrawal.
+Two pools run on the same scripts and verification keys. Every role uses its own
+address: the lender (L), the depositor (D), the address the collateral returns to (U),
+the borrower who receives the loan and repays (B), the relayer that submits borrow,
+unlock and withdrawal (R), and the address the withdrawn share goes to (P).
 
 **Pool 1 lends ADA** and accepts 20 ADA or 500 TOK as collateral:
 
 | # | Step | What is verified on-chain | Preprod tx |
 |---|------|---------------------------|-----------|
 | 1 | **Park keys.** The five verification keys go to an always-false address. | none | [`c4e8e1b7acf5…`](https://preprod.cardanoscan.io/transaction/c4e8e1b7acf51d67bb2ebeb0561ee8b86a71778a4b1e9842ef51a1a9afd90b7d) |
-| 2 | **Init pool + mint the pool NFT**, with the loan asset (ADA) and the accepted collateral assets in the datum. | one-shot minting policy | [`23ad89841705…`](https://preprod.cardanoscan.io/transaction/23ad898417055e231c585d1a12398a5892eb04688b258913cc5d66a6fa6cffa0) |
-| 3 | **Add liquidity**, two shares of 10 ADA. Each note leaf enters `lender_root`. | append proof | [`13f3793d1a45…`](https://preprod.cardanoscan.io/transaction/13f3793d1a45e1d59bc4e682dd87f819198fde8b956256abccc25e2f4754a914), [`2c62c4cfe0e1…`](https://preprod.cardanoscan.io/transaction/2c62c4cfe0e1592a4f151b185118217c43ce21d2a5e72abfe1906fd395376c6e) |
-| 4 | **Deposit 20 ADA** (asset 0) and **deposit 500 TOK** (asset 1). Both commitments enter the same `group_root`. | append proof; exact denomination of the named asset | [`8d944e16e29d…`](https://preprod.cardanoscan.io/transaction/8d944e16e29d18ac2b1a92a806cebcb411a47c72846fcc8e60fcb2eb037b26af), [`a3cd4c5ce665…`](https://preprod.cardanoscan.io/transaction/a3cd4c5ce665c847e8cae525ae31b31ec2d193ca4c7afcfbc0159f2a4caadb71) |
-| 5 | **Borrow 10 ADA**, backed by the TOK deposit, paid to B, submitted by the relayer. Nothing in the transaction names the deposit or its asset. | borrow proof (membership, nullifier, recipient) | [`581389f0d725…`](https://preprod.cardanoscan.io/transaction/581389f0d725b83137788cd22e3bcf817cf500962f9a0bfe3f5e3bb181345b26) |
-| 6 | **Repay 10.5 ADA** from B. The loan is settled and `R` enters `repaid_root`. | repay proof + append proof | [`19dc3cbfd6a9…`](https://preprod.cardanoscan.io/transaction/19dc3cbfd6a97a6e587653a47deb3ac258dff05177ef4fc2640b03fbb0a45da3) |
-| 7 | **Unlock**: the 500 TOK and their ADA return to the deposit's `unlock_to`, submitted by the relayer. | settlement proof | [`348685706bbb…`](https://preprod.cardanoscan.io/transaction/348685706bbb2689c5882d79e4ae55514323f278c59feea8b97798e167e4fda1) |
-| 8 | **Withdraw one share**: 10.25 ADA (principal plus its part of the interest) to B, submitted by the relayer. | lender withdraw proof | [`f37d96ec8826…`](https://preprod.cardanoscan.io/transaction/f37d96ec8826d1d812103d50688be90cd4896823b873006a6295f378979998b0) |
+| 2 | **Init pool + mint the pool NFT**, with the loan asset (ADA), the accepted collateral assets and empty nullifier sets in the datum. | one-shot minting policy | [`3acf4248a5cb…`](https://preprod.cardanoscan.io/transaction/3acf4248a5cbffb2c3571ae7aa1c52154602d8a7fa52daf1c29d4c8bd6d5e059) |
+| 3 | **Publish the scripts** as reference scripts on the always-false address. | none | [`5d90207c5c14…`](https://preprod.cardanoscan.io/transaction/5d90207c5c14d9185d0f97ae76c585cd45dca7b118048cc07cddaeb3a3d50791) |
+| 4 | **Deposit 20 ADA** (asset 0) and **deposit 500 TOK** (asset 1), both by D, collateral returning to U. Both commitments enter the same `group_root`. | append proof; exact denomination of the named asset | [`9f7f17cad29f…`](https://preprod.cardanoscan.io/transaction/9f7f17cad29f2e3e584728cb74e595279f23e61d8bf0e9a38bae47e918f974a3), [`fa297a3a89bf…`](https://preprod.cardanoscan.io/transaction/fa297a3a89bfdcf36ee9767e65373480408536ab1ced5347529bcb91099ca926) |
+| 5 | **Add liquidity**, two shares of 10 ADA by L. Each note leaf enters `lender_root`. | append proof | [`c75f5bd192e3…`](https://preprod.cardanoscan.io/transaction/c75f5bd192e344809ef52cdf4c2eb57b478541238b0a0755b085e3758d715df9), [`29344705f1fa…`](https://preprod.cardanoscan.io/transaction/29344705f1fadf774f0fc8b6847aab13b4db5879ca7759c2955e8ebaca52125b) |
+| 6 | **Borrow 10 ADA**, backed by the TOK deposit, paid to B, submitted by R. Nothing in the transaction names the deposit, its asset or D. The loan nullifier enters the `loans` set as open. | borrow proof (membership, nullifier, recipient); MPF insert | [`b219752d2a64…`](https://preprod.cardanoscan.io/transaction/b219752d2a646c5e67f0302ad949eacea0940913ec5f8a148a32088948fd5b42) |
+| 7 | **Repay 10.5 ADA** from B. The loan is marked settled and `R` enters `repaid_root`. | repay proof + append proof; MPF update | [`f854d3c38034…`](https://preprod.cardanoscan.io/transaction/f854d3c380343d1bc5e4857aa4b1a4f77e4fa2c13e1eeb1b5637181f52135aa9) |
+| 8 | **Unlock**: the 500 TOK and their ADA go to U, submitted by R. | settlement proof | [`101b958540d6…`](https://preprod.cardanoscan.io/transaction/101b958540d60b074b13c8bada78e6ab4f872d6917255e9bb2517f03f2f55048) |
+| 9 | **Withdraw one share**: 10.25 ADA (principal plus its part of the interest) to P, submitted by R. | lender withdraw proof; MPF insert | [`b4c42d0cb457…`](https://preprod.cardanoscan.io/transaction/b4c42d0cb457679afa75166c13ccd943675840cdec8e9a6ccc82ef5b14ac5496) |
 
 **Pool 2 lends the USD test token** (same keys, same collateral list) and ran the
-same cycle in USD: init [`c91b566c4aaf…`](https://preprod.cardanoscan.io/transaction/c91b566c4aaf84e13e7f17a2fee1e742cf6c00c4d04a6ab65b9aedec571d13a9),
-two shares of 10 USD, a deposit of 20 ADA, a relayed loan of 10 USD
-[`c62b2f4142d9…`](https://preprod.cardanoscan.io/transaction/c62b2f4142d9215076db2c335bb575a63a1caa419b8f90ad30c37da55aeddd24), repayment of 10.5 USD
-[`44cc6137bdcc…`](https://preprod.cardanoscan.io/transaction/44cc6137bdccca08b801982cb3dd073439cf638eecfe7e94c0dc6392b53ed2bd), relayed unlock and a
-relayed share withdrawal of 10.25 USD [`913e5f21c68f…`](https://preprod.cardanoscan.io/transaction/913e5f21c68fc6a56e59755ebe789622187c2d68c57eab7dc17d5245e40a1a2e).
-The pool's own 5 ADA did not move. Every transaction of both cycles is listed in
+same cycle in USD with the same roles: init [`baaafc06a45d…`](https://preprod.cardanoscan.io/transaction/baaafc06a45dc37979c2a82e2e95a6adb8ddf25811b5069ee9c98e8197d9ae15), two shares of 10 USD,
+a deposit of 20 ADA by D, a relayed loan of 10 USD to B [`a7f3f565da9d…`](https://preprod.cardanoscan.io/transaction/a7f3f565da9d33b42ed1a35d2f0393d775228178c8a61823b85a4a37d83f2624), repayment
+of 10.5 USD by B [`c1ce59019185…`](https://preprod.cardanoscan.io/transaction/c1ce59019185b7c3cdddd578fad1bb1d9ed45d74be8a0b6d61d71300e4e67517), a relayed unlock to U and a relayed share
+withdrawal of 10.25 USD to P [`ed53a299f0d3…`](https://preprod.cardanoscan.io/transaction/ed53a299f0d3263efd6298331d225a34baa339c42ca79b98de4509c604fa26bf). The pool's own 5 ADA did not move.
+
+Every transaction of both cycles is listed in
 [`MILESTONE3-TEST-RESULTS.md`](MILESTONE3-TEST-RESULTS.md) §3; all are
-`valid_contract: true`.
+`valid_contract: true`. Funding outside the protocol: D received its TOK and B its
+ADA and 1 USD (for the interest) from L, the token minter, and R was funded by L;
+nothing passed between D and B, so the chain shows no link between the deposit side
+and the loan side.
 
 Off-chain drivers: the shared protocol module `packages/protocol` (Mesh, Node ESM)
 and the command line client on it, `offchain/cli/m4/run.mjs`. Every step finds the pool by its NFT, and the tx
@@ -264,8 +281,8 @@ ceremony is required before mainnet (M1 Appendix A).*
   different key.
 - **Public signals bound to trusted state.** Roots, next indices and nullifier scalars
   come from the pool datum. Redeemer-supplied values are cross-checked:
-  - `loan_nullifier` against the open and used sets; `withdraw_nullifier` against the withdraw set
-  - `loan_amount`, `repay_amount` and share payments against the fixed denominations, the share price and the pool value delta
+  - `loan_nullifier` against the `loans` set; `withdraw_nullifier` against the `withdrawn` set
+  - the pool value delta against the fixed loan denomination, principal + interest and the share price
   - `commitment` against the append proof and the collateral output
   - `repay_nullifier` against the repay proof **and** the repay append proof (one value fed to both)
   - `recipient` against the payout output
@@ -275,9 +292,17 @@ ceremony is required before mainnet (M1 Appendix A).*
   - Pool value is measured in the loan asset; loans, repayments and share payouts are paid in it.
   - `DepositCollateral` names an accepted collateral asset and requires an output of exactly its denomination, with the commitment, at the collateral script.
   - Unlock pays the deposit's asset and denomination back to its `unlock_to`.
-- **One loan per deposit.** A borrow records its nullifier in `open_loans` (what Repay
-  settles) and in the never-shrinking `used_nullifiers`. A nullifier that was ever used
-  cannot borrow again, so a repaid deposit's `R` can never cover a later loan.
+- **Nullifier sets of constant size.** `loans` and `withdrawn` are Merkle Patricia
+  Forestry roots (`aiken-lang/merkle-patricia-forestry`). A borrow inserts its loan
+  nullifier as open, with a proof that it is not in the set yet; a repay updates it
+  from open to settled, with a proof that it is open; nothing deletes. A withdrawal
+  inserts its withdraw nullifier the same way. So a nullifier borrows once ever, a
+  repaid deposit's `R` can never cover a later loan, a note pays out once, and the
+  pool datum keeps its size however many loans and withdrawals the pool has seen: no
+  one can grow it until a transaction stops fitting.
+- **Scripts by reference.** The pool and collateral scripts are published once as
+  reference scripts, so transactions reference them instead of carrying them. The pool
+  output may not carry a reference script of its own.
 - **Share accounting.** Share value = pool balance − reserve + outstanding loans, so
   the interest from every repayment raises the price of every share at once. Loans and
   withdrawals are paid only from free liquidity (pool balance above the reserve).
@@ -300,11 +325,12 @@ ceremony is required before mainnet (M1 Appendix A).*
 | Deployment file | `packages/protocol/deployments/preprod-m3-ada.json` | `packages/protocol/deployments/preprod-m3-usd.json` |
 | Loan asset | ADA | USD `537a02f3e1f878c9e814bf6dc8ebbd584c04b5d49c310331879020b5` · `555344` |
 | Accepted collateral | [0] 20 ADA · [1] 500 TOK (`537a02f3…` · `544f4b`) | same |
-| Pool NFT policy | `859075f221d672187f5fff95fc3a4be995238509ef124e8e2d85ffac` | `07bfaef56473e52fefeb2003bcfbd5c92101770394cad97b3bce1bc8` |
-| `lending_pool_v5` hash | `5e40259d6bae4053e91bf2bbb21b5e5a1028ae60a712d39b59695a68` | `83f0f362525d2b5d7622947cc24e20cd152db024117d8e5583592a58` |
-| `lending_pool_v5` address | `addr_test1wp0yqfvadwhyq5lfr0ethvsmtedpq29wvzn395umt95456qcr5yer` | `addr_test1wzplpumz2fwjkhtky228esjwyrx32tdsysghmrj4sdvj5kqlmjck6` |
-| `collateral_v5` hash | `c9450bfc1cc5fe4b6bf5aa5a4c1bd347aa2ac38c455f8a2ebdb1e9dc` | `f1933896f08d1a3dc7d80e3a64ecc9ee088bd73e4ebd57b416b655ac` |
-| `collateral_v5` address | `addr_test1wry52zlurnzlujmt7k495nqm6dr652kr33z4lz3whkc7nhq9sc8wd` | `addr_test1wrcexwyk7zx350w8mq8r5e8ve8hq3z7h8e8t64a5z6m9ttqfzmnwk` |
+| Pool NFT policy | `1c00069bd09cb3e6a5d32f5a8e7b852144a8004ede70963e14c20b1a` | `dcc6a744032782058554e242b23dc9d66ac287bf351d122aa8d8bd1f` |
+| `lending_pool_v5` hash | `9a81be8900f34a86e80c1a7f6345abe5bd86f60b4700a047e513a3b0` | `102cda4952391ac02b95234a26fb9852655f07b8a9846447c438abbf` |
+| `lending_pool_v5` address | `addr_test1wzdgr05fqre54phgpsd87c6940jmmphkpdrspgz8u5f68vquqlfkw` | `addr_test1wqgzekjf2gu34sptj5355fhmnpfx2hc8hz5cgez8csu2h0c5ekrc3` |
+| `collateral_v5` hash | `388d33810aee0ba246179fd2d970f76a790f72f771159e0c5301698a` | `163bb361d8fc9b0e78347cc955df2750de39e0a577d6c3fd4ad0ea26` |
+| `collateral_v5` address | `addr_test1wqug6vuppthqhgjxz70a9kts7a48jrmj7ac3t8sv2vqknzs9dx5e8` | `addr_test1wqtrhvmpmr7fkrncx37vj4wlyagduw0q54madslaftgw5fsjkjwej` |
+| Reference scripts (pool #0, collateral #1) | `5d90207c5c14d9185d0f97ae76c585cd45dca7b118048cc07cddaeb3a3d50791` | `c7914adc284dfbadf136669b998a0561f3a6860c6f33d544df903acbf22a791d` |
 | Verification keys | `c4e8e1b7acf51d67bb2ebeb0561ee8b86a71778a4b1e9842ef51a1a9afd90b7d` #0 borrow · #1 settlement · #2 append · #3 repay · #4 lender withdraw | same |
 
 TOK and USD are test tokens minted for this demonstration under one policy
@@ -323,14 +349,14 @@ deployment.
 
 | Tx | Proofs verified | mem | cpu | of the cpu limit | Fee |
 |---|---|---|---|---|---|
-| Add liquidity | append | 542,413 | 2,586,290,452 | 26 % | 0.73 ADA |
-| Deposit | append | 620,362 | 2,610,667,465 | 26 % | 0.74 ADA |
-| Borrow | borrow | 608,145 | 2,611,491,401 | 26 % | 0.74 ADA |
-| Repay | repay + append | 679,818 | 5,144,774,383 | 51 % | 0.93 ADA |
-| Unlock | settlement | 337,318 | 2,368,362,245 | 24 % | 0.48 ADA |
-| Withdraw a share | lender withdraw | 629,084 | 2,619,748,944 | 26 % | 0.74 ADA |
+| Add liquidity | append | 529,267 | 2,580,378,519 | 26 % | 0.57 ADA |
+| Deposit | append | 612,406 | 2,607,769,998 | 26 % | 0.58 ADA |
+| Borrow | borrow + MPF insert | 598,335 | 2,605,451,995 | 26 % | 0.58 ADA |
+| Repay | repay + append + MPF update | 690,582 | 5,151,030,842 | 52 % | 0.78 ADA |
+| Unlock | settlement | 336,380 | 2,373,206,815 | 24 % | 0.42 ADA |
+| Withdraw a share | lender withdraw + MPF insert | 625,870 | 2,618,035,308 | 26 % | 0.58 ADA |
 
-Figures from pool 1; pool 2 is within 3 % of them.
+Figures from pool 1; in pool 2 the CPU steps differ by less than 1 % and the memory by less than 15 %. Pool and collateral scripts are spent by reference, which keeps the fees about 0.15 ADA below inline scripts.
 
 ---
 
@@ -353,7 +379,7 @@ key and no owner signature. Four on-chain properties make that trustworthy:
 - **Owner-bound payouts.** Loans, shares and collateral are paid only to the recipient
   the proof or the deposit fixed, so proofs cannot be front-run.
 
-**Adversarial test suite.** `aiken check` runs **107 tests**; the validator tests run
+**Adversarial test suite.** `aiken check` runs **109 tests**; the validator tests run
 with real BLS12-381 proofs. Together with the circuit, protocol-module and relayer
 tests, the full list, pass rates and edge cases are in
 [`MILESTONE3-TEST-RESULTS.md`](MILESTONE3-TEST-RESULTS.md).
@@ -374,7 +400,9 @@ tests, the full list, pass rates and edge cases are in
 
 Independent testers ran the protocol on Preprod with their own wallets and pools; their
 dated reports are in [`docs/Tester-Feedback/`](Tester-Feedback/) (index in
-[`MILESTONE3-EVIDENCE.md`](MILESTONE3-EVIDENCE.md)). In the break-it run on 2026-11-18
+[`MILESTONE3-EVIDENCE.md`](MILESTONE3-EVIDENCE.md), with the stand each report covers).
+The break-it run on this stand follows
+[runbook 4](Tester-Feedback/MILESTONE3-TESTER-RUNBOOK-4-breakit.md). In the break-it run on 2026-11-18, on an earlier stand,
 ([`MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md)),
 attacks 1–8 were rejected; attack 9 showed that the repayment nullifier was not bound
 to the repaid loan. Commit
@@ -391,11 +419,20 @@ the repay proof (§2) and adds both attacks as regression tests
   and it is immutable afterwards. Each collateral denomination is chosen to cover one
   loan with a margin at the initializer's prices (the deployed pools: 20 ADA or 500 TOK
   for a loan of 10); the pool has no price feed.
+  The client checks that a pool was initialized honestly before it acts
+  (`verifyPool` in `packages/protocol/src/chain.mjs`): the init transaction put the NFT
+  into the pool address with the empty datum, the parked verification keys are the ones
+  in `circuits/keys`, and the pool's totals match its sets. A pool that fails the check
+  is refused.
 - **Trusted setup.** The Preprod proving and verification keys come from a
   single-contributor developer ceremony (multi-party required before mainnet).
 - **Relayer.** The relayer pays fees and cannot redirect funds or learn secrets. It
   sees the transactions it submits, which are public anyway. Anyone can run one, and a
-  user can always submit the transaction themselves.
+  user can always submit the transaction themselves. Every relayed transaction costs
+  the relayer its fee, and a payout in a native token also its output's min ADA, so the
+  reference relayer caps relayed transactions per payout key and per day. A relayer
+  could attach its own stake credential to a payout output (the validator binds the
+  payment key); the output's funds stay with the recipient.
 
 ### Non-goals
 
@@ -408,12 +445,18 @@ complete money market. The following are not part of it:
   a liquidation module are the upgrade path (M1 §6.5, "after MVP").
 - **One loan asset per pool.** Borrowing a different asset means using its pool.
 - **Capacity.** The lender, commitment and repaid sets are depth-10 Merkle trees
-  (1,024 entries each). The nullifier sets are lists in the pool datum, which keep the
-  pool to a few hundred loans over its lifetime. A Merkle-Patricia-Forestry set is the
-  scale upgrade. Every pool action spends the single pool UTxO, so a pool processes one
+  (1,024 entries each); a pool is full when one of them is. The nullifier sets have no
+  such bound. Every pool action spends the single pool UTxO, so a pool processes one
   action per block.
+- **Proofs against the current root.** A borrow, repay or withdraw proof is made against
+  the current root of its tree. Any action that grows that tree in between (a deposit,
+  a repay, a share purchase) makes the proof stale; the client then proves again. A
+  third party willing to pay a transaction per block can delay someone's action this
+  way, not prevent it for good.
 - **No withdrawal without a loan.** Collateral is released through the settlement
-  path, so a depositor who never borrowed reclaims it by borrowing and repaying at once.
+  path, so a depositor who never borrowed reclaims it with a loan and its repayment, in
+  two transactions: this needs free liquidity of one loan denomination in the pool and
+  costs one loan's interest and two fees.
 
 ### Privacy boundary
 
@@ -431,7 +474,8 @@ limits:
 3. **Assets at deposit.** A deposit shows which accepted asset was locked, as it shows
    that one denomination was locked. Which asset backs a given loan stays hidden.
 4. **Addresses.** Payouts go to addresses the user chooses. The user keeps them apart
-   (the M4 UI uses two wallet accounts); funding one from the other links them.
+   (§1, What links and what does not); funding one from the other links them, and so
+   does a collateral `unlock_to` that is the depositing wallet.
 
 Cardano L1 was chosen deliberately (M1 §1.2) rather than the Midnight privacy
 sidechain. The L1 privacy ceiling is lower than that of a purpose-built privacy chain;
@@ -465,13 +509,14 @@ This section answers the points of the previous review. Page numbers refer to
 | Test cases must perform transactions and verifications in a reasonable time. | Execution cost per transaction (§4), proof times and pass/fail rates in [`MILESTONE3-TEST-RESULTS.md`](MILESTONE3-TEST-RESULTS.md) |
 | Documentation must be comprehensible and cover the entire zk proof generation. | §2, Proof generation, end to end |
 
-The review confirms the first criterion is met: the unlock-without-repay issue is
-resolved, interest is enforced on-chain, and deposit ↔ borrow and borrow ↔ unlock are
-unlinkable. The second criterion asks for private lending as well as borrowing, which
-item 3 below covers. M1 was approved as an architecture document. Its acceptance criteria ask how zk-SNARKs
+The review acknowledged that the unlock-without-repay issue is resolved, that interest
+is enforced on-chain, and that deposit ↔ borrow and borrow ↔ unlock are unlinkable. The
+second criterion asks for private lending as well as borrowing, which point 3 below
+covers. M1 is the approved architecture; its acceptance criteria ask how zk-SNARKs
 protect financial data and that the protocol be "modular and scalable and easy to
-implement" (p. 2). The points below show where the built protocol follows M1, and
-where the implementation on Cardano L1 determined the concrete component.
+implement" (p. 2). The points below show, for each point of the review, where the built
+protocol follows M1, and where the implementation on Cardano L1 determined the
+concrete component.
 
 **1. Amount and asset confidentiality.** M1 §2.1 promises that collateral assets and
 the values of collateral, loans and repayments remain private (p. 15). Both are
@@ -502,15 +547,18 @@ note leaf and one share price.
 
 **4. Borrower privacy: recipient addresses, fee payers, timing.**
 
-- *Fee payers:* borrow, unlock and lender withdrawal are relayed (§1, item 6). The
-  user's wallet does not appear in them.
-- *Recipient addresses:* payouts go to keys the user chooses for each step, and the
-  proofs bind them, so the relayer cannot change them.
+- *Fee payers:* borrow, unlock and lender withdrawal are relayed (§1, item 6); no wallet
+  of the user pays for or signs them.
+- *Recipient addresses:* payouts go to addresses the user chooses for each role, and
+  the proofs bind them, so the relayer cannot change them. The live cycle uses a
+  separate address for every role (§1).
 - *Timing and activity:* M1 promises that "the timing and frequency of loan-related
-  activities remain private" (p. 15). The actions of one user are pairwise unlinkable
-  (§1), so the frequency and history of a user's activity cannot be reconstructed. The
-  existence of a transaction at a given time is a property of every public ledger and
-  is stated in §5, Privacy boundary.
+  activities remain private" (p. 15). A borrower's actions fall into two groups the
+  chain cannot join (deposit and unlock; borrow and repay), and a lender's purchase and
+  withdrawal cannot be joined either (§1, What links and what does not). A user's
+  history and frequency can therefore not be read off the chain when each group uses
+  its own address. That a transaction happened at a given time is visible on every
+  public ledger; §5, Privacy boundary, states it.
 
 **5. Groth16 instead of PLONK.** M1 states the choice of proof system as a
 recommendation with a contingency: "we consider PLONK as the primary zero-knowledge
@@ -523,16 +571,43 @@ implementation, Groth16 was the system with a working on-chain verifier on Plutu
 BLS12-381 builtins (`modulo-p/ak-381`); repay verifies two proofs in one transaction at
 about half the CPU budget (§4).
 
-**On the trusted setup:** M1 already requires one. Its PLONK also needs a universal
-trusted setup (comparison table, p. 7), and M1 Appendix A, "Trusted Setup for PLONK"
-(p. 40), specifies a multi-party ceremony. Groth16 needs the same ceremony once per
-circuit. The trust assumption is the same as in M1: a multi-party ceremony before
-mainnet (§5, Trust assumptions).
+**On the trusted setup:** M1 already requires one: its PLONK needs a universal
+trusted setup (comparison table, p. 7), and Appendix A (p. 40) specifies a multi-party
+ceremony. The difference M1 names there is real: Groth16 needs a circuit-specific
+setup, so a changed circuit needs a new phase-2 ceremony, while PLONK reuses one
+universal setup. Here the universal phase 1 (powers of tau) is shared by all five
+circuits, and one multi-party phase-2 ceremony covers all of them before mainnet; a
+later circuit change repeats phase 2 for that circuit. The trust assumption is the one
+M1 states, at least one honest participant (§5, Trust assumptions).
 
 **6. Poseidon instead of Pedersen.** Poseidon is part of the M1 design. M1 has a
-section "Poseidon Hash-Based Commitments — Why Poseidon?" with
-`Nullifier = Poseidon(UserSecret || TransactionType || Nonce)` (p. 20), and its
+section "Poseidon Hash-Based Commitments — Why Poseidon?" (p. 20) with
+`Nullifier = Poseidon(UserSecret || TransactionType || Nonce)` (p. 21), and its
 borrowing and lending flows create "Poseidon-hashed nullifiers" (pp. 12–13). Pedersen
 was named for the commitment to the collateral amount (p. 17). With fixed
 denominations the amount is no longer a variable to commit to, so one hash function
 serves every commitment and nullifier, identical in the circuit and on-chain.
+
+**7. Collateral verification, loan amount and repayment.** M1 §2.2 (pp. 16–17)
+specifies a collateral sufficiency proof: the circuit checks that a committed
+collateral value meets the threshold. M3 names "collateral verification" as an output.
+Collateral is verified in two places:
+
+- *Deposit:* the validator requires exactly the denomination of the named collateral
+  asset at the collateral script, under the commitment that the append proof inserts
+  into the collateral set (§3). Only such deposits enter the set.
+- *Borrow:* the borrow proof shows, in zero knowledge, that the borrower owns a member
+  of that set, and its nullifier allows one loan per member (§2).
+
+Every member of the set is therefore a real deposit of a sufficient denomination. A
+threshold check inside the circuit would add nothing here: the committed value is a
+private input that nothing binds to the locked funds unless the validator checks it at
+deposit, which it does through the denomination. The circuit therefore proves
+membership and the validator enforces the value, so the loan reveals neither amount nor
+asset.
+
+M1 lets the user select the loan amount (p. 12). Here every loan is the pool's fixed
+denomination, because an individual amount would identify the position; a larger loan
+is several deposits and several loans, or a pool with a larger denomination. M1 also
+mentions partial repayment (p. 12). A loan here is repaid in one fixed amount, principal
+plus interest, for the same reason; partial repayment is not offered.

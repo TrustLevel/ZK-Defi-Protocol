@@ -23,10 +23,11 @@ and loan transactions.
 | Pool validator | `contracts/validators/v5/lending_pool_v5.ak` (AddLiquidity / WithdrawLiquidity / DepositCollateral / BorrowAnonymous / RepayAnonymous) |
 | Collateral validator | `contracts/validators/v5/collateral_v5.ak` (UnlockDeposit) |
 | Compiled blueprint | `contracts/plutus.json` |
-| Protocol module (script derivation, Merkle trees, proof generation, point compression, tx builders) | `packages/protocol/src/` |
+| Protocol module (script derivation, Merkle trees, proof generation, point compression, tx builders, pool verification) | `packages/protocol/src/` |
+| Nullifier sets (Merkle Patricia Forestry, `@aiken-lang/merkle-patricia-forestry` 1.3.1 off-chain, `aiken-lang/merkle-patricia-forestry` on-chain) | `packages/protocol/src/mpf.mjs`, `contracts/validators/v5/lending_pool_v5.ak` |
 | Command line client (every step, deploy, test tokens) | `offchain/cli/m4/run.mjs` |
 | Deployments (Preprod) | `packages/protocol/deployments/preprod-m3-ada.json`, `preprod-m3-usd.json` |
-| Reference relayer (borrow, unlock, lender withdraw) | `server/src/relayer.mjs` |
+| Reference relayer (borrow, unlock, lender withdraw; daily limits) | `server/src/relayer.mjs` |
 
 ## ✅ Item 2 — Published zk-SNARK library
 
@@ -45,15 +46,16 @@ and loan transactions.
 | Artifact | Path |
 |---|---|
 | Test-results summary | `docs/MILESTONE3-TEST-RESULTS.md` |
-| On-chain proof tests | `contracts/lib/semaphore_onchain_test.ak`, `contracts/lib/lender_onchain_test.ak`, `contracts/lib/zk_onchain_test.ak` |
-| Adversarial validator tests | `contracts/validators/tests/v6_validator_test.ak`, `contracts/validators/tests/lender_test.ak`, `contracts/validators/tests/pool_nft_test.ak` — `cd contracts && aiken check` |
+| On-chain proof tests | `contracts/lib/semaphore_onchain_test.ak`, `contracts/lib/lender_onchain_test.ak`; MPF cross-check `contracts/lib/set_fixture.ak` |
+| Adversarial validator tests | `contracts/validators/tests/v6_validator_test.ak`, `contracts/validators/tests/lender_test.ak`, `contracts/validators/tests/asset_test.ak`, `contracts/validators/tests/pool_nft_test.ak` — `cd contracts && aiken check` |
 | Circuit tests | `circuits/tests/collateral-circuits.test.mjs`, `circuits/tests/lender-withdraw.test.mjs` |
 | Protocol module tests, incl. golden tests against both Preprod cycles | `packages/protocol/test/` (`m3-cycle.test.mjs`, fixtures in `test/fixtures/` fetched by `scripts/fetch-cycle.mjs`) |
-| Relayer tests | `server/test/relayer.test.mjs` |
+| Relayer and chain reader tests | `server/test/relayer.test.mjs`, `server/test/chain-service.test.mjs` |
 | Fixture generators | `circuits/tests/gen-semaphore-fixture.cjs`, `circuits/tests/gen-lender-fixture.cjs` |
 
-Tallies: aiken **107/107**, circuits **21/21**, protocol module **41/41**, relayer
-**27/27**, live cycles **18/18** `valid_contract: true`. Pass/fail rates, edge cases,
+Tallies: aiken **109/109**, circuits **21/21**, protocol module **52/52**, relayer and
+chain reader **30/30** (one live test each, skipped without a Blockfrost key), live
+cycles **20/20** `valid_contract: true`. Pass/fail rates, edge cases,
 performance and tester feedback: `docs/MILESTONE3-TEST-RESULTS.md`.
 
 ## ✅ Item 4 — Published documentation
@@ -71,19 +73,22 @@ performance and tester feedback: `docs/MILESTONE3-TEST-RESULTS.md`.
 Each report is published as written by its tester and dated; it covers the
 protocol stand that was current on that date.
 
-| Tester | Date | Report | Guided by |
-|---|---|---|---|
-| pinusch100 | 2026-08-26 | [`MILESTONE3-TESTER-FEEDBACK-pinusch100.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pinusch100.md) | feedback template |
-| pumbiii | 2026-08-26 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii.md) | feedback template |
-| pumbiii (break-it) | 2026-09-01 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii-v6.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-v6.md) | [archived runbook 2](Tester-Feedback/archive/MILESTONE3-TESTER-RUNBOOK-2-breakit.md) |
-| pumbiii (break-it) | 2026-11-18 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md) | [runbook 3 as of `m3-poa-v4`](https://github.com/TrustLevel/ZK-Defi-Protocol/blob/m3-poa-v4/docs/Tester-Feedback/MILESTONE3-TESTER-RUNBOOK-3-breakit.md) |
+| Tester | Date | Report | Stand | Guided by |
+|---|---|---|---|---|
+| pinusch100 | 2026-08-26 | [`MILESTONE3-TESTER-FEEDBACK-pinusch100.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pinusch100.md) | before the private model (v5) | feedback template |
+| pumbiii | 2026-08-26 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii.md) | before the private model (v5) | feedback template |
+| pumbiii (break-it) | 2026-09-01 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii-v6.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-v6.md) | `m3-poa-v2` | [archived runbook 2](Tester-Feedback/archive/MILESTONE3-TESTER-RUNBOOK-2-breakit.md) |
+| pumbiii (break-it) | 2026-11-18 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md) | `m3-poa-v4` (before lender side, asset pools and nullifier sets) | [runbook 3 as of `m3-poa-v4`](https://github.com/TrustLevel/ZK-Defi-Protocol/blob/m3-poa-v4/docs/Tester-Feedback/MILESTONE3-TESTER-RUNBOOK-3-breakit.md) |
 
 The 2026-11-18 report's finding (attack 9: repayment nullifier not bound to the repaid
 loan) is resolved in commit
 [`6b5cbb3`](https://github.com/TrustLevel/ZK-Defi-Protocol/commit/6b5cbb3), which this
 stand includes (see `docs/MILESTONE3.md` §5, Independent testing).
 
-Earlier runbooks are kept in [`Tester-Feedback/archive/`](Tester-Feedback/archive/).
+The break-it run on this stand (`m3-v6-rc1`) follows
+[runbook 4](Tester-Feedback/MILESTONE3-TESTER-RUNBOOK-4-breakit.md); its report is added
+here before the stand is tagged `m3-poa-v6`. Earlier runbooks are kept in
+[`Tester-Feedback/archive/`](Tester-Feedback/archive/).
 
 ---
 
@@ -95,31 +100,35 @@ no signature).
 Two pools on the same scripts and keys. Every transaction `valid_contract: true`;
 fees and the USD cycle in `docs/MILESTONE3-TEST-RESULTS.md` §3.
 
+Roles on separate addresses: lender L, depositor D, unlock address U, borrower B,
+relayer R, share payout P (see `docs/MILESTONE3-TEST-RESULTS.md` §3).
+
 **Pool 1 lends ADA, collateral 20 ADA or 500 TOK:**
 
 | Step | Tx hash |
 |---|---|
 | Park the five verification keys | [`c4e8e1b7acf5…`](https://preprod.cardanoscan.io/transaction/c4e8e1b7acf51d67bb2ebeb0561ee8b86a71778a4b1e9842ef51a1a9afd90b7d) |
-| Init pool + mint pool NFT | [`23ad89841705…`](https://preprod.cardanoscan.io/transaction/23ad898417055e231c585d1a12398a5892eb04688b258913cc5d66a6fa6cffa0) |
-| **Add liquidity** (two shares, append proofs into `lender_root`) | [`13f3793d1a45…`](https://preprod.cardanoscan.io/transaction/13f3793d1a45e1d59bc4e682dd87f819198fde8b956256abccc25e2f4754a914), [`2c62c4cfe0e1…`](https://preprod.cardanoscan.io/transaction/2c62c4cfe0e1592a4f151b185118217c43ce21d2a5e72abfe1906fd395376c6e) |
-| **Deposit 20 ADA and 500 TOK** (one commitment set) | [`8d944e16e29d…`](https://preprod.cardanoscan.io/transaction/8d944e16e29d18ac2b1a92a806cebcb411a47c72846fcc8e60fcb2eb037b26af), [`a3cd4c5ce665…`](https://preprod.cardanoscan.io/transaction/a3cd4c5ce665c847e8cae525ae31b31ec2d193ca4c7afcfbc0159f2a4caadb71) |
-| **Borrow** (membership proof, recipient-bound, relayed; backed by the TOK deposit) | [`581389f0d725…`](https://preprod.cardanoscan.io/transaction/581389f0d725b83137788cd22e3bcf817cf500962f9a0bfe3f5e3bb181345b26) |
-| **Repay** (principal + interest; repay proof binds `R`; appends `R`) | [`19dc3cbfd6a9…`](https://preprod.cardanoscan.io/transaction/19dc3cbfd6a97a6e587653a47deb3ac258dff05177ef4fc2640b03fbb0a45da3) |
-| **Unlock** (settlement proof, no signature, relayed; 500 TOK returned) | [`348685706bbb…`](https://preprod.cardanoscan.io/transaction/348685706bbb2689c5882d79e4ae55514323f278c59feea8b97798e167e4fda1) |
-| **Withdraw a share** (lender withdraw proof, relayed) | [`f37d96ec8826…`](https://preprod.cardanoscan.io/transaction/f37d96ec8826d1d812103d50688be90cd4896823b873006a6295f378979998b0) |
+| Init pool + mint pool NFT (empty nullifier sets) | [`3acf4248a5cb…`](https://preprod.cardanoscan.io/transaction/3acf4248a5cbffb2c3571ae7aa1c52154602d8a7fa52daf1c29d4c8bd6d5e059) |
+| Publish pool and collateral scripts as reference scripts | [`5d90207c5c14…`](https://preprod.cardanoscan.io/transaction/5d90207c5c14d9185d0f97ae76c585cd45dca7b118048cc07cddaeb3a3d50791) |
+| **Deposit 20 ADA and 500 TOK** (D; one commitment set) | [`9f7f17cad29f…`](https://preprod.cardanoscan.io/transaction/9f7f17cad29f2e3e584728cb74e595279f23e61d8bf0e9a38bae47e918f974a3), [`fa297a3a89bf…`](https://preprod.cardanoscan.io/transaction/fa297a3a89bfdcf36ee9767e65373480408536ab1ced5347529bcb91099ca926) |
+| **Add liquidity** (L; two shares, append proofs into `lender_root`) | [`c75f5bd192e3…`](https://preprod.cardanoscan.io/transaction/c75f5bd192e344809ef52cdf4c2eb57b478541238b0a0755b085e3758d715df9), [`29344705f1fa…`](https://preprod.cardanoscan.io/transaction/29344705f1fadf774f0fc8b6847aab13b4db5879ca7759c2955e8ebaca52125b) |
+| **Borrow** (membership proof, recipient-bound, MPF insert; relayed by R to B; backed by the TOK deposit) | [`b219752d2a64…`](https://preprod.cardanoscan.io/transaction/b219752d2a646c5e67f0302ad949eacea0940913ec5f8a148a32088948fd5b42) |
+| **Repay** (B; principal + interest; repay proof binds `R`; appends `R`; MPF open → settled) | [`f854d3c38034…`](https://preprod.cardanoscan.io/transaction/f854d3c380343d1bc5e4857aa4b1a4f77e4fa2c13e1eeb1b5637181f52135aa9) |
+| **Unlock** (settlement proof, no signature; relayed by R; 500 TOK to U) | [`101b958540d6…`](https://preprod.cardanoscan.io/transaction/101b958540d60b074b13c8bada78e6ab4f872d6917255e9bb2517f03f2f55048) |
+| **Withdraw a share** (lender withdraw proof, MPF insert; relayed by R to P) | [`b4c42d0cb457…`](https://preprod.cardanoscan.io/transaction/b4c42d0cb457679afa75166c13ccd943675840cdec8e9a6ccc82ef5b14ac5496) |
 
-**Pool 2 lends USD:** init [`c91b566c4aaf…`](https://preprod.cardanoscan.io/transaction/c91b566c4aaf84e13e7f17a2fee1e742cf6c00c4d04a6ab65b9aedec571d13a9),
-borrow [`c62b2f4142d9…`](https://preprod.cardanoscan.io/transaction/c62b2f4142d9215076db2c335bb575a63a1caa419b8f90ad30c37da55aeddd24),
-repay [`44cc6137bdcc…`](https://preprod.cardanoscan.io/transaction/44cc6137bdccca08b801982cb3dd073439cf638eecfe7e94c0dc6392b53ed2bd),
-withdraw [`913e5f21c68f…`](https://preprod.cardanoscan.io/transaction/913e5f21c68fc6a56e59755ebe789622187c2d68c57eab7dc17d5245e40a1a2e).
+**Pool 2 lends USD:** init [`baaafc06a45d…`](https://preprod.cardanoscan.io/transaction/baaafc06a45dc37979c2a82e2e95a6adb8ddf25811b5069ee9c98e8197d9ae15),
+borrow [`a7f3f565da9d…`](https://preprod.cardanoscan.io/transaction/a7f3f565da9d33b42ed1a35d2f0393d775228178c8a61823b85a4a37d83f2624),
+repay [`c1ce59019185…`](https://preprod.cardanoscan.io/transaction/c1ce59019185b7c3cdddd578fad1bb1d9ed45d74be8a0b6d61d71300e4e67517),
+withdraw [`ed53a299f0d3…`](https://preprod.cardanoscan.io/transaction/ed53a299f0d3263efd6298331d225a34baa339c42ca79b98de4509c604fa26bf).
 
 ### Deployed scripts (Preprod)
 
 | | Pool 1 (ADA) | Pool 2 (USD) |
 |---|---|---|
-| Pool NFT policy | `859075f221d672187f5fff95fc3a4be995238509ef124e8e2d85ffac` | `07bfaef56473e52fefeb2003bcfbd5c92101770394cad97b3bce1bc8` |
-| `lending_pool_v5` | `5e40259d6bae4053e91bf2bbb21b5e5a1028ae60a712d39b59695a68` | `83f0f362525d2b5d7622947cc24e20cd152db024117d8e5583592a58` |
-| `collateral_v5` | `c9450bfc1cc5fe4b6bf5aa5a4c1bd347aa2ac38c455f8a2ebdb1e9dc` | `f1933896f08d1a3dc7d80e3a64ecc9ee088bd73e4ebd57b416b655ac` |
+| Pool NFT policy | `1c00069bd09cb3e6a5d32f5a8e7b852144a8004ede70963e14c20b1a` | `dcc6a744032782058554e242b23dc9d66ac287bf351d122aa8d8bd1f` |
+| `lending_pool_v5` | `9a81be8900f34a86e80c1a7f6345abe5bd86f60b4700a047e513a3b0` | `102cda4952391ac02b95234a26fb9852655f07b8a9846447c438abbf` |
+| `collateral_v5` | `388d33810aee0ba246179fd2d970f76a790f72f771159e0c5301698a` | `163bb361d8fc9b0e78347cc955df2750de39e0a577d6c3fd4ad0ea26` |
 
 ---
 

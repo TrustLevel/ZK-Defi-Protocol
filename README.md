@@ -95,7 +95,7 @@ Node.js 18+, and (to recompile circuits) circom + snarkjs.
 
 ```bash
 # On-chain: compile validators and run the on-chain proof and validator tests
-cd contracts && aiken build && aiken check      # 107/107 tests pass
+cd contracts && aiken build && aiken check      # 109/109 tests pass
 
 # Circuits: real proofs, tampered signals, wrong witnesses
 cd circuits && npm install && node --test tests/collateral-circuits.test.mjs tests/lender-withdraw.test.mjs

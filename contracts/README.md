@@ -8,7 +8,7 @@ There is no admin and no signature on any path: the proof *is* the authorization
 
 ```sh
 aiken build     # compile -> plutus.json
-aiken check     # on-chain proof + adversarial tests (107/107)
+aiken check     # on-chain proof + adversarial tests (109/109)
 ```
 
 ## Scripts
@@ -92,9 +92,9 @@ append) and [`../docs/MILESTONE3.md`](../docs/MILESTONE3.md) for the full design
 
 | Script | Hash |
 |-----------|-------------|
-| `pool_nft` (pool 1, lends ADA) | `859075f221d672187f5fff95fc3a4be995238509ef124e8e2d85ffac` |
-| `lending_pool_v5` (pool 1) | `5e40259d6bae4053e91bf2bbb21b5e5a1028ae60a712d39b59695a68` |
-| `collateral_v5` (pool 1)   | `c9450bfc1cc5fe4b6bf5aa5a4c1bd347aa2ac38c455f8a2ebdb1e9dc` |
+| `pool_nft` (pool 1, lends ADA) | `1c00069bd09cb3e6a5d32f5a8e7b852144a8004ede70963e14c20b1a` |
+| `lending_pool_v5` (pool 1) | `9a81be8900f34a86e80c1a7f6345abe5bd86f60b4700a047e513a3b0` |
+| `collateral_v5` (pool 1)   | `388d33810aee0ba246179fd2d970f76a790f72f771159e0c5301698a` |
 
 Pool 2 (lends the USD test token) and all addresses: `packages/protocol/deployments/`
 and [`../docs/MILESTONE3.md`](../docs/MILESTONE3.md) §4.
