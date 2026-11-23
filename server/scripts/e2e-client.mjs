@@ -18,7 +18,7 @@ import * as snarkjs from "snarkjs";
 import * as ff from "ffjavascript";
 import {
   computeCommitment, compressProof, appendInput, borrowInput, repayInput, settlementInput,
-  computeRepayNullifier, COLLATERAL_DENOMINATION, computeLenderCommitment, lenderWithdrawInput,
+  computeRepayNullifier, computeLenderCommitment, lenderWithdrawInput,
 } from "@zk-defi/protocol/crypto";
 import { paymentKeyHash } from "@zk-defi/protocol/plutus";
 import { deriveScripts } from "@zk-defi/protocol/scripts";
@@ -106,7 +106,7 @@ await ensureCollateral(A);
 await ensureCollateral(B);
 let s = await state();
 const secret = BigInt("0x" + Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("hex"));
-const commitment = computeCommitment(COLLATERAL_DENOMINATION, secret);
+const commitment = computeCommitment(secret);
 const ap = appendInput({ leavesBefore: s.leaves.commitments, leaf: commitment });
 const depTx = await buildDeposit(new MeshTxBuilder({ fetcher, evaluator }), {
   S, deployment, pool: s.pool, commitment, newGroupRoot: ap.newRoot, unlockTo: A1.address, payer: await A.payer(),
@@ -119,14 +119,14 @@ s = await until((x) => x.leaves.commitments.includes(commitment), "deposit index
 // 2. borrow — proof to the relayer, loan to account B
 const b = borrowInput({
   commitments: s.leaves.commitments, index: s.leaves.commitments.indexOf(commitment), secret,
-  ratio: s.pool.datum.collateral_ratio, recipientPkh: paymentKeyHash(B.address),
+  recipientPkh: paymentKeyHash(B.address),
 });
 const bp = await prove("borrow", b.input);
 log("borrow relayed", (await api("POST", "/api/relay/borrow", { ...bp, recipient: B.address })).txHash);
 s = await until((x) => x.pool.datum.open_loans.includes(b.nullifier), "borrow indexed");
 
 // 3. repay — account B signs; built without a fetcher
-const r = repayInput({ commitments: s.leaves.commitments, index: s.leaves.commitments.indexOf(commitment), secret, ratio: s.pool.datum.collateral_ratio });
+const r = repayInput({ commitments: s.leaves.commitments, index: s.leaves.commitments.indexOf(commitment), secret });
 const ra = appendInput({ leavesBefore: s.leaves.repaid, leaf: r.R });
 const repTx = await buildRepay(new MeshTxBuilder({ fetcher, evaluator }), {
   S, deployment, pool: s.pool, nullifier: r.nullifier, R: r.R, newRepaidRoot: ra.newRoot, payer: await B.payer(),

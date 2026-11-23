@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { deserializeAddress } from "@meshsdk/core";
-import { sharePriceUp, sharePriceDown, withdrawableShares } from "@zk-defi/protocol/tx";
+import { sharePriceUp, sharePriceDown, withdrawableShares, poolBalance } from "@zk-defi/protocol/tx";
 import * as flow from "../lib/flow";
 import { downloadNote, saveNote, removeNote } from "../lib/notes";
 import { withdrawWarnings } from "../lib/position";
@@ -12,7 +12,8 @@ import Progress from "./Progress";
 import Term from "./Term";
 
 const ada = (lovelace) => (Number(lovelace) / 1e6).toLocaleString("en-US", { maximumFractionDigits: 6 });
-export const poolLovelace = (state) => BigInt(state.pool.utxo.output.amount.find((a) => a.unit === "lovelace").quantity);
+// The pool's balance of its loan asset (ADA for the preview pool).
+export const poolLovelace = (state) => poolBalance(state.pool);
 
 function Warning({ children }) {
   return <p className="rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">{children}</p>;

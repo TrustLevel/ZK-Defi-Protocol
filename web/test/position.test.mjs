@@ -14,10 +14,10 @@ const withLeaves = (patch) => ({
   leaves: { ...empty.leaves, ...patch.leaves },
 });
 
-test("a note is a fresh secret whose commitment matches the collateral unit", () => {
+test("a note is a fresh secret whose commitment is its tagged collateral leaf", () => {
   const other = createNote({ network: "preprod", policyId: "e59c", depositKeyHashes: [] });
   assert.notEqual(note.secret, other.secret);
-  assert.equal(C, computeCommitment(20_000_000n, note.secret));
+  assert.equal(C, computeCommitment(note.secret));
 });
 
 test("a note survives export and import, and a damaged one is refused", () => {

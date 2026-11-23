@@ -14,7 +14,7 @@
 import * as snarkjs from "snarkjs";
 import { pkhToInt } from "@zk-defi/protocol/crypto";
 import { paymentKeyHash, decodeDepositDatum, addressFromData } from "@zk-defi/protocol/plutus";
-import { withdrawableShares } from "@zk-defi/protocol/tx";
+import { withdrawableShares, poolBalance } from "@zk-defi/protocol/tx";
 
 export class RelayError extends Error {
   constructor(statusCode, code, message) {
@@ -47,7 +47,6 @@ function recipientKey(recipient, recipientInt) {
   if (pkhToInt(recipientPkh) !== recipientInt) throw bad("the proof is bound to a different recipient");
   return recipientPkh;
 }
-const poolLovelace = (pool) => BigInt(pool.utxo.output.amount.find((a) => a.unit === "lovelace").quantity);
 function checkProofShape(proof) {
   const point = (p, n) => Array.isArray(p) && p.length === 3 && p.flat().every((x) => typeof x === "string" && /^\d{1,120}$/.test(x)) && p.flat().length === n;
   if (!proof || !point(proof.pi_a, 3) || !point(proof.pi_b, 6) || !point(proof.pi_c, 3)) throw bad("malformed proof");
@@ -89,15 +88,15 @@ export function createRelayer({ chain, runner, vkeys, retryMs = 15_000, attempts
 
   return {
     // body: { proof, publicSignals, recipient }
-    // publicSignals: [group_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier, recipient]
+    // publicSignals: [group_root, loan_nullifier, external_nullifier, recipient]
     async borrow(body = {}) {
       const { proof, publicSignals, recipient } = body;
       checkProofShape(proof);
-      const [root, nullifier, amount, ratio, ext, recipientInt] = parseSignals(publicSignals, 6);
+      const [root, nullifier, ext, recipientInt] = parseSignals(publicSignals, 4);
       const recipientPkh = recipientKey(recipient, recipientInt);
       const { pool } = await chain.state();
       const d = pool.datum;
-      if (amount !== d.loan_denomination || ratio !== d.collateral_ratio || ext !== d.external_nullifier) {
+      if (ext !== d.external_nullifier) {
         throw bad("public signals do not match the pool parameters");
       }
       await verify(vkeys.borrow, publicSignals, proof);
@@ -148,7 +147,7 @@ export function createRelayer({ chain, runner, vkeys, retryMs = 15_000, attempts
         const { pool: live } = await chain.state({ fresh: true });
         if (live.datum.lender_root !== root) throw stale("the lender set changed; prove again against the new root");
         if (live.datum.lender_nullifiers.includes(nullifier)) throw new RelayError(409, "used", "this share was already withdrawn");
-        if (withdrawableShares(live.datum, poolLovelace(live)) < 1n) {
+        if (withdrawableShares(live.datum, poolBalance(live)) < 1n) {
           throw new RelayError(409, "no_liquidity", "not enough free liquidity for a share; wait for repayments");
         }
         return runner.withdraw({ pool: live, proof, nullifier, recipient, recipientPkh });

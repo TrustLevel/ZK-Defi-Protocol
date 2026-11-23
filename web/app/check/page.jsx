@@ -12,13 +12,13 @@ import PocNotice from "../../components/PocNotice";
 
 function inputs() {
   const secret = BigInt("0x" + Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join(""));
-  const commitment = computeCommitment(20_000_000n, secret);
+  const commitment = computeCommitment(secret);
   const commitments = [11n, 22n, commitment];
   const R = computeRepayNullifier(secret);
   return {
     append: appendInput({ leavesBefore: [11n, 22n], leaf: commitment }).input,
-    borrow: borrowInput({ commitments, index: 2, secret, ratio: 125n, recipientPkh: "ab".repeat(28) }).input,
-    repay: repayInput({ commitments, index: 2, secret, ratio: 125n }).input,
+    borrow: borrowInput({ commitments, index: 2, secret, recipientPkh: "ab".repeat(28) }).input,
+    repay: repayInput({ commitments, index: 2, secret }).input,
     settlement: settlementInput({ commitment, secret, repaid: [44n, R], index: 1 }).input,
     lender: lenderWithdrawInput({ notes: [55n, computeLenderCommitment(secret)], index: 1, secret, recipientPkh: "ab".repeat(28) }).input,
   };

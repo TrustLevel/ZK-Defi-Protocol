@@ -7,7 +7,7 @@ import * as snarkjs from "snarkjs";
 import {
   computeCommitment, computeRepayNullifier, merkleRoot, borrowInput, settlementInput,
   computeLenderCommitment, lenderWithdrawInput,
-  COLLATERAL_DENOMINATION, LOAN_DENOMINATION, EXTERNAL_NULLIFIER, REPAY_EXTERNAL_NULLIFIER, LENDER_EXTERNAL_NULLIFIER,
+  LOAN_DENOMINATION, EXTERNAL_NULLIFIER, REPAY_EXTERNAL_NULLIFIER, LENDER_EXTERNAL_NULLIFIER,
 } from "@zk-defi/protocol/crypto";
 import { depositDatum } from "@zk-defi/protocol/plutus";
 import { serializeData } from "@meshsdk/core";
@@ -26,13 +26,13 @@ const OTHER = "addr_test1qpcqxae4vhzraf58l2w4fchshumy273jgsv2vd6h42spz0trfsl4luq
 const UNLOCK_TO = "addr_test1qq7takgp3ld6fyxewja802gvtmnpx592rvvhgqepfax7suqdtluq35cwlhl6592mvgv4j0us7uvv5mye50dykeg9nz5sufh3n0";
 
 const secret = 987654321987654321n;
-const commitment = computeCommitment(COLLATERAL_DENOMINATION, secret);
+const commitment = computeCommitment(secret);
 const R = computeRepayNullifier(secret);
 const lenderSecret = 555666777888999n;
 const lenderNotes = [computeLenderCommitment(111n), computeLenderCommitment(lenderSecret)];
 const datum = {
   group_root: merkleRoot([commitment]), repaid_root: merkleRoot([R]), loan_denomination: LOAN_DENOMINATION,
-  collateral_ratio: 125n, external_nullifier: EXTERNAL_NULLIFIER, repay_external_nullifier: REPAY_EXTERNAL_NULLIFIER,
+  loan_asset: { policy_id: "", asset_name: "" }, external_nullifier: EXTERNAL_NULLIFIER, repay_external_nullifier: REPAY_EXTERNAL_NULLIFIER,
   used_nullifiers: [], open_loans: [],
   lender_root: merkleRoot(lenderNotes), lender_external_nullifier: LENDER_EXTERNAL_NULLIFIER, lender_nullifiers: [],
   total_shares: 2n, total_borrowed: 0n, liquidity_reserve: 10_000_000n, share_start_price: 10_000_000n,
@@ -67,7 +67,7 @@ after(async () => { await globalThis.curve_bls12381?.terminate(); });
 const prove = (kind, input) => snarkjs.groth16.fullProve(input,
   `${C}${kind}_js/${kind}.wasm`, `${C}keys/${kind}_final.zkey`);
 const borrowProof = await prove("collateral_semaphore",
-  borrowInput({ commitments: [commitment], index: 0, secret, ratio: 125n, recipientPkh: B_PKH }).input);
+  borrowInput({ commitments: [commitment], index: 0, secret, recipientPkh: B_PKH }).input);
 const settleProof = await prove("settlement_proof",
   settlementInput({ commitment, secret, repaid: [R], index: 0 }).input);
 const withdrawProof = await prove("lender_withdraw",
@@ -190,5 +190,15 @@ test("withdraw: refuses when the free liquidity does not cover a share", async (
   const r = runner();
   await assert.rejects(createRelayer({ chain: chainWith({ ...datum, total_borrowed: 20_000_000n }, 11_000_000n), runner: r, vkeys })
     .withdraw({ ...withdrawProof, recipient: B }), { statusCode: 409, code: "no_liquidity" });
+  assert.equal(r.calls.length, 0);
+});
+
+test("withdraw: in a token pool the free liquidity is the loan token, not the pool's ADA", async () => {
+  // 31 ADA in the pool UTxO but no loan token: nothing to pay a share with.
+  const token = { policy_id: "e1".repeat(28), asset_name: "555344" };
+  const r = runner();
+  await assert.rejects(createRelayer({
+    chain: chainWith({ ...datum, loan_asset: token, liquidity_reserve: 0n }, 31_000_000n), runner: r, vkeys,
+  }).withdraw({ ...withdrawProof, recipient: B }), { statusCode: 409, code: "no_liquidity" });
   assert.equal(r.calls.length, 0);
 });

@@ -3,17 +3,21 @@
  * Reads the pool and both trees from the chain; keeps only the user's note
  * (secret + deposit reference) locally, as the web app does in the browser.
  *
- *   node run.mjs deposit   --note <name>               signer: account A
+ *   node run.mjs deposit   --note <name> [--asset <i>] signer: account A; collateral asset i (default 0)
  *   node run.mjs borrow    --note <name> --to <addr>   signer: relayer; loan to <addr>
  *   node run.mjs repay     --note <name>               signer: account B
  *   node run.mjs unlock    --note <name>               signer: relayer
  *   node run.mjs lend      --note <name>               signer: lender (account A); buys one share
  *   node run.mjs withdraw  --note <name> --to <addr>   signer: relayer; one share to <addr>
  *   node run.mjs status   [--note <name>]
- *   node run.mjs deploy   [--reserve <ada>]            signer: deployer; parks the lender key, new pool
+ *   node run.mjs deploy    [--loan ada|<unit>] [--collateral ada:20,<unit>:500]
+ *                          [--loan-denomination <n>] [--reserve <n>] [--vkeys-from <deployment.json>]
+ *                                                       signer: deployer; parks the five keys, new pool
+ *   node run.mjs mint-token --name <ascii> --amount <n> signer: deployer; a test token (one-signature policy)
  *
  * The pool is the one in DEPLOYMENT (default packages/protocol/deployments/preprod-m4-lend.json);
- * deploy writes that file.
+ * deploy writes that file. Amounts are in the asset's base unit (lovelace for ADA),
+ * except `ada:<n>` in --collateral, which is in ADA.
  *
  * Signer: WALLET_SEED names the seed variable in the repo .env (default
  * ADMIN_WALLET_SEED), WALLET_ACCOUNT its account index. Deposit pays the
@@ -23,13 +27,13 @@
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
-import { BlockfrostProvider, MeshWallet, MeshTxBuilder } from "@meshsdk/core";
+import { BlockfrostProvider, MeshWallet, MeshTxBuilder, ForgeScript, resolveScriptHash } from "@meshsdk/core";
 import * as snarkjs from "snarkjs";
 import * as ff from "ffjavascript";
 import {
   computeCommitment, computeNullifier, computeRepayNullifier, compressProof,
   borrowInput, repayInput, settlementInput, appendInput, lenderWithdrawInput, merkleRoot,
-  computeLenderCommitment, computeLenderNullifier, COLLATERAL_DENOMINATION, LOAN_DENOMINATION,
+  computeLenderCommitment, computeLenderNullifier, LOAN_DENOMINATION,
   EXTERNAL_NULLIFIER, REPAY_EXTERNAL_NULLIFIER, LENDER_EXTERNAL_NULLIFIER, POOL_NFT_NAME_HEX,
 } from "@zk-defi/protocol/crypto";
 import { paymentKeyHash, poolDatum, vkeyDatum, R_Mint } from "@zk-defi/protocol/plutus";
@@ -37,7 +41,7 @@ import { deriveScripts } from "@zk-defi/protocol/scripts";
 import { fetchPool, fetchLeaves, checkLeaves } from "@zk-defi/protocol/chain";
 import {
   buildDeposit, buildBorrow, buildRepay, buildUnlock, buildAddLiquidity, buildWithdrawLiquidity, repayAmount,
-  sharePriceUp, sharePriceDown, withdrawableShares,
+  sharePriceUp, sharePriceDown, withdrawableShares, poolBalance, initialPoolValue, isAda, ADA,
 } from "@zk-defi/protocol/tx";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -131,7 +135,11 @@ function loadNote(name) {
   return { ...n, secret: BigInt(n.secret), commitment: BigInt(n.commitment) };
 }
 const ada = (lovelaceAmount) => (Number(lovelaceAmount) / 1e6).toFixed(6).replace(/\.?0+$/, "");
-const lovelace = (pool) => BigInt(pool.utxo.output.amount.find((a) => a.unit === "lovelace").quantity);
+// An amount of an asset for display: ADA in ADA, a token in base units with its name.
+function fmt(amount, asset) {
+  if (isAda(asset)) return `${ada(amount)} ADA`;
+  return `${amount} ${Buffer.from(asset.asset_name, "hex").toString("utf8") || asset.policy_id.slice(0, 8)}`;
+}
 const randomSecret = () => BigInt("0x" + Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString("hex"));
 function saveNote(name, note) {
   fs.mkdirSync(NOTES, { recursive: true });
@@ -146,20 +154,24 @@ function leafIndex(leaves, leaf, what) {
 
 // ── steps ────────────────────────────────────────────────────────────────────
 const step = {
-  async deposit({ note }) {
+  async deposit({ note, asset = "0" }) {
     const { wallet, payer } = await signer();
     const { pool, leaves } = await state();
+    const assetIndex = BigInt(asset);
+    const collateral = pool.datum.collateral_assets[Number(assetIndex)];
+    if (!collateral) throw new Error(`the pool accepts collateral assets 0..${pool.datum.collateral_assets.length - 1}`);
+    console.log(`depositing ${fmt(collateral.denomination, collateral)}`);
     const secret = randomSecret();
-    const commitment = computeCommitment(COLLATERAL_DENOMINATION, secret);
+    const commitment = computeCommitment(secret);
     const a = appendInput({ leavesBefore: leaves.commitments, leaf: commitment });
     const appendProof = await prove("append", a.input);
     const unlockTo = process.env.UNLOCK_TO_ADDRESS || payer.address;
     const unsigned = await buildDeposit(new MeshTxBuilder({ fetcher: provider, evaluator: provider }), {
-      S, deployment: DEPLOYMENT, pool, commitment, appendProof, newGroupRoot: a.newRoot, unlockTo, payer,
+      S, deployment: DEPLOYMENT, pool, commitment, assetIndex, appendProof, newGroupRoot: a.newRoot, unlockTo, payer,
     });
     const txHash = await submit(wallet, unsigned);
     // outputs: 0 = pool, 1 = collateral
-    saveNote(note, { secret, commitment, deposit: { txHash, outputIndex: 1 }, unlockTo });
+    saveNote(note, { secret, commitment, assetIndex, deposit: { txHash, outputIndex: 1 }, unlockTo });
     console.log(`note saved: ${notePath(note)}`);
   },
 
@@ -171,7 +183,7 @@ const step = {
     const recipientPkh = paymentKeyHash(to);
     const b = borrowInput({
       commitments: leaves.commitments, index: leafIndex(leaves.commitments, n.commitment, "deposit commitment"),
-      secret: n.secret, ratio: pool.datum.collateral_ratio, recipientPkh,
+      secret: n.secret, recipientPkh,
     });
     if (pool.datum.used_nullifiers.includes(b.nullifier)) throw new Error("this deposit already backed a loan");
     const proof = await prove("borrow", b.input);
@@ -187,13 +199,13 @@ const step = {
     const { pool, leaves } = await state();
     const r = repayInput({
       commitments: leaves.commitments, index: leafIndex(leaves.commitments, n.commitment, "deposit commitment"),
-      secret: n.secret, ratio: pool.datum.collateral_ratio,
+      secret: n.secret,
     });
     if (!pool.datum.open_loans.includes(r.nullifier)) throw new Error("no open loan for this note");
     const a = appendInput({ leavesBefore: leaves.repaid, leaf: r.R });
     const proof = await prove("repay", r.input);
     const appendProof = await prove("append", a.input);
-    console.log(`repaying ${Number(repayAmount(pool.datum)) / 1e6} ADA`);
+    console.log(`repaying ${fmt(repayAmount(pool.datum), pool.datum.loan_asset)}`);
     const unsigned = await buildRepay(new MeshTxBuilder({ fetcher: provider, evaluator: provider }), {
       S, deployment: DEPLOYMENT, pool, proof, nullifier: r.nullifier, R: r.R, appendProof, newRepaidRoot: a.newRoot, payer,
     });
@@ -226,7 +238,7 @@ const step = {
     const commitment = computeLenderCommitment(secret);
     const a = appendInput({ leavesBefore: leaves.lenders, leaf: commitment });
     const appendProof = await prove("append", a.input);
-    console.log(`buying one share for ${ada(sharePriceUp(pool.datum, lovelace(pool)))} ADA`);
+    console.log(`buying one share for ${fmt(sharePriceUp(pool.datum, poolBalance(pool)), pool.datum.loan_asset)}`);
     const unsigned = await buildAddLiquidity(new MeshTxBuilder({ fetcher: provider, evaluator: provider }), {
       S, deployment: DEPLOYMENT, pool, commitment, appendProof, newLenderRoot: a.newRoot, payer,
     });
@@ -247,7 +259,7 @@ const step = {
     });
     if (pool.datum.lender_nullifiers.includes(w.nullifier)) throw new Error("this share was already withdrawn");
     const proof = await prove("lender", w.input);
-    console.log(`withdrawing one share for ${ada(sharePriceDown(pool.datum, lovelace(pool)))} ADA`);
+    console.log(`withdrawing one share for ${fmt(sharePriceDown(pool.datum, poolBalance(pool)), pool.datum.loan_asset)}`);
     const unsigned = await buildWithdrawLiquidity(new MeshTxBuilder({ fetcher: provider, evaluator: provider }), {
       S, deployment: DEPLOYMENT, pool, proof, nullifier: w.nullifier, recipient: to, recipientPkh, payer,
     });
@@ -256,11 +268,12 @@ const step = {
 
   async status({ note }) {
     const { pool, leaves } = await state();
-    const d = pool.datum, bal = lovelace(pool);
-    console.log(`pool ${ada(bal)} ADA (reserve ${ada(d.liquidity_reserve)}), ${ada(d.total_borrowed)} borrowed`
+    const d = pool.datum, bal = poolBalance(pool), L = d.loan_asset;
+    console.log(`pool ${fmt(bal, L)} (reserve ${fmt(d.liquidity_reserve, L)}), ${fmt(d.total_borrowed, L)} borrowed`
       + ` | collateral ${leaves.commitments.length} | open loans ${d.open_loans.length} | repaid ${leaves.repaid.length}`
-      + ` | shares ${d.total_shares}, buy ${ada(sharePriceUp(d, bal))}, payout ${ada(sharePriceDown(d, bal))},`
+      + ` | shares ${d.total_shares}, buy ${fmt(sharePriceUp(d, bal), L)}, payout ${fmt(sharePriceDown(d, bal), L)},`
       + ` withdrawable now ${withdrawableShares(d, bal)}`);
+    console.log(`accepted collateral: ${d.collateral_assets.map((c, i) => `[${i}] ${fmt(c.denomination, c)}`).join(", ")}`);
     if (!note) return;
     const n = loadNote(note);
     if (n.kind === "lender") {
@@ -279,29 +292,56 @@ const step = {
   },
 };
 
-// ── deploy: park the lender withdraw key, then a new pool ───────────────────
-// Reuses the parked M3 keys (borrow, settlement, append, repay); the lender
-// withdraw key is parked at the same unspendable address.
-const M4 = read(path.join(ROOT, "packages/protocol/deployments/preprod-m4.json"));
-step.deploy = async ({ reserve = "10" }) => {
-  if (DEPLOYMENT) throw new Error(`${DEPLOYMENT_PATH} exists; set DEPLOYMENT to a new path`);
-  const { wallet, payer } = await signer();
+// ── deploy: park the five verification keys, then a new pool ──────────────
+// The keys go to the unspendable (always-false) address the earlier
+// deployments use. --vkeys-from reuses the keys of another deployment.
+const PARK_ADDRESS = read(path.join(ROOT, "packages/protocol/deployments/preprod-m4.json")).vkeyParkAddress;
+const VKEY_FILES = ["semaphore", "settlement", "append", "repay", "lender_withdraw"]; // output order 0..4
+
+// "ada" or a Mesh unit (policy id + asset name hex) -> { policy_id, asset_name }
+function parseAsset(spec) {
+  if (spec === "ada") return ADA;
+  if (!/^[0-9a-f]{56}([0-9a-f]{2}){0,32}$/.test(spec)) throw new Error(`bad asset ${spec}`);
+  return { policy_id: spec.slice(0, 56), asset_name: spec.slice(56) };
+}
+// "ada:20,<unit>:500" -> accepted collateral assets (ada in ADA, tokens in base units)
+function parseCollateral(spec) {
+  return spec.split(",").map((part) => {
+    const [a, n] = part.split(":");
+    const asset = parseAsset(a);
+    const denomination = isAda(asset) ? BigInt(Math.round(Number(n) * 1e6)) : BigInt(n);
+    return { ...asset, denomination };
+  });
+}
+
+async function parkVkeys(wallet, payer) {
   const curve = await ff.getCurveFromName("bls12381");
-  let lenderVkey;
+  let txb = new MeshTxBuilder({ fetcher: provider, evaluator: provider }).setNetwork("preprod");
   try {
-    lenderVkey = vkeyDatum(curve, read(path.join(ROOT, "circuits/keys/verification_key_lender_withdraw.json")));
+    for (const name of VKEY_FILES) {
+      txb = txb.txOut(PARK_ADDRESS, [{ unit: "lovelace", quantity: "5000000" }])
+        .txOutInlineDatumValue(vkeyDatum(curve, read(path.join(ROOT, `circuits/keys/verification_key_${name}.json`))), "JSON");
+    }
   } finally {
     await curve.terminate();
   }
-  const park = await new MeshTxBuilder({ fetcher: provider, evaluator: provider })
-    .setNetwork("preprod")
-    .txOut(M4.vkeyParkAddress, [{ unit: "lovelace", quantity: "5000000" }])
-    .txOutInlineDatumValue(lenderVkey, "JSON")
-    .changeAddress(payer.address)
-    .selectUtxosFrom(payer.utxos)
-    .complete();
-  const parkTx = await submit(wallet, park);
-  const vkeys = { ...M4.vkeys, lender: { txHash: parkTx, index: 0 } };
+  const parkTx = await submit(wallet, await txb.changeAddress(payer.address).selectUtxosFrom(payer.utxos).complete());
+  return { txHash: parkTx, borrowIdx: 0, settlementIdx: 1, appendIdx: 2, repayIdx: 3, lender: { txHash: parkTx, index: 4 } };
+}
+
+step.deploy = async ({
+  loan = "ada", collateral = "ada:20", "loan-denomination": loanDenomination = String(LOAN_DENOMINATION),
+  reserve, "vkeys-from": vkeysFrom,
+}) => {
+  if (DEPLOYMENT) throw new Error(`${DEPLOYMENT_PATH} exists; set DEPLOYMENT to a new path`);
+  const loanAsset = parseAsset(loan);
+  const collateralAssets = parseCollateral(collateral);
+  const loanDenom = BigInt(loanDenomination);
+  // An ADA pool keeps 10 ADA as reserve (its min UTxO); a token pool's ADA is not
+  // the loan asset and never moves, so its reserve is 0.
+  const reserveAmount = BigInt(reserve ?? (isAda(loanAsset) ? "10000000" : "0"));
+  const { wallet, payer } = await signer();
+  const vkeys = vkeysFrom ? read(path.resolve(vkeysFrom)).vkeys : await parkVkeys(wallet, payer);
 
   // Seed (one-shot NFT) and script collateral: two distinct pure-ADA UTxOs.
   const utxos = await provider.fetchAddressUTxOs(payer.address);
@@ -310,17 +350,16 @@ step.deploy = async ({ reserve = "10" }) => {
   const [seedUtxo, collUtxo] = pure;
   const seed = { txHash: seedUtxo.input.txHash, outputIndex: seedUtxo.input.outputIndex };
   const scripts = deriveScripts(BLUEPRINT, seed, vkeys);
-  const reserveLovelace = BigInt(Math.round(Number(reserve) * 1e6));
   const empty = merkleRoot([]);
   const state0 = {
-    total_deposited: 0n, total_borrowed: 0n, interest_rate: 500n, collateral_ratio: 125n,
+    total_deposited: 0n, total_borrowed: 0n, interest_rate: 500n,
     group_root: empty, group_next_index: 0n, repaid_root: empty, next_index: 0n,
     external_nullifier: EXTERNAL_NULLIFIER, repay_external_nullifier: REPAY_EXTERNAL_NULLIFIER,
-    collateral_denomination: COLLATERAL_DENOMINATION, loan_denomination: LOAN_DENOMINATION,
+    loan_asset: loanAsset, collateral_assets: collateralAssets, loan_denomination: loanDenom,
     open_loans: [], used_nullifiers: [], last_updated: BigInt(Date.now()),
     lender_root: empty, lender_next_index: 0n, total_shares: 0n, lender_nullifiers: [],
-    lender_external_nullifier: LENDER_EXTERNAL_NULLIFIER, share_start_price: LOAN_DENOMINATION,
-    liquidity_reserve: reserveLovelace,
+    lender_external_nullifier: LENDER_EXTERNAL_NULLIFIER, share_start_price: loanDenom,
+    liquidity_reserve: reserveAmount,
   };
   const same = (u, v) => u.input.txHash === v.input.txHash && u.input.outputIndex === v.input.outputIndex;
   const init = await new MeshTxBuilder({ fetcher: provider, evaluator: provider })
@@ -330,10 +369,7 @@ step.deploy = async ({ reserve = "10" }) => {
     .mint("1", scripts.POLICY_ID, POOL_NFT_NAME_HEX)
     .mintingScript(scripts.NFT_CBOR)
     .mintRedeemerValue(R_Mint, "JSON")
-    .txOut(scripts.POOL_ADDRESS, [
-      { unit: "lovelace", quantity: String(reserveLovelace) },
-      { unit: scripts.POOL_NFT_UNIT, quantity: "1" },
-    ])
+    .txOut(scripts.POOL_ADDRESS, initialPoolValue(scripts, loanAsset, reserveAmount))
     .txOutInlineDatumValue(poolDatum(state0), "JSON")
     .txInCollateral(collUtxo.input.txHash, collUtxo.input.outputIndex, collUtxo.output.amount, payer.address)
     .changeAddress(payer.address)
@@ -342,8 +378,9 @@ step.deploy = async ({ reserve = "10" }) => {
   const initTx = await submit(wallet, init);
   const deployment = {
     network: "preprod",
-    description: `M4 pool with the lender side (private shares). Created by offchain/cli/m4/run.mjs deploy on ${new Date().toISOString().slice(0, 10)}.`,
-    seed, vkeys, vkeyParkAddress: M4.vkeyParkAddress, lenderVkeyTx: parkTx, initTx,
+    description: `Pool lending ${loan}, collateral ${collateral}. Created by offchain/cli/m4/run.mjs deploy on ${new Date().toISOString().slice(0, 10)}.`,
+    seed, vkeys, vkeyParkAddress: PARK_ADDRESS, initTx,
+    loanAsset, collateralAssets: collateralAssets.map((c) => ({ ...c, denomination: String(c.denomination) })),
     policyId: scripts.POLICY_ID, poolHash: scripts.POOL_HASH, poolAddress: scripts.POOL_ADDRESS,
     collateralHash: scripts.COLLATERAL_HASH, collateralAddress: scripts.COLLATERAL_ADDRESS,
   };
@@ -351,14 +388,33 @@ step.deploy = async ({ reserve = "10" }) => {
   console.log(`deployment written: ${DEPLOYMENT_PATH}`);
 };
 
+// ── mint-token: a test token under a one-signature policy of the signer ─────
+step["mint-token"] = async ({ name, amount }) => {
+  if (!name || !amount) throw new Error("--name <ascii> --amount <n>");
+  const { wallet, payer } = await signer();
+  const forgingScript = ForgeScript.withOneSignature(payer.address);
+  const policyId = resolveScriptHash(forgingScript);
+  const nameHex = Buffer.from(name, "utf8").toString("hex");
+  const unsigned = await new MeshTxBuilder({ fetcher: provider })
+    .setNetwork("preprod")
+    .mint(String(amount), policyId, nameHex)
+    .mintingScript(forgingScript)
+    .txOut(payer.address, [{ unit: "lovelace", quantity: "2000000" }, { unit: policyId + nameHex, quantity: String(amount) }])
+    .changeAddress(payer.address)
+    .selectUtxosFrom(payer.utxos)
+    .complete();
+  await submit(wallet, unsigned);
+  console.log(`minted ${amount} ${name}: unit ${policyId + nameHex}`);
+};
+
 // ── main ─────────────────────────────────────────────────────────────────────
 const [cmd, ...rest] = process.argv.slice(2);
 const args = {};
 for (let i = 0; i < rest.length; i += 2) args[rest[i].replace(/^--/, "")] = rest[i + 1];
 if (!step[cmd]) {
-  console.error("usage: node run.mjs <deposit|borrow|repay|unlock|lend|withdraw|status|deploy> [--note name] [--to addr] [--reserve ada]");
+  console.error("usage: node run.mjs <deposit|borrow|repay|unlock|lend|withdraw|status|deploy|mint-token> [--note name] [--to addr] [--asset i] (see the header for deploy and mint-token)");
   process.exit(1);
 }
-if (cmd !== "deploy" && !DEPLOYMENT) throw new Error(`no deployment at ${DEPLOYMENT_PATH}; run deploy first`);
+if (cmd !== "deploy" && cmd !== "mint-token" && !DEPLOYMENT) throw new Error(`no deployment at ${DEPLOYMENT_PATH}; run deploy first`);
 await step[cmd](args);
 process.exit(0);

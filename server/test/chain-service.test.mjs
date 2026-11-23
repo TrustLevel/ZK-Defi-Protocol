@@ -45,8 +45,9 @@ test("an unlock appears in the feed although the pool did not move", async () =>
   const empty = merkleRoot([]);
   const z = 0n;
   const datum = serializeData(poolDatum({
-    total_deposited: z, total_borrowed: z, interest_rate: z, collateral_ratio: z, group_root: empty, group_next_index: z,
-    repaid_root: empty, next_index: z, external_nullifier: z, repay_external_nullifier: z, collateral_denomination: z,
+    total_deposited: z, total_borrowed: z, interest_rate: z, group_root: empty, group_next_index: z,
+    repaid_root: empty, next_index: z, external_nullifier: z, repay_external_nullifier: z,
+    loan_asset: { policy_id: "", asset_name: "" }, collateral_assets: [],
     loan_denomination: z, last_updated: z, lender_root: empty, lender_next_index: z, total_shares: z,
     lender_external_nullifier: z, share_start_price: z, liquidity_reserve: z,
   }), "JSON");

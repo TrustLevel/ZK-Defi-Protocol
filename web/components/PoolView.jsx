@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { getState } from "../lib/api";
+import { poolBalance } from "@zk-defi/protocol/tx";
 import Term from "./Term";
 
+const hexText = (hex) => new TextDecoder().decode(Uint8Array.from(hex.match(/../g) || [], (b) => parseInt(b, 16)));
 const ada = (lovelace) => (Number(lovelace) / 1e6).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
 function Stat({ label, value, hint }) {
@@ -90,8 +92,8 @@ export default function PoolView() {
   if (!state) return <p className="text-muted">Reading the pool from the chain…</p>;
 
   const d = state.pool.datum;
-  const lovelace = state.pool.utxo.output.amount.find((a) => a.unit === "lovelace").quantity;
-  const free = BigInt(lovelace) - d.liquidity_reserve;
+  const free = poolBalance(state.pool) - d.liquidity_reserve;
+  const collateralUnit = d.collateral_assets.map((c) => (c.policy_id === "" ? `${ada(c.denomination)} ADA` : `${c.denomination} ${hexText(c.asset_name)}`)).join(" or ");
   const utilization = free + d.total_borrowed > 0n ? Number((d.total_borrowed * 10000n) / (free + d.total_borrowed)) / 100 : 0;
 
   return (
@@ -103,7 +105,7 @@ export default function PoolView() {
         <Stat label="Open loans" value={d.open_loans.length} />
       </div>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Stat label={<Term id="fixedAmounts">Collateral unit</Term>} value={`${ada(d.collateral_denomination)} ADA`} hint="every collateral has this size" />
+        <Stat label={<Term id="fixedAmounts">Collateral unit</Term>} value={collateralUnit} hint="every collateral of an asset has this size" />
         <Stat label={<Term id="fixedAmounts">Loan unit</Term>} value={`${ada(d.loan_denomination)} ADA`} hint="every loan has this size" />
         <Stat label={<Term id="collateral">Locked collateral</Term>} value={state.deposits.size} hint="borrowers' own security, not pool funds" />
       </div>

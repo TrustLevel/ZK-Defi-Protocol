@@ -44,9 +44,11 @@ test("withdrawable shares never exceed the shares outstanding", () => {
 });
 
 const datum = {
-  total_deposited: 20_500_000n, total_borrowed: 0n, interest_rate: 500n, collateral_ratio: 125n,
+  total_deposited: 20_500_000n, total_borrowed: 0n, interest_rate: 500n,
   group_root: 11n, group_next_index: 1n, repaid_root: 12n, next_index: 1n, external_nullifier: 7777n,
-  repay_external_nullifier: 8888n, collateral_denomination: 20_000_000n, loan_denomination: 10_000_000n,
+  repay_external_nullifier: 8888n, loan_asset: { policy_id: "", asset_name: "" },
+  collateral_assets: [{ policy_id: "", asset_name: "", denomination: 20_000_000n }],
+  loan_denomination: 10_000_000n,
   open_loans: [], used_nullifiers: [13n], last_updated: 1700000000000n,
   lender_root: 14n, lender_next_index: 2n, total_shares: 1n, lender_nullifiers: [15n],
   lender_external_nullifier: 9999n, share_start_price: 10_000_000n, liquidity_reserve: reserve,
@@ -63,7 +65,7 @@ test("lender redeemers round-trip and borrower redeemers keep their constructors
     { type: "AddLiquidity", commitment: 16n, appendProof: proof });
   assert.deepEqual(decodePoolRedeemer(cbor(R_WithdrawLiquidity(proof, 17n, "cd".repeat(28)))),
     { type: "WithdrawLiquidity", proof, withdrawNullifier: 17n, recipient: "cd".repeat(28) });
-  assert.equal(decodePoolRedeemer(cbor(R_DepositCollateral(1n, proof))).type, "DepositCollateral");
-  assert.equal(decodePoolRedeemer(cbor(R_Borrow(proof, 1n, 2n, "be".repeat(28)))).type, "BorrowAnonymous");
-  assert.equal(decodePoolRedeemer(cbor(R_Repay(proof, 1n, 2n, 3n, proof))).type, "RepayAnonymous");
+  assert.equal(decodePoolRedeemer(cbor(R_DepositCollateral(1n, 0n, proof))).type, "DepositCollateral");
+  assert.equal(decodePoolRedeemer(cbor(R_Borrow(proof, 2n, "be".repeat(28)))).type, "BorrowAnonymous");
+  assert.equal(decodePoolRedeemer(cbor(R_Repay(proof, 2n, 3n, proof))).type, "RepayAnonymous");
 });

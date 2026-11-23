@@ -110,7 +110,7 @@ export async function borrow(on, note, recipient) {
     const state = await getState();
     const b = borrowInput({
       commitments: state.leaves.commitments, index: state.leaves.commitments.indexOf(note.commitment),
-      secret: note.secret, ratio: state.pool.datum.collateral_ratio, recipientPkh,
+      secret: note.secret, recipientPkh,
     });
     nullifier = b.nullifier;
     const { proof, publicSignals } = await proveStep(on, "borrow", b.input);
@@ -128,7 +128,7 @@ export async function repay(on, account, note) {
   await withRetry(on, async () => {
     const state = await getState();
     const index = state.leaves.commitments.indexOf(note.commitment);
-    const r = repayInput({ commitments: state.leaves.commitments, index, secret: note.secret, ratio: state.pool.datum.collateral_ratio });
+    const r = repayInput({ commitments: state.leaves.commitments, index, secret: note.secret });
     const a = appendInput({ leavesBefore: state.leaves.repaid, leaf: R });
     const { compressed: proof } = await proveStep(on, "repay", r.input);
     const { compressed: appendProof } = await proveStep(on, "append", a.input);

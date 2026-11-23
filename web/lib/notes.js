@@ -4,7 +4,7 @@
 // pool share: whoever holds it can withdraw the share. Whoever loses a note loses
 // what it stands for. Notes are kept in this browser (localStorage) and exported
 // as a file; they are never sent to the backend.
-import { computeCommitment, computeLenderCommitment, COLLATERAL_DENOMINATION } from "@zk-defi/protocol/crypto";
+import { computeCommitment, computeLenderCommitment } from "@zk-defi/protocol/crypto";
 
 const VERSION = 1;
 
@@ -20,8 +20,8 @@ export function createNote({ network, policyId, depositKeyHashes = [] }) {
   const secret = randomSecret();
   return {
     version: VERSION, kind: "collateral", network, policyId,
-    id: computeCommitment(COLLATERAL_DENOMINATION, secret).toString(16).slice(0, 12),
-    secret, commitment: computeCommitment(COLLATERAL_DENOMINATION, secret),
+    id: computeCommitment(secret).toString(16).slice(0, 12),
+    secret, commitment: computeCommitment(secret),
     deposit: null, depositKeyHashes, createdAt: new Date().toISOString(),
   };
 }
@@ -39,7 +39,7 @@ export function createLenderNote({ network, policyId, addKeyHashes = [] }) {
 
 const kindOf = (note) => note.kind ?? "collateral";
 const commitmentOf = (note) =>
-  (kindOf(note) === "lender" ? computeLenderCommitment(note.secret) : computeCommitment(COLLATERAL_DENOMINATION, note.secret));
+  (kindOf(note) === "lender" ? computeLenderCommitment(note.secret) : computeCommitment(note.secret));
 export const notesOfKind = (notes, kind) => notes.filter((n) => kindOf(n) === kind);
 
 export function serializeNote(note) {
