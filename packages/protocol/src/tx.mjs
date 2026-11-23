@@ -127,13 +127,20 @@ export function withdrawableShares(datum, balance) {
   return byLiquidity < datum.total_shares ? byLiquidity : datum.total_shares;
 }
 
-function spendPool(txb, S, pool, redeemer, network) {
+// The script of a spend: the on-chain reference script when the deployment
+// published one (deployment.refScripts), else inline.
+function withScript(txb, deployment, which, cbor, hash) {
+  const ref = deployment.refScripts?.[which];
+  if (ref) return txb.spendingTxInReference(ref.txHash, ref.index, String(cbor.length / 2), hash);
+  return txb.txInScript(cbor);
+}
+function spendPool(txb, S, deployment, pool, redeemer, network) {
   const { input, output } = pool.utxo;
-  return txb
+  txb
     .setNetwork(network)
     .spendingPlutusScriptV3()
-    .txIn(input.txHash, input.outputIndex, output.amount, S.POOL_ADDRESS)
-    .txInScript(S.POOL_CBOR)
+    .txIn(input.txHash, input.outputIndex, output.amount, S.POOL_ADDRESS);
+  return withScript(txb, deployment, "pool", S.POOL_CBOR, S.POOL_HASH)
     .txInInlineDatumPresent()
     .txInRedeemerValue(redeemer, "JSON");
 }
@@ -154,7 +161,7 @@ export function buildDeposit(txb, { S, deployment, pool, commitment, assetIndex 
   const collateral = d.collateral_assets[Number(assetIndex)];
   if (!collateral) throw new Error(`no accepted collateral asset at index ${assetIndex}`);
   const cont = { ...d, group_root: newGroupRoot, group_next_index: d.group_next_index + 1n, last_updated: now };
-  spendPool(txb, S, pool, R_DepositCollateral(commitment, assetIndex, appendProof), network)
+  spendPool(txb, S, deployment, pool, R_DepositCollateral(commitment, assetIndex, appendProof), network)
     .readOnlyTxInReference(deployment.vkeys.txHash, deployment.vkeys.appendIdx)
     .txOut(S.POOL_ADDRESS, poolValueMoved(pool, 0n))
     .txOutInlineDatumValue(poolDatum(cont), "JSON")
@@ -164,15 +171,13 @@ export function buildDeposit(txb, { S, deployment, pool, commitment, assetIndex 
 }
 
 // Borrow: loan_denomination to the recipient key the proof is bound to, tagged
-// with the loan nullifier; the nullifier enters open_loans and used_nullifiers.
-export function buildBorrow(txb, { S, deployment, pool, proof, nullifier, recipient, recipientPkh, payer, now = Date.now(), network = "preprod" }) {
+// with the loan nullifier; the nullifier enters the loans set as open
+// (loansProof / newLoansRoot from mpf.buildSets(...).borrow).
+export function buildBorrow(txb, { S, deployment, pool, proof, nullifier, recipient, recipientPkh, loansProof, newLoansRoot, payer, now = Date.now(), network = "preprod" }) {
   const d = pool.datum;
   const loan = d.loan_denomination;
-  const cont = {
-    ...d, total_borrowed: d.total_borrowed + loan,
-    open_loans: [nullifier, ...d.open_loans], used_nullifiers: [nullifier, ...d.used_nullifiers], last_updated: now,
-  };
-  spendPool(txb, S, pool, R_Borrow(proof, nullifier, recipientPkh), network)
+  const cont = { ...d, total_borrowed: d.total_borrowed + loan, loans: newLoansRoot, last_updated: now };
+  spendPool(txb, S, deployment, pool, R_Borrow(proof, nullifier, recipientPkh, loansProof), network)
     .readOnlyTxInReference(deployment.vkeys.txHash, deployment.vkeys.borrowIdx)
     .txOut(S.POOL_ADDRESS, poolValueMoved(pool, -loan))
     .txOutInlineDatumValue(poolDatum(cont), "JSON")
@@ -181,17 +186,17 @@ export function buildBorrow(txb, { S, deployment, pool, proof, nullifier, recipi
   return payWith(txb, payer);
 }
 
-// Repay: principal + interest into the pool, the loan leaves open_loans, and
-// the append proof inserts R into repaid_root (newRepaidRoot).
-export function buildRepay(txb, { S, deployment, pool, proof, nullifier, R, appendProof, newRepaidRoot, payer, now = Date.now(), network = "preprod" }) {
+// Repay: principal + interest into the pool, the loan is marked settled in the
+// loans set (loansProof / newLoansRoot from mpf.buildSets(...).repay), and the
+// append proof inserts R into repaid_root (newRepaidRoot).
+export function buildRepay(txb, { S, deployment, pool, proof, nullifier, R, appendProof, newRepaidRoot, loansProof, newLoansRoot, payer, now = Date.now(), network = "preprod" }) {
   const d = pool.datum;
   const due = repayAmount(d);
   const cont = {
-    ...d, total_borrowed: d.total_borrowed - d.loan_denomination,
-    open_loans: d.open_loans.filter((n) => n !== BigInt(nullifier)),
+    ...d, total_borrowed: d.total_borrowed - d.loan_denomination, loans: newLoansRoot,
     repaid_root: newRepaidRoot, next_index: d.next_index + 1n, last_updated: now,
   };
-  spendPool(txb, S, pool, R_Repay(proof, nullifier, R, appendProof), network)
+  spendPool(txb, S, deployment, pool, R_Repay(proof, nullifier, R, appendProof, loansProof), network)
     .readOnlyTxInReference(deployment.vkeys.txHash, deployment.vkeys.repayIdx)
     .readOnlyTxInReference(deployment.vkeys.txHash, deployment.vkeys.appendIdx)
     .txOut(S.POOL_ADDRESS, poolValueMoved(pool, due))
@@ -207,8 +212,8 @@ export function buildUnlock(txb, { S, deployment, pool, deposit, unlockTo, proof
   txb
     .setNetwork(network)
     .spendingPlutusScriptV3()
-    .txIn(input.txHash, input.outputIndex, output.amount, S.COLLATERAL_ADDRESS)
-    .txInScript(S.COLLATERAL_CBOR)
+    .txIn(input.txHash, input.outputIndex, output.amount, S.COLLATERAL_ADDRESS);
+  withScript(txb, deployment, "collateral", S.COLLATERAL_CBOR, S.COLLATERAL_HASH)
     .txInInlineDatumPresent()
     .txInRedeemerValue(R_Unlock(proof, pool.utxo.input.txHash, pool.utxo.input.outputIndex), "JSON")
     .readOnlyTxInReference(pool.utxo.input.txHash, pool.utxo.input.outputIndex)
@@ -227,7 +232,7 @@ export function buildAddLiquidity(txb, { S, deployment, pool, commitment, append
     ...d, total_deposited: d.total_deposited + price, total_shares: d.total_shares + 1n,
     lender_root: newLenderRoot, lender_next_index: d.lender_next_index + 1n, last_updated: now,
   };
-  spendPool(txb, S, pool, R_AddLiquidity(commitment, appendProof), network)
+  spendPool(txb, S, deployment, pool, R_AddLiquidity(commitment, appendProof), network)
     .readOnlyTxInReference(deployment.vkeys.txHash, deployment.vkeys.appendIdx)
     .txOut(S.POOL_ADDRESS, poolValueMoved(pool, price))
     .txOutInlineDatumValue(poolDatum(cont), "JSON");
@@ -236,17 +241,15 @@ export function buildAddLiquidity(txb, { S, deployment, pool, commitment, append
 
 // WithdrawLiquidity: one share out at the current price (rounded down) to the
 // recipient key the proof is bound to, tagged with the withdraw nullifier W,
-// which enters lender_nullifiers. Submitted by the relayer.
-export function buildWithdrawLiquidity(txb, { S, deployment, pool, proof, nullifier, recipient, recipientPkh, payer, now = Date.now(), network = "preprod" }) {
+// which enters the withdrawn set (withdrawnProof / newWithdrawnRoot from
+// mpf.buildSets(...).withdraw). Submitted by the relayer.
+export function buildWithdrawLiquidity(txb, { S, deployment, pool, proof, nullifier, recipient, recipientPkh, withdrawnProof, newWithdrawnRoot, payer, now = Date.now(), network = "preprod" }) {
   const d = pool.datum;
   const bal = poolBalance(pool);
   const price = sharePriceDown(d, bal);
   if (price === 0n || price > freeLiquidity(d, bal)) throw new Error("not enough free liquidity for a share");
-  const cont = {
-    ...d, total_shares: d.total_shares - 1n,
-    lender_nullifiers: [BigInt(nullifier), ...d.lender_nullifiers], last_updated: now,
-  };
-  spendPool(txb, S, pool, R_WithdrawLiquidity(proof, nullifier, recipientPkh), network)
+  const cont = { ...d, total_shares: d.total_shares - 1n, withdrawn: newWithdrawnRoot, last_updated: now };
+  spendPool(txb, S, deployment, pool, R_WithdrawLiquidity(proof, nullifier, recipientPkh, withdrawnProof), network)
     .readOnlyTxInReference(deployment.vkeys.lender.txHash, deployment.vkeys.lender.index)
     .txOut(S.POOL_ADDRESS, poolValueMoved(pool, -price))
     .txOutInlineDatumValue(poolDatum(cont), "JSON")

@@ -2,7 +2,7 @@
   "name": "@zk-defi/protocol",
   "version": "0.1.0",
   "private": true,
-  "description": "Protocol logic shared by the CLI and the web app: Poseidon255 commitments and Merkle trees, nullifiers, BLS12-381 point compression, proof inputs, Plutus data and transaction builders.",
+  "description": "Protocol logic shared by the CLI and the web app: Poseidon255 commitments and Merkle trees, nullifiers, BLS12-381 point compression, proof inputs, Plutus data, nullifier sets (MPF) and transaction builders.",
   "type": "module",
   "exports": {
     "./crypto": "./src/crypto.mjs",
@@ -11,13 +11,17 @@
     "./deployments/preprod-m4.json": "./deployments/preprod-m4.json",
     "./deployments/preprod-m4-lend.json": "./deployments/preprod-m4-lend.json",
     "./tx": "./src/tx.mjs",
-    "./chain": "./src/chain.mjs"
+    "./chain": "./src/chain.mjs",
+    "./mpf": "./src/mpf.mjs",
+    "./deployments/preprod-m3-ada.json": "./deployments/preprod-m3-ada.json",
+    "./deployments/preprod-m3-usd.json": "./deployments/preprod-m3-usd.json"
   },
   "scripts": {
     "test": "node --test",
     "test:live": "node --env-file=../../.env --test"
   },
   "dependencies": {
+    "@aiken-lang/merkle-patricia-forestry": "1.3.1",
     "@meshsdk/core": "^1.9.1",
     "ffjavascript": "^0.2.63",
     "poseidon-bls12381": "^1.0.2"

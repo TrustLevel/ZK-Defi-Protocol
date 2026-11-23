@@ -6,6 +6,7 @@
  * web app never builds a proof against a stale tree.
  */
 import { fetchPool, poolHistory, poolRedeemerOf, checkLeaves } from "@zk-defi/protocol/chain";
+import { buildSets } from "@zk-defi/protocol/mpf";
 
 export class IndexLagError extends Error {
   constructor() {
@@ -29,7 +30,7 @@ function activityOf(t, r) {
 export function createChainService({ provider, bf, S, maxAgeMs = 10_000, feedSize = 30 }) {
   const seen = new Set(); // pool transactions (they define the leaves)
   const seenAtCollateral = new Set(); // transactions at the collateral address
-  let leaves = { commitments: [], repaid: [], lenders: [] };
+  let leaves = { commitments: [], repaid: [], lenders: [], events: [] };
   let activity = [];
   let snapshot = null;
   let inflight = null;
@@ -39,8 +40,13 @@ export function createChainService({ provider, bf, S, maxAgeMs = 10_000, feedSiz
       if (seen.has(t.tx_hash)) continue;
       const r = await poolRedeemerOf(bf, S, t.tx_hash);
       if (r?.type === "DepositCollateral") leaves.commitments.push(r.commitment);
-      if (r?.type === "RepayAnonymous") leaves.repaid.push(r.repayNullifier);
+      if (r?.type === "RepayAnonymous") {
+        leaves.repaid.push(r.repayNullifier);
+        leaves.events.push({ type: "repay", nullifier: r.loanNullifier });
+      }
       if (r?.type === "AddLiquidity") leaves.lenders.push(r.commitment);
+      if (r?.type === "BorrowAnonymous") leaves.events.push({ type: "borrow", nullifier: r.loanNullifier });
+      if (r?.type === "WithdrawLiquidity") leaves.events.push({ type: "withdraw", nullifier: r.withdrawNullifier });
       const a = activityOf(t, r);
       if (a) activity.push(a);
       seen.add(t.tx_hash);
@@ -73,15 +79,20 @@ export function createChainService({ provider, bf, S, maxAgeMs = 10_000, feedSiz
     // An unlock leaves the pool where it is, so a changed deposit set also
     // means new activity.
     if (snapshot?.ref !== ref || snapshot.deposits.join() !== deposits.join()) await index();
+    const sets = await buildSets(leaves.events);
     try {
       checkLeaves(pool.datum, leaves);
+      if (pool.datum.loans !== sets.loansRoot || pool.datum.withdrawn !== sets.withdrawnRoot) throw new Error();
     } catch {
       // The pool moved further than the history Blockfrost has indexed.
       throw new IndexLagError();
     }
     snapshot = {
-      ref, pool, deposits, activity: [...activity], at: Date.now(),
-      leaves: { commitments: [...leaves.commitments], repaid: [...leaves.repaid], lenders: [...leaves.lenders] },
+      ref, pool, deposits, activity: [...activity], at: Date.now(), sets,
+      leaves: {
+        commitments: [...leaves.commitments], repaid: [...leaves.repaid], lenders: [...leaves.lenders],
+        events: [...leaves.events],
+      },
     };
     return snapshot;
   }

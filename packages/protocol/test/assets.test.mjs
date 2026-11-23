@@ -4,7 +4,7 @@
 // the deposit, borrow and repay redeemers survive an encode/decode round trip.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { serializeData } from "@meshsdk/core";
+import { serializeData, list, conStr, integer, byteString } from "@meshsdk/core";
 import {
   poolDatum, decodePoolDatum, decodePoolRedeemer, R_DepositCollateral, R_Borrow, R_Repay,
 } from "../src/plutus.mjs";
@@ -69,8 +69,8 @@ const datum = {
     { policy_id: "", asset_name: "", denomination: 20_000_000n },
     { policy_id: "e2".repeat(28), asset_name: "544f4b", denomination: 500n },
   ],
-  loan_denomination: 10_000_000n, open_loans: [], used_nullifiers: [], last_updated: 0n,
-  lender_root: 14n, lender_next_index: 0n, total_shares: 0n, lender_nullifiers: [],
+  loan_denomination: 10_000_000n, loans: "00".repeat(32), last_updated: 0n,
+  lender_root: 14n, lender_next_index: 0n, total_shares: 0n, withdrawn: "00".repeat(32),
   lender_external_nullifier: 9999n, share_start_price: 10_000_000n, liquidity_reserve: 0n,
 };
 const proof = { piA: "a1".repeat(48), piB: "b2".repeat(96), piC: "c3".repeat(48) };
@@ -82,8 +82,9 @@ test("the pool datum with a loan token and two collateral assets round-trips", (
 test("deposit, borrow and repay redeemers round-trip with their fields", () => {
   assert.deepEqual(decodePoolRedeemer(cbor(R_DepositCollateral(16n, 1n, proof))),
     { type: "DepositCollateral", commitment: 16n, assetIndex: 1n, appendProof: proof });
-  assert.deepEqual(decodePoolRedeemer(cbor(R_Borrow(proof, 17n, "be".repeat(28)))),
-    { type: "BorrowAnonymous", proof, loanNullifier: 17n, recipient: "be".repeat(28) });
-  assert.deepEqual(decodePoolRedeemer(cbor(R_Repay(proof, 17n, 18n, proof))),
-    { type: "RepayAnonymous", proof, loanNullifier: 17n, repayNullifier: 18n, appendProof: proof });
+  const mpfProof = list([conStr(1, [integer("2"), conStr(0, [integer("3"), byteString("ab"), byteString("cd".repeat(32))])])]);
+  assert.deepEqual(decodePoolRedeemer(cbor(R_Borrow(proof, 17n, "be".repeat(28), mpfProof))),
+    { type: "BorrowAnonymous", proof, loanNullifier: 17n, recipient: "be".repeat(28), loansProof: mpfProof });
+  assert.deepEqual(decodePoolRedeemer(cbor(R_Repay(proof, 17n, 18n, proof, mpfProof))),
+    { type: "RepayAnonymous", proof, loanNullifier: 17n, repayNullifier: 18n, appendProof: proof, loansProof: mpfProof });
 });

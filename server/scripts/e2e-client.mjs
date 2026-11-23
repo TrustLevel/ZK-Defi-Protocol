@@ -23,6 +23,7 @@ import {
 import { paymentKeyHash } from "@zk-defi/protocol/plutus";
 import { deriveScripts } from "@zk-defi/protocol/scripts";
 import { buildDeposit, buildRepay, buildAddLiquidity, buildCollateralSplit, hasCollateral } from "@zk-defi/protocol/tx";
+import { buildSets } from "@zk-defi/protocol/mpf";
 
 const API = process.argv[2] || "http://127.0.0.1:3101";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
@@ -41,13 +42,24 @@ async function api(method, p, body) {
   }
   throw new Error(`${p}: still indexing`);
 }
-const INT_LISTS = ["open_loans", "used_nullifiers", "lender_nullifiers"];
+// The pool datum from the API: integers as decimal strings, the set roots as
+// hex, the assets as objects.
+const HEX = ["loans", "withdrawn"];
+function datumOf(raw) {
+  return Object.fromEntries(Object.entries(raw).map(([k, v]) => {
+    if (HEX.includes(k) || k === "loan_asset") return [k, v];
+    if (k === "collateral_assets") return [k, v.map((c) => ({ ...c, denomination: BigInt(c.denomination) }))];
+    return [k, BigInt(v)];
+  }));
+}
 async function state() {
   const s = await api("GET", "/api/state");
-  const datum = Object.fromEntries(Object.entries(s.pool.datum).map(([k, v]) => [k, INT_LISTS.includes(k) ? v.map(BigInt) : BigInt(v)]));
   return {
-    pool: { utxo: s.pool.utxo, datum },
-    leaves: { commitments: s.leaves.commitments.map(BigInt), repaid: s.leaves.repaid.map(BigInt), lenders: s.leaves.lenders.map(BigInt) },
+    pool: { utxo: s.pool.utxo, datum: datumOf(s.pool.datum) },
+    leaves: {
+      commitments: s.leaves.commitments.map(BigInt), repaid: s.leaves.repaid.map(BigInt), lenders: s.leaves.lenders.map(BigInt),
+      events: s.leaves.events.map((e) => ({ ...e, nullifier: BigInt(e.nullifier) })),
+    },
   };
 }
 const evaluator = {
@@ -128,8 +140,10 @@ s = await until((x) => x.pool.datum.open_loans.includes(b.nullifier), "borrow in
 // 3. repay — account B signs; built without a fetcher
 const r = repayInput({ commitments: s.leaves.commitments, index: s.leaves.commitments.indexOf(commitment), secret });
 const ra = appendInput({ leavesBefore: s.leaves.repaid, leaf: r.R });
+const loans = await (await buildSets(s.leaves.events)).repay(r.nullifier);
 const repTx = await buildRepay(new MeshTxBuilder({ fetcher, evaluator }), {
   S, deployment, pool: s.pool, nullifier: r.nullifier, R: r.R, newRepaidRoot: ra.newRoot, payer: await B.payer(),
+  loansProof: loans.proof, newLoansRoot: loans.newRoot,
   proof: compressProof(curve, (await prove("repay", r.input)).proof),
   appendProof: compressProof(curve, (await prove("append", ra.input)).proof),
 });

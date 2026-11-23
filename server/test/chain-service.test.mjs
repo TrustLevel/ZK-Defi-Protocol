@@ -12,8 +12,8 @@ import { createChainService, IndexLagError } from "../src/chain-service.mjs";
 const key = process.env.PREPROD_BLOCKFROST_API_KEY;
 const json = (rel) => JSON.parse(readFileSync(new URL(rel, import.meta.url), "utf8"));
 
-test("snapshot of the lender-side M4 pool: consistent leaves and a typed activity feed", { skip: !key && "PREPROD_BLOCKFROST_API_KEY not set" }, async () => {
-  const m4 = json("../../packages/protocol/deployments/preprod-m4-lend.json");
+test("snapshot of the M3 ADA pool: consistent leaves and sets and a typed activity feed", { skip: !key && "PREPROD_BLOCKFROST_API_KEY not set" }, async () => {
+  const m4 = json("../../packages/protocol/deployments/preprod-m3-ada.json");
   const S = deriveScripts(json("../../contracts/plutus.json"), m4.seed, m4.vkeys);
   const bf = async (p) => {
     const r = await fetch("https://cardano-preprod.blockfrost.io/api/v0" + p, { headers: { project_id: key } });
@@ -48,7 +48,8 @@ test("an unlock appears in the feed although the pool did not move", async () =>
     total_deposited: z, total_borrowed: z, interest_rate: z, group_root: empty, group_next_index: z,
     repaid_root: empty, next_index: z, external_nullifier: z, repay_external_nullifier: z,
     loan_asset: { policy_id: "", asset_name: "" }, collateral_assets: [],
-    loan_denomination: z, last_updated: z, lender_root: empty, lender_next_index: z, total_shares: z,
+    loan_denomination: z, loans: "00".repeat(32), last_updated: z, lender_root: empty, lender_next_index: z,
+    total_shares: z, withdrawn: "00".repeat(32),
     lender_external_nullifier: z, share_start_price: z, liquidity_reserve: z,
   }), "JSON");
   const S = { POOL_ADDRESS: "pool", POOL_NFT_UNIT: "nft", COLLATERAL_ADDRESS: "collateral" };

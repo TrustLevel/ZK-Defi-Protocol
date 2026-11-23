@@ -53,15 +53,17 @@ export async function createTxRunner({ provider, S, deployment, wallet, settleMs
     address,
     findDeposit: async ({ txHash, outputIndex }) =>
       (await provider.fetchAddressUTxOs(S.COLLATERAL_ADDRESS)).find((u) => u.input.txHash === txHash && u.input.outputIndex === outputIndex) ?? null,
-    borrow: ({ pool, proof, nullifier, recipient, recipientPkh }) =>
+    borrow: ({ pool, proof, nullifier, recipient, recipientPkh, loansProof, newLoansRoot }) =>
       run((txb, payer) => buildBorrow(txb, {
-        S, deployment, pool, proof: compressProof(curve, proof), nullifier, recipient, recipientPkh, payer,
+        S, deployment, pool, proof: compressProof(curve, proof), nullifier, recipient, recipientPkh,
+        loansProof, newLoansRoot, payer,
       })),
     unlock: ({ pool, proof, deposit, unlockTo }) =>
       run((txb, payer) => buildUnlock(txb, { S, deployment, pool, deposit, unlockTo, proof: compressProof(curve, proof), payer })),
-    withdraw: ({ pool, proof, nullifier, recipient, recipientPkh }) =>
+    withdraw: ({ pool, proof, nullifier, recipient, recipientPkh, withdrawnProof, newWithdrawnRoot }) =>
       run((txb, payer) => buildWithdrawLiquidity(txb, {
-        S, deployment, pool, proof: compressProof(curve, proof), nullifier, recipient, recipientPkh, payer,
+        S, deployment, pool, proof: compressProof(curve, proof), nullifier, recipient, recipientPkh,
+        withdrawnProof, newWithdrawnRoot, payer,
       })),
   };
 }

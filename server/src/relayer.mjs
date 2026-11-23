@@ -6,10 +6,16 @@
  *
  * It spends its own ADA on every relayed transaction, so it checks everything
  * itself first: the public signals against the live pool datum, the recipient
- * against the proof, the nullifier against used_nullifiers, and the proof
- * against the verification key. It compresses the proof points itself and
+ * against the proof, the nullifier against the pool's nullifier sets, and the
+ * proof against the verification key. It compresses the proof points itself and
  * never trusts an encoding from the client. Relayed transactions run one at a
  * time (they spend the same wallet), each until it is confirmed.
+ *
+ * Its spending is capped: every relayed transaction costs its fee, and a payout
+ * in a native token also carries the output's min ADA from the relayer. A loop
+ * of share purchases and relayed withdrawals would otherwise drain it. Limits:
+ * `perRecipientPerDay` relayed borrows and withdrawals per payout key and
+ * `perDay` relayed transactions in total, per UTC day.
  */
 import * as snarkjs from "snarkjs";
 import { pkhToInt } from "@zk-defi/protocol/crypto";
@@ -62,7 +68,21 @@ async function verify(vkey, publicSignals, proof) {
 // chain:  { state({ fresh }) }      (chain-service.mjs)
 // runner: { borrow(args), unlock(args), withdraw(args), findDeposit(ref) }   (tx-runner.mjs)
 // vkeys:  { borrow, settlement, lender } as snarkjs verification key JSON
-export function createRelayer({ chain, runner, vkeys, retryMs = 15_000, attempts = 3 }) {
+export function createRelayer({
+  chain, runner, vkeys, retryMs = 15_000, attempts = 3,
+  limits = { perRecipientPerDay: 3, perDay: 50 }, now = Date.now,
+}) {
+  // Relayed transactions of the current UTC day: in total and per payout key.
+  let day = null, total = 0, perKey = new Map();
+  const quota = (key) => {
+    const today = Math.floor(now() / 86_400_000);
+    if (today !== day) { day = today; total = 0; perKey = new Map(); }
+    if (total >= limits.perDay) throw new RelayError(429, "rate_limited", "the relayer's daily budget is used up; try again tomorrow or submit the transaction yourself");
+    if (key && (perKey.get(key) ?? 0) >= limits.perRecipientPerDay) {
+      throw new RelayError(429, "rate_limited", "this payout key reached its daily limit of relayed transactions");
+    }
+  };
+  const count = (key) => { total += 1; if (key) perKey.set(key, (perKey.get(key) ?? 0) + 1); };
   // The caller gets the hash once the transaction is submitted (the client
   // follows the chain itself); the next relayed transaction waits until this
   // one is confirmed (`settled`), so it sees the relayer's new change output.
@@ -101,11 +121,18 @@ export function createRelayer({ chain, runner, vkeys, retryMs = 15_000, attempts
       }
       await verify(vkeys.borrow, publicSignals, proof);
 
+      quota(recipientPkh);
       return exclusive(() => withRetry(async () => {
-        const { pool: live } = await chain.state({ fresh: true });
+        const { pool: live, sets } = await chain.state({ fresh: true });
         if (live.datum.group_root !== root) throw stale("the deposit set changed; prove again against the new root");
-        if (live.datum.used_nullifiers.includes(nullifier)) throw new RelayError(409, "used", "this deposit already backed a loan");
-        return runner.borrow({ pool: live, proof, nullifier, recipient, recipientPkh });
+        if (sets.usedLoans.includes(nullifier)) throw new RelayError(409, "used", "this deposit already backed a loan");
+        quota(recipientPkh);
+        const loans = await sets.borrow(nullifier);
+        const out = await runner.borrow({
+          pool: live, proof, nullifier, recipient, recipientPkh, loansProof: loans.proof, newLoansRoot: loans.newRoot,
+        });
+        count(recipientPkh);
+        return out;
       }));
     },
 
@@ -125,10 +152,14 @@ export function createRelayer({ chain, runner, vkeys, retryMs = 15_000, attempts
       await verify(vkeys.settlement, publicSignals, proof);
       const unlockTo = addressFromData(datum.unlockTo);
 
+      quota(null);
       return exclusive(() => withRetry(async () => {
         const { pool: live } = await chain.state({ fresh: true });
         if (live.datum.repaid_root !== repaidRoot) throw stale("the repaid set changed; prove again against the new root");
-        return runner.unlock({ pool: live, proof, deposit, unlockTo });
+        quota(null);
+        const out = await runner.unlock({ pool: live, proof, deposit, unlockTo });
+        count(null);
+        return out;
       }));
     },
 
@@ -143,14 +174,22 @@ export function createRelayer({ chain, runner, vkeys, retryMs = 15_000, attempts
       if (ext !== pool.datum.lender_external_nullifier) throw bad("public signals do not match the pool parameters");
       await verify(vkeys.lender, publicSignals, proof);
 
+      quota(recipientPkh);
       return exclusive(() => withRetry(async () => {
-        const { pool: live } = await chain.state({ fresh: true });
+        const { pool: live, sets } = await chain.state({ fresh: true });
         if (live.datum.lender_root !== root) throw stale("the lender set changed; prove again against the new root");
-        if (live.datum.lender_nullifiers.includes(nullifier)) throw new RelayError(409, "used", "this share was already withdrawn");
+        if (sets.withdrawnNotes.includes(nullifier)) throw new RelayError(409, "used", "this share was already withdrawn");
         if (withdrawableShares(live.datum, poolBalance(live)) < 1n) {
           throw new RelayError(409, "no_liquidity", "not enough free liquidity for a share; wait for repayments");
         }
-        return runner.withdraw({ pool: live, proof, nullifier, recipient, recipientPkh });
+        quota(recipientPkh);
+        const withdrawn = await sets.withdraw(nullifier);
+        const out = await runner.withdraw({
+          pool: live, proof, nullifier, recipient, recipientPkh,
+          withdrawnProof: withdrawn.proof, newWithdrawnRoot: withdrawn.newRoot,
+        });
+        count(recipientPkh);
+        return out;
       }));
     },
   };

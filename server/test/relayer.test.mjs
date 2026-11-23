@@ -12,6 +12,7 @@ import {
 import { depositDatum } from "@zk-defi/protocol/plutus";
 import { serializeData } from "@meshsdk/core";
 import { createRelayer } from "../src/relayer.mjs";
+import { buildSets } from "@zk-defi/protocol/mpf";
 
 const C = new URL("../../circuits/", import.meta.url).pathname;
 const json = (p) => JSON.parse(readFileSync(p, "utf8"));
@@ -33,17 +34,18 @@ const lenderNotes = [computeLenderCommitment(111n), computeLenderCommitment(lend
 const datum = {
   group_root: merkleRoot([commitment]), repaid_root: merkleRoot([R]), loan_denomination: LOAN_DENOMINATION,
   loan_asset: { policy_id: "", asset_name: "" }, external_nullifier: EXTERNAL_NULLIFIER, repay_external_nullifier: REPAY_EXTERNAL_NULLIFIER,
-  used_nullifiers: [], open_loans: [],
-  lender_root: merkleRoot(lenderNotes), lender_external_nullifier: LENDER_EXTERNAL_NULLIFIER, lender_nullifiers: [],
+  lender_root: merkleRoot(lenderNotes), lender_external_nullifier: LENDER_EXTERNAL_NULLIFIER,
   total_shares: 2n, total_borrowed: 0n, liquidity_reserve: 10_000_000n, share_start_price: 10_000_000n,
 };
-// Pool UTxO with 10 ADA reserve + two shares' worth (21 ADA) unless given.
-const chainWith = (d, lovelace = 31_000_000n) => ({
+// Pool UTxO with 10 ADA reserve + two shares' worth (21 ADA) unless given;
+// `events` are the nullifier events the pool's sets are built from.
+const chainWith = (d, lovelace = 31_000_000n, events = []) => ({
   state: async () => ({
     pool: {
       utxo: { input: { txHash: "00", outputIndex: 0 }, output: { amount: [{ unit: "lovelace", quantity: String(lovelace) }] } },
       datum: d,
     },
+    sets: await buildSets(events),
   }),
 });
 const deposit = {
@@ -97,7 +99,7 @@ test("borrow: refuses a tampered public signal", async () => {
 
 test("borrow: refuses a used nullifier and a stale root", async () => {
   const N = BigInt(borrowProof.publicSignals[1]);
-  await assert.rejects(createRelayer({ chain: chainWith({ ...datum, used_nullifiers: [N] }), runner: runner(), vkeys }).borrow({ ...borrowProof, recipient: B }),
+  await assert.rejects(createRelayer({ chain: chainWith(datum, undefined, [{ type: "borrow", nullifier: N }]), runner: runner(), vkeys }).borrow({ ...borrowProof, recipient: B }),
     { statusCode: 409, code: "used" });
   await assert.rejects(createRelayer({ chain: chainWith({ ...datum, group_root: 1n }), runner: runner(), vkeys }).borrow({ ...borrowProof, recipient: B }),
     { statusCode: 409, code: "stale" });
@@ -179,7 +181,7 @@ test("withdraw: refuses another recipient, a tampered signal and another scope",
 
 test("withdraw: refuses a note already paid out and a stale lender root", async () => {
   const W = BigInt(withdrawProof.publicSignals[1]);
-  await assert.rejects(createRelayer({ chain: chainWith({ ...datum, lender_nullifiers: [W] }), runner: runner(), vkeys })
+  await assert.rejects(createRelayer({ chain: chainWith(datum, undefined, [{ type: "withdraw", nullifier: W }]), runner: runner(), vkeys })
     .withdraw({ ...withdrawProof, recipient: B }), { statusCode: 409, code: "used" });
   await assert.rejects(createRelayer({ chain: chainWith({ ...datum, lender_root: 1n }), runner: runner(), vkeys })
     .withdraw({ ...withdrawProof, recipient: B }), { statusCode: 409, code: "stale" });
@@ -201,4 +203,31 @@ test("withdraw: in a token pool the free liquidity is the loan token, not the po
     chain: chainWith({ ...datum, loan_asset: token, liquidity_reserve: 0n }, 31_000_000n), runner: r, vkeys,
   }).withdraw({ ...withdrawProof, recipient: B }), { statusCode: 409, code: "no_liquidity" });
   assert.equal(r.calls.length, 0);
+});
+
+test("borrow: the relayer hands the runner the loans-set proof and the new root", async () => {
+  const r = runner();
+  await createRelayer({ chain: chainWith(datum), runner: r, vkeys }).borrow({ ...borrowProof, recipient: B });
+  const { loansProof, newLoansRoot } = r.calls[0][1];
+  assert.deepEqual(loansProof, { list: [] });
+  assert.equal(newLoansRoot, (await (await buildSets([])).borrow(BigInt(borrowProof.publicSignals[1]))).newRoot);
+});
+
+test("limits: a payout key gets at most perRecipientPerDay relayed payouts a day", async () => {
+  const r = runner();
+  let t = Date.UTC(2026, 10, 23, 12);
+  const relayer = createRelayer({ chain: chainWith(datum), runner: r, vkeys, limits: { perRecipientPerDay: 1, perDay: 10 }, now: () => t });
+  await relayer.withdraw({ ...withdrawProof, recipient: B });
+  await assert.rejects(relayer.withdraw({ ...withdrawProof, recipient: B }), { statusCode: 429, code: "rate_limited" });
+  t += 86_400_000; // next day
+  await relayer.withdraw({ ...withdrawProof, recipient: B });
+  assert.equal(r.calls.length, 2);
+});
+
+test("limits: the daily budget covers all relayed transactions", async () => {
+  const r = runner();
+  const relayer = createRelayer({ chain: chainWith(datum), runner: r, vkeys, limits: { perRecipientPerDay: 10, perDay: 1 } });
+  await relayer.unlock({ ...settleProof, deposit: deposit.input });
+  await assert.rejects(relayer.borrow({ ...borrowProof, recipient: B }), { statusCode: 429, code: "rate_limited" });
+  assert.equal(r.calls.length, 1);
 });
