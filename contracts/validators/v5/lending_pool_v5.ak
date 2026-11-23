@@ -4,9 +4,10 @@
 //// Borrow/repay are authorized by a Groth16 membership proof verified ON-CHAIN.
 //// The borrow does NOT reference a specific collateral UTxO — it proves the
 //// commitment is a member of `group_root` — so deposit<->borrow is unlinkable.
-//// A loan is a `loan_nullifier` recorded in `open_loans`; repayment (principal +
-//// interest) removes it. The nullifier also enters `used_nullifiers` for good,
-//// so a deposit backs exactly one loan over its lifetime. In the SAME repay tx the borrower
+//// A loan is a `loan_nullifier` inserted as open into the `loans` set (a Merkle
+//// Patricia Forestry root); repayment (principal + interest) marks it settled.
+//// Nothing removes it, so a deposit backs exactly one loan over its lifetime,
+//// and the datum keeps its size however many loans the pool has seen. In the SAME repay tx the borrower
 //// inserts their repayment nullifier R into the append-only `repaid_root` via a
 //// zero-knowledge append proof — PERMISSIONLESSLY, no admin — which is what lets
 //// them later prove settlement (in ZK) at unlock.
@@ -38,6 +39,7 @@
 
 use aiken/collection/list
 use aiken/crypto.{ScriptHash, VerificationKeyHash}
+use aiken/merkle_patricia_forestry as mpf
 use aiken/primitive/bytearray
 use cardano/address.{Script, VerificationKey}
 use cardano/assets.{PolicyId, Value, quantity_of}
@@ -46,7 +48,7 @@ use cardano/transaction.{InlineDatum, Output, OutputReference, Transaction}
 use types_v5.{
   AddLiquidity, Asset, BorrowAnonymous, CollateralAsset, DepositCollateral,
   DepositDatumV5, PoolDatumV5, PoolRedeemerV5, RepayAnonymous, WithdrawLiquidity,
-  pool_nft_name,
+  loan_open, loan_settled, note_withdrawn, nullifier_key, pool_nft_name,
 }
 use zk.{
   get_vkey, verify_append_proof, verify_borrow_proof,
@@ -75,6 +77,9 @@ validator lending_pool_v5(
     // The NFT must continue in an output at the same pool address.
     expect Some(pool_output) = continuing_pool_output(tx, pool_nft_policy)
     expect pool_output.address == pool_input.output.address
+    // The pool output carries no reference script (it would raise the fees of
+    // every later transaction that spends or references the pool).
+    expect pool_output.reference_script == None
     expect InlineDatum(out_data) = pool_output.datum
     expect out: PoolDatumV5 = out_data
 
@@ -105,13 +110,12 @@ validator lending_pool_v5(
           (out.lender_next_index == pool_datum.lender_next_index + 1)?,
           moves_only_loan_asset(value_in, value_out, asset, price)?,
           (out.total_shares == pool_datum.total_shares + 1)?,
-          (out.lender_nullifiers == pool_datum.lender_nullifiers)?,
+          (out.withdrawn == pool_datum.withdrawn)?,
           (out.total_deposited == pool_datum.total_deposited + price)?,
           (out.total_borrowed == pool_datum.total_borrowed)?,
           group_frozen(pool_datum, out)?,
           repaid_frozen(pool_datum, out)?,
-          same_open_loans(pool_datum, out)?,
-          same_used_nullifiers(pool_datum, out)?,
+          same_loans(pool_datum, out)?,
           pool_static_preserved(pool_datum, out)?,
         }
       }
@@ -121,7 +125,12 @@ validator lending_pool_v5(
       // fresh and is recorded, so a note pays out once. The pool pays the current
       // share price (rounded down) to that key, tagged with W, from free
       // liquidity only; while loans are out, lenders wait for repayments.
-      WithdrawLiquidity { proof, withdraw_nullifier, recipient } -> {
+      WithdrawLiquidity {
+        proof,
+        withdraw_nullifier,
+        recipient,
+        withdrawn_proof,
+      } -> {
         let lender_vkey = get_vkey(tx, lender_vkey_ref)
         let proof_ok =
           verify_lender_withdraw_proof(
@@ -132,29 +141,31 @@ validator lending_pool_v5(
             pool_datum.lender_external_nullifier,
             bytearray.to_int_big_endian(recipient),
           )
-        let fresh =
-          !has_nullifier(pool_datum.lender_nullifiers, withdraw_nullifier)
+        // Inserting W needs a proof that W is not in the set yet, so a note
+        // pays out once.
+        let withdrawn =
+          mpf.insert(
+            mpf.from_root(pool_datum.withdrawn),
+            nullifier_key(withdraw_nullifier),
+            note_withdrawn,
+            withdrawn_proof,
+          )
         let price = share_price_down(pool_datum, bal_in)
         and {
           proof_ok?,
-          fresh?,
           (price > 0)?,
           (price <= free_liquidity(pool_datum, bal_in))?,
           pays_loan(tx, recipient, asset, price, withdraw_nullifier)?,
           moves_only_loan_asset(value_in, value_out, asset, -price)?,
           (out.total_shares == pool_datum.total_shares - 1)?,
-          (out.lender_nullifiers == [
-            withdraw_nullifier,
-            ..pool_datum.lender_nullifiers
-          ])?,
+          (out.withdrawn == mpf.root(withdrawn))?,
           (out.lender_root == pool_datum.lender_root)?,
           (out.lender_next_index == pool_datum.lender_next_index)?,
           (out.total_deposited == pool_datum.total_deposited)?,
           (out.total_borrowed == pool_datum.total_borrowed)?,
           group_frozen(pool_datum, out)?,
           repaid_frozen(pool_datum, out)?,
-          same_open_loans(pool_datum, out)?,
-          same_used_nullifiers(pool_datum, out)?,
+          same_loans(pool_datum, out)?,
           pool_static_preserved(pool_datum, out)?,
         }
       }
@@ -186,8 +197,7 @@ validator lending_pool_v5(
           (out.total_deposited == pool_datum.total_deposited)?,
           (out.total_borrowed == pool_datum.total_borrowed)?,
           repaid_frozen(pool_datum, out)?,
-          same_open_loans(pool_datum, out)?,
-          same_used_nullifiers(pool_datum, out)?,
+          same_loans(pool_datum, out)?,
           lender_frozen(pool_datum, out)?,
           pool_static_preserved(pool_datum, out)?,
         }
@@ -201,7 +211,7 @@ validator lending_pool_v5(
       // carry no per-loan information. Sufficiency needs no check here: every
       // leaf of group_root came from a deposit of an accepted denomination, and
       // each denomination covers one loan (pool configuration).
-      BorrowAnonymous { proof, loan_nullifier, recipient } -> {
+      BorrowAnonymous { proof, loan_nullifier, recipient, loans_proof } -> {
         let loan_amount = pool_datum.loan_denomination
         let vkey = get_vkey(tx, vkey_ref)
         let proof_ok =
@@ -213,18 +223,24 @@ validator lending_pool_v5(
             pool_datum.external_nullifier,
             bytearray.to_int_big_endian(recipient),
           )
-        let fresh = !has_nullifier(pool_datum.used_nullifiers, loan_nullifier)
+        // Inserting N needs a proof that N is not in the set: a nullifier that
+        // ever borrowed (open or settled) cannot borrow again.
+        let loans =
+          mpf.insert(
+            mpf.from_root(pool_datum.loans),
+            nullifier_key(loan_nullifier),
+            loan_open,
+            loans_proof,
+          )
         // Paid from free liquidity: the lent-out amount has already left the
         // pool UTxO, so it is not subtracted again.
         let liquidity = loan_amount <= free_liquidity(pool_datum, bal_in)
         and {
           proof_ok?,
-          fresh?,
           liquidity?,
           // The loan goes to the key the proof is bound to (front-running).
           pays_loan(tx, recipient, asset, loan_amount, loan_nullifier)?,
-          (out.open_loans == [loan_nullifier, ..pool_datum.open_loans])?,
-          (out.used_nullifiers == [loan_nullifier, ..pool_datum.used_nullifiers])?,
+          (out.loans == mpf.root(loans))?,
           (out.total_borrowed == pool_datum.total_borrowed + loan_amount)?,
           (out.total_deposited == pool_datum.total_deposited)?,
           moves_only_loan_asset(value_in, value_out, asset, -loan_amount)?,
@@ -237,13 +253,27 @@ validator lending_pool_v5(
 
       // RepayAnonymous: a repay proof attests membership, the loan nullifier AND
       // the repayment nullifier R from ONE secret; pay principal + interest,
-      // remove the loan from the open set, AND insert that R into repaid_root via
+      // mark the loan settled in the loans set, AND insert that R into repaid_root via
       // a zero-knowledge append proof. PERMISSIONLESS (no admin signature): the
       // append proof binds old_root = repaid_root, new_root = out.repaid_root,
       // leaf = R, index = next_index — so the settlement set grows only with the
       // R of the loan actually repaid, and its deposit can later unlock.
-      RepayAnonymous { proof, loan_nullifier, repay_nullifier, append_proof } -> {
-        let outstanding = has_nullifier(pool_datum.open_loans, loan_nullifier)
+      RepayAnonymous {
+        proof,
+        loan_nullifier,
+        repay_nullifier,
+        append_proof,
+        loans_proof,
+      } -> {
+        // The loan must be open; it becomes settled and stays in the set.
+        let loans =
+          mpf.update(
+            mpf.from_root(pool_datum.loans),
+            nullifier_key(loan_nullifier),
+            loans_proof,
+            loan_open,
+            loan_settled,
+          )
         let principal = pool_datum.loan_denomination
         let vkey = get_vkey(tx, repay_vkey_ref)
         // The repay proof binds the loan nullifier AND the appended repayment
@@ -275,9 +305,7 @@ validator lending_pool_v5(
         and {
           proof_ok?,
           append_ok?,
-          outstanding?,
-          (out.open_loans == remove_loan(pool_datum.open_loans, loan_nullifier))?,
-          same_used_nullifiers(pool_datum, out)?,
+          (out.loans == mpf.root(loans))?,
           (out.total_borrowed == pool_datum.total_borrowed - principal)?,
           (out.total_deposited == pool_datum.total_deposited)?,
           // Fixed repayment: exactly principal + interest, so every repay tx
@@ -326,7 +354,7 @@ fn lender_frozen(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
     new.lender_root == old.lender_root,
     new.lender_next_index == old.lender_next_index,
     new.total_shares == old.total_shares,
-    new.lender_nullifiers == old.lender_nullifiers,
+    new.withdrawn == old.withdrawn,
   }
 }
 
@@ -377,21 +405,9 @@ fn repaid_frozen(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
   }
 }
 
-fn same_open_loans(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
-  new.open_loans == old.open_loans
-}
-
-/// The used-nullifier set only grows, and only on Borrow.
-fn same_used_nullifiers(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
-  new.used_nullifiers == old.used_nullifiers
-}
-
-fn has_nullifier(loans: List<Int>, n: Int) -> Bool {
-  list.has(loans, n)
-}
-
-fn remove_loan(loans: List<Int>, n: Int) -> List<Int> {
-  list.filter(loans, fn(x) { x != n })
+/// The loans set moves only on Borrow (insert) and Repay (open -> settled).
+fn same_loans(old: PoolDatumV5, new: PoolDatumV5) -> Bool {
+  new.loans == old.loans
 }
 
 /// The pool's balance of its loan asset.

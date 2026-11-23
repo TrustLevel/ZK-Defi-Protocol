@@ -19,6 +19,7 @@ use semaphore_onchain_test.{
   repaid_root, repaid_root_d, repay_ext, repay_null, repay_null_d, repay_proof,
   repay_vkey, settlement_proof, settlement_vkey, vkey,
 }
+use set_fixture.{empty_root, loans_of}
 use types_v5.{
   AddLiquidity, Asset, BorrowAnonymous, CollateralAsset, DepositCollateral,
   DepositDatumV5, PoolDatumV5, RepayAnonymous, UnlockDeposit, pool_nft_name,
@@ -87,13 +88,12 @@ fn pool_datum(
     loan_asset: ada,
     collateral_assets: [ada_collateral],
     loan_denomination: loan_amt,
-    open_loans,
-    used_nullifiers: used,
+    loans: loans_of(loan_null, open_loans, used),
     last_updated: 0,
     lender_root: old_repaid_root,
     lender_next_index: 0,
     total_shares: 10,
-    lender_nullifiers: [],
+    withdrawn: empty_root,
     lender_external_nullifier: 9999,
     share_start_price: 10_000_000,
     liquidity_reserve: 0,
@@ -194,13 +194,15 @@ test borrow_membership_succeeds() {
       proof: proof(),
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
+      loans_proof: [],
     },
     pool_oref,
     tx,
   )
 }
 
-test borrow_reused_nullifier_fails() {
+test borrow_reused_nullifier_fails() fail {
+  // The MPF insert has no exclusion proof for an open nullifier: the spend errors.
   // The loan nullifier is already outstanding -> no second loan on it.
   let existing = loan_null
   let pd = pool_datum(loan_amt, [existing], old_repaid_root, 0, [existing])
@@ -219,7 +221,7 @@ test borrow_reused_nullifier_fails() {
       reference_inputs: [vk_ref_input()],
       outputs: [pool_out(out, 100_000_000 - loan_amt), loan_payout()],
     }
-  !lending_pool_v5.lending_pool_v5.spend(
+  lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
     coll_hash,
     vk_oref,
@@ -231,15 +233,17 @@ test borrow_reused_nullifier_fails() {
       proof: proof(),
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
+      loans_proof: [],
     },
     pool_oref,
     tx,
   )
 }
 
-test borrow_after_repay_same_secret_fails() {
+test borrow_after_repay_same_secret_fails() fail {
+  // The settled nullifier stays in the loans set, so the insert cannot be proven: the spend errors.
   // One deposit backs exactly ONE loan. After the loan is repaid (nullifier out
-  // of open_loans, R in repaid_root) the same secret must not borrow again —
+  // settled in the loans set, R in repaid_root) the same secret must not borrow again —
   // otherwise the stale R would let it unlock while the new loan stays open.
   let pd = pool_datum(0, [], repaid_root, 1, [loan_null])
   let out =
@@ -251,7 +255,7 @@ test borrow_after_repay_same_secret_fails() {
       reference_inputs: [vk_ref_input()],
       outputs: [pool_out(out, 100_500_000 - loan_amt), loan_payout()],
     }
-  !lending_pool_v5.lending_pool_v5.spend(
+  lending_pool_v5.lending_pool_v5.spend(
     nft_policy,
     coll_hash,
     vk_oref,
@@ -263,6 +267,7 @@ test borrow_after_repay_same_secret_fails() {
       proof: proof(),
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
+      loans_proof: [],
     },
     pool_oref,
     tx,
@@ -270,7 +275,7 @@ test borrow_after_repay_same_secret_fails() {
 }
 
 test borrow_not_recorded_as_used_fails() {
-  // Borrow must add the nullifier to used_nullifiers; leaving it out would make
+  // Borrow must insert the nullifier into the loans set; leaving it out would make
   // the nullifier reusable after repay.
   let pd = pool_datum(0, [], old_repaid_root, 0, [])
   let out = pool_datum(loan_amt, [loan_null], old_repaid_root, 0, [])
@@ -293,6 +298,7 @@ test borrow_not_recorded_as_used_fails() {
       proof: proof(),
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
+      loans_proof: [],
     },
     pool_oref,
     tx,
@@ -329,6 +335,7 @@ test repay_principal_plus_interest_succeeds() {
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
       append_proof: append_proof(),
+      loans_proof: [],
     },
     pool_oref,
     tx,
@@ -337,7 +344,7 @@ test repay_principal_plus_interest_succeeds() {
 
 test repay_clearing_used_nullifier_fails() {
   // Repay settles the open loan but must NOT drop the nullifier from
-  // used_nullifiers — that would re-enable a second loan on the same deposit.
+  // the loans set (here: it deletes it) — that would re-enable a second loan on the same deposit.
   let loan = loan_null
   let pd = pool_datum(loan_amt, [loan], old_repaid_root, 0, [loan])
   let out = pool_datum(0, [], repaid_root, 1, [])
@@ -362,6 +369,7 @@ test repay_clearing_used_nullifier_fails() {
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
       append_proof: append_proof(),
+      loans_proof: [],
     },
     pool_oref,
     tx,
@@ -394,6 +402,7 @@ test repay_below_interest_fails() {
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
       append_proof: append_proof(),
+      loans_proof: [],
     },
     pool_oref,
     tx,
@@ -427,6 +436,7 @@ test repay_overpay_fails() {
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
       append_proof: append_proof(),
+      loans_proof: [],
     },
     pool_oref,
     tx,
@@ -461,6 +471,7 @@ test repay_bogus_append_fails() {
       loan_nullifier: loan_null,
       repay_nullifier: repay_null,
       append_proof: append_proof(),
+      loans_proof: [],
     },
     pool_oref,
     tx,
@@ -691,6 +702,7 @@ test spend_pool_without_nft_fails() fail {
       proof: proof(),
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
+      loans_proof: [],
     },
     pool_oref,
     tx,
@@ -735,6 +747,7 @@ test continuing_output_without_nft_fails() fail {
       proof: proof(),
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
+      loans_proof: [],
     },
     pool_oref,
     tx,
@@ -771,6 +784,7 @@ test continuing_output_other_address_fails() fail {
       proof: proof(),
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
+      loans_proof: [],
     },
     pool_oref,
     tx,
@@ -814,6 +828,7 @@ test borrow_with_vkey_at_other_ref_fails() fail {
       proof: proof(),
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
+      loans_proof: [],
     },
     pool_oref,
     tx,
@@ -1064,6 +1079,7 @@ test borrow_payout_to_other_key_fails() {
       proof: proof(),
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
+      loans_proof: [],
     },
     pool_oref,
     tx,
@@ -1095,6 +1111,7 @@ test borrow_underpays_recipient_fails() {
       proof: proof(),
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
+      loans_proof: [],
     },
     pool_oref,
     tx,
@@ -1128,6 +1145,7 @@ test borrow_redeemer_recipient_swapped_fails() {
       proof: proof(),
       loan_nullifier: loan_null,
       recipient: thief_pkh,
+      loans_proof: [],
     },
     pool_oref,
     tx,
@@ -1164,6 +1182,7 @@ test repay_with_foreign_repay_nullifier_fails() {
       loan_nullifier: loan_null,
       repay_nullifier: repay_null_d,
       append_proof: append_proof_d(),
+      loans_proof: [],
     },
     pool_oref,
     tx,
@@ -1198,6 +1217,108 @@ test repay_with_copied_borrow_proof_fails() {
       loan_nullifier: loan_null,
       repay_nullifier: repay_null_d,
       append_proof: append_proof_d(),
+      loans_proof: [],
+    },
+    pool_oref,
+    tx,
+  )
+}
+
+// ---- Loans set (MPF) and pool output hygiene ---------------------------------
+
+test repay_of_settled_loan_fails() fail {
+  // The loan is already settled: the update needs the nullifier valued open, so
+  // a second repay of the same loan cannot be proven and the spend errors.
+  let pd = pool_datum(0, [], repaid_root, 1, [loan_null])
+  let out = pool_datum(0, [], repaid_root, 2, [loan_null])
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [pool_input(pd, 100_500_000)],
+      reference_inputs: [rvk_ref_input(), avk_ref_input()],
+      outputs: [pool_out(out, 100_500_000 + 10_500_000)],
+    }
+  lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    coll_hash,
+    vk_oref,
+    rvk_oref,
+    avk_oref,
+    lwvk_oref,
+    Some(pd),
+    RepayAnonymous {
+      proof: repay_proof(),
+      loan_nullifier: loan_null,
+      repay_nullifier: repay_null,
+      append_proof: append_proof(),
+      loans_proof: [],
+    },
+    pool_oref,
+    tx,
+  )
+}
+
+test borrow_rewriting_loans_set_fails() {
+  // The out datum claims a loans root other than the one the insert yields
+  // (here: the nullifier recorded as already settled).
+  let pd = pool_datum(0, [], old_repaid_root, 0, [])
+  let out = pool_datum(loan_amt, [], old_repaid_root, 0, [loan_null])
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [pool_input(pd, 100_000_000)],
+      reference_inputs: [vk_ref_input()],
+      outputs: [pool_out(out, 100_000_000 - loan_amt), loan_payout()],
+    }
+  !lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    coll_hash,
+    vk_oref,
+    rvk_oref,
+    avk_oref,
+    lwvk_oref,
+    Some(pd),
+    BorrowAnonymous {
+      proof: proof(),
+      loan_nullifier: loan_null,
+      recipient: recipient_pkh,
+      loans_proof: [],
+    },
+    pool_oref,
+    tx,
+  )
+}
+
+test pool_output_with_reference_script_fails() fail {
+  // A valid borrow, but the continuing pool output carries a reference script.
+  let pd = pool_datum(0, [], old_repaid_root, 0, [])
+  let out = pool_datum(loan_amt, [loan_null], old_repaid_root, 0, [loan_null])
+  let tx =
+    Transaction {
+      ..placeholder,
+      inputs: [pool_input(pd, 100_000_000)],
+      reference_inputs: [vk_ref_input()],
+      outputs: [
+        Output {
+          ..pool_out(out, 100_000_000 - loan_amt),
+          reference_script: Some(#"deadbeef"),
+        },
+        loan_payout(),
+      ],
+    }
+  lending_pool_v5.lending_pool_v5.spend(
+    nft_policy,
+    coll_hash,
+    vk_oref,
+    rvk_oref,
+    avk_oref,
+    lwvk_oref,
+    Some(pd),
+    BorrowAnonymous {
+      proof: proof(),
+      loan_nullifier: loan_null,
+      recipient: recipient_pkh,
+      loans_proof: [],
     },
     pool_oref,
     tx,

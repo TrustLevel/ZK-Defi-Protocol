@@ -22,6 +22,7 @@ use semaphore_onchain_test.{
   append_vkey, ext, group_root, loan_amt, loan_null, old_repaid_root, proof,
   recipient_pkh, repay_ext, vkey,
 }
+use set_fixture.{empty_root, one, withdrawn_one}
 use types_v5.{
   AddLiquidity, Asset, BorrowAnonymous, CollateralAsset, PoolDatumV5,
   PoolRedeemerV5, WithdrawLiquidity, pool_nft_name,
@@ -86,13 +87,12 @@ fn lender_pool(
     loan_asset: ada,
     collateral_assets: [ada_collateral],
     loan_denomination: loan_amt,
-    open_loans: [],
-    used_nullifiers: [],
+    loans: empty_root,
     last_updated: 0,
     lender_root,
     lender_next_index: next,
     total_shares: shares,
-    lender_nullifiers: [],
+    withdrawn: empty_root,
     lender_external_nullifier: lender_ext,
     share_start_price: start_price,
     liquidity_reserve: reserve,
@@ -225,7 +225,7 @@ test add_share_with_wrong_append_proof_fails() {
 
 test add_share_touching_borrower_fields_fails() {
   !add_first(
-    PoolDatumV5 { ..first_share_out(start_price), used_nullifiers: [1] },
+    PoolDatumV5 { ..first_share_out(start_price), loans: one(1, #"01") },
     start_price,
   )
 }
@@ -284,7 +284,7 @@ fn withdrawn(pd: PoolDatumV5) -> PoolDatumV5 {
   PoolDatumV5 {
     ..pd,
     total_shares: pd.total_shares - 1,
-    lender_nullifiers: [withdraw_null, ..pd.lender_nullifiers],
+    withdrawn: withdrawn_one(withdraw_null),
   }
 }
 
@@ -293,6 +293,7 @@ fn withdraw_redeemer(to: ByteArray) -> PoolRedeemerV5 {
     proof: lender_withdraw_proof(),
     withdraw_nullifier: withdraw_null,
     recipient: to,
+    withdrawn_proof: [],
   }
 }
 
@@ -333,10 +334,12 @@ test withdraw_share_succeeds() {
   )
 }
 
-test withdraw_same_note_twice_fails() {
-  let pd = PoolDatumV5 { ..two_shares(0), lender_nullifiers: [withdraw_null] }
+test withdraw_same_note_twice_fails() fail {
+  // W is already in the withdrawn set, so the insert cannot be proven: the spend errors.
+  let pd =
+    PoolDatumV5 { ..two_shares(0), withdrawn: withdrawn_one(withdraw_null) }
   let bal_in = reserve + 21_000_000
-  !run(
+  run(
     pd,
     withdraw_redeemer(lender_recipient_pkh),
     withdraw_tx(pd, bal_in, withdrawn(pd), bal_in - price_two, good_payout()),
@@ -449,6 +452,7 @@ fn borrow_with(pd: PoolDatumV5, bal_in: Int, out: PoolDatumV5) -> Bool {
       proof: proof(),
       loan_nullifier: loan_null,
       recipient: recipient_pkh,
+      loans_proof: [],
     },
     Transaction {
       ..placeholder,
@@ -466,8 +470,7 @@ fn borrowed(pd: PoolDatumV5) -> PoolDatumV5 {
   PoolDatumV5 {
     ..pd,
     total_borrowed: pd.total_borrowed + loan_amt,
-    open_loans: [loan_null, ..pd.open_loans],
-    used_nullifiers: [loan_null, ..pd.used_nullifiers],
+    loans: one(loan_null, #"01"),
   }
 }
 
@@ -498,6 +501,6 @@ test borrow_spending_withdraw_nullifier_set_fails() {
   !borrow_with(
     pd,
     reserve + 40_000_000,
-    PoolDatumV5 { ..borrowed(pd), lender_nullifiers: [withdraw_null] },
+    PoolDatumV5 { ..borrowed(pd), withdrawn: withdrawn_one(withdraw_null) },
   )
 }

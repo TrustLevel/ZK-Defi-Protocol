@@ -23,6 +23,7 @@ use semaphore_onchain_test.{
   repay_ext, repay_null, repay_proof, repay_vkey, settlement_proof,
   settlement_vkey, vkey,
 }
+use set_fixture.{empty_root, loans_of, withdrawn_one}
 use types_v5.{
   Asset, BorrowAnonymous, CollateralAsset, DepositCollateral, DepositDatumV5,
   PoolDatumV5, PoolRedeemerV5, RepayAnonymous, UnlockDeposit, WithdrawLiquidity,
@@ -129,13 +130,12 @@ fn token_pool(
     loan_asset: loan_token,
     collateral_assets: [ada_collateral, tok_collateral],
     loan_denomination: loan_amt,
-    open_loans: open,
-    used_nullifiers: used,
+    loans: loans_of(loan_null, open, used),
     last_updated: 0,
     lender_root: old_repaid_root,
     lender_next_index: 0,
     total_shares: 10,
-    lender_nullifiers: [],
+    withdrawn: empty_root,
     lender_external_nullifier: 9999,
     share_start_price: 10_000_000,
     liquidity_reserve: 0,
@@ -206,6 +206,7 @@ fn borrow_redeemer() -> PoolRedeemerV5 {
     proof: proof(),
     loan_nullifier: loan_null,
     recipient: recipient_pkh,
+    loans_proof: [],
   }
 }
 
@@ -310,6 +311,7 @@ fn repay_redeemer() -> PoolRedeemerV5 {
     loan_nullifier: loan_null,
     repay_nullifier: repay_null,
     append_proof: append_proof(),
+    loans_proof: [],
   }
 }
 
@@ -372,7 +374,7 @@ fn withdraw_tx(out_value: Value, payout: Output) -> Transaction {
     PoolDatumV5 {
       ..two_share_pool(),
       total_shares: 1,
-      lender_nullifiers: [withdraw_null],
+      withdrawn: withdrawn_one(withdraw_null),
     }
   Transaction {
     ..placeholder,
@@ -387,6 +389,7 @@ fn withdraw_redeemer() -> PoolRedeemerV5 {
     proof: lender_withdraw_proof(),
     withdraw_nullifier: withdraw_null,
     recipient: lender_recipient_pkh,
+    withdrawn_proof: [],
   }
 }
 
