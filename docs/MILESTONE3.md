@@ -5,9 +5,6 @@
 of collateral and loan transactions.
 **Status:** Delivered and demonstrated live on Cardano **Preprod**.
 
-<!-- PENDING (internal, remove before tagging): values marked PENDING below are filled
-from the asset-pool deployment and the test run on the tagged stand. -->
-
 ---
 
 ## 1. Protocol overview
@@ -81,13 +78,35 @@ that received the loan.
 
 ### The full private lending cycle (confirmed live on Preprod)
 
-PENDING: table of the live cycle on the asset-pool deployment:
-park vkeys → init pool + mint NFT → add liquidity (two notes) → deposit collateral in
-two different accepted assets → borrow (relayed) → repay → unlock (relayed) →
-withdraw a share (relayed). Each row: step, what it proves, Preprod tx link.
+Two pools run on the same scripts and verification keys. Account A deposits and
+lends, account B (an unrelated wallet) receives the loan and the share payout and
+repays, and a relayer submits borrow, unlock and withdrawal.
+
+**Pool 1 lends ADA** and accepts 20 ADA or 500 TOK as collateral:
+
+| # | Step | What is verified on-chain | Preprod tx |
+|---|------|---------------------------|-----------|
+| 1 | **Park keys.** The five verification keys go to an always-false address. | none | [`c4e8e1b7acf5…`](https://preprod.cardanoscan.io/transaction/c4e8e1b7acf51d67bb2ebeb0561ee8b86a71778a4b1e9842ef51a1a9afd90b7d) |
+| 2 | **Init pool + mint the pool NFT**, with the loan asset (ADA) and the accepted collateral assets in the datum. | one-shot minting policy | [`23ad89841705…`](https://preprod.cardanoscan.io/transaction/23ad898417055e231c585d1a12398a5892eb04688b258913cc5d66a6fa6cffa0) |
+| 3 | **Add liquidity**, two shares of 10 ADA. Each note leaf enters `lender_root`. | append proof | [`13f3793d1a45…`](https://preprod.cardanoscan.io/transaction/13f3793d1a45e1d59bc4e682dd87f819198fde8b956256abccc25e2f4754a914), [`2c62c4cfe0e1…`](https://preprod.cardanoscan.io/transaction/2c62c4cfe0e1592a4f151b185118217c43ce21d2a5e72abfe1906fd395376c6e) |
+| 4 | **Deposit 20 ADA** (asset 0) and **deposit 500 TOK** (asset 1). Both commitments enter the same `group_root`. | append proof; exact denomination of the named asset | [`8d944e16e29d…`](https://preprod.cardanoscan.io/transaction/8d944e16e29d18ac2b1a92a806cebcb411a47c72846fcc8e60fcb2eb037b26af), [`a3cd4c5ce665…`](https://preprod.cardanoscan.io/transaction/a3cd4c5ce665c847e8cae525ae31b31ec2d193ca4c7afcfbc0159f2a4caadb71) |
+| 5 | **Borrow 10 ADA**, backed by the TOK deposit, paid to B, submitted by the relayer. Nothing in the transaction names the deposit or its asset. | borrow proof (membership, nullifier, recipient) | [`581389f0d725…`](https://preprod.cardanoscan.io/transaction/581389f0d725b83137788cd22e3bcf817cf500962f9a0bfe3f5e3bb181345b26) |
+| 6 | **Repay 10.5 ADA** from B. The loan is settled and `R` enters `repaid_root`. | repay proof + append proof | [`19dc3cbfd6a9…`](https://preprod.cardanoscan.io/transaction/19dc3cbfd6a97a6e587653a47deb3ac258dff05177ef4fc2640b03fbb0a45da3) |
+| 7 | **Unlock**: the 500 TOK and their ADA return to the deposit's `unlock_to`, submitted by the relayer. | settlement proof | [`348685706bbb…`](https://preprod.cardanoscan.io/transaction/348685706bbb2689c5882d79e4ae55514323f278c59feea8b97798e167e4fda1) |
+| 8 | **Withdraw one share**: 10.25 ADA (principal plus its part of the interest) to B, submitted by the relayer. | lender withdraw proof | [`f37d96ec8826…`](https://preprod.cardanoscan.io/transaction/f37d96ec8826d1d812103d50688be90cd4896823b873006a6295f378979998b0) |
+
+**Pool 2 lends the USD test token** (same keys, same collateral list) and ran the
+same cycle in USD: init [`c91b566c4aaf…`](https://preprod.cardanoscan.io/transaction/c91b566c4aaf84e13e7f17a2fee1e742cf6c00c4d04a6ab65b9aedec571d13a9),
+two shares of 10 USD, a deposit of 20 ADA, a relayed loan of 10 USD
+[`c62b2f4142d9…`](https://preprod.cardanoscan.io/transaction/c62b2f4142d9215076db2c335bb575a63a1caa419b8f90ad30c37da55aeddd24), repayment of 10.5 USD
+[`44cc6137bdcc…`](https://preprod.cardanoscan.io/transaction/44cc6137bdccca08b801982cb3dd073439cf638eecfe7e94c0dc6392b53ed2bd), relayed unlock and a
+relayed share withdrawal of 10.25 USD [`913e5f21c68f…`](https://preprod.cardanoscan.io/transaction/913e5f21c68fc6a56e59755ebe789622187c2d68c57eab7dc17d5245e40a1a2e).
+The pool's own 5 ADA did not move. Every transaction of both cycles is listed in
+[`MILESTONE3-TEST-RESULTS.md`](MILESTONE3-TEST-RESULTS.md) §3; all are
+`valid_contract: true`.
 
 Off-chain drivers: the shared protocol module `packages/protocol` (Mesh, Node ESM)
-and the command line client on it. Every step finds the pool by its NFT, and the tx
+and the command line client on it, `offchain/cli/m4/run.mjs`. Every step finds the pool by its NFT, and the tx
 builder evaluates every transaction (ExUnits) before it is submitted.
 
 ---
@@ -122,7 +141,7 @@ recipient.
 
 Sufficiency is enforced on-chain, not in the proof. A leaf enters `group_root` only
 through `DepositCollateral`, which locks exactly the fixed denomination of an accepted
-asset, and every accepted denomination covers one loan at the pool's collateral ratio
+asset, and every accepted denomination is set to cover one loan with a margin
 (§5, Trust assumptions). The nullifier allows one loan per leaf. Every member of the
 set is therefore sufficient, so the proof carries no amount, ratio or price, and
 reveals nothing about the asset.
@@ -276,11 +295,25 @@ ceremony is required before mainnet (M1 Appendix A).*
 
 ## 4. Deployed addresses / hashes (Preprod)
 
-PENDING: pool NFT policy, seed UTxO, `lending_pool_v5` and `collateral_v5` addresses
-and hashes, vkey reference UTxOs, loan asset and accepted collateral assets of the
-asset-pool deployment.
+| Component | Pool 1 (lends ADA) | Pool 2 (lends USD) |
+|---|---|---|
+| Deployment file | `packages/protocol/deployments/preprod-m3-ada.json` | `packages/protocol/deployments/preprod-m3-usd.json` |
+| Loan asset | ADA | USD `537a02f3e1f878c9e814bf6dc8ebbd584c04b5d49c310331879020b5` · `555344` |
+| Accepted collateral | [0] 20 ADA · [1] 500 TOK (`537a02f3…` · `544f4b`) | same |
+| Pool NFT policy | `859075f221d672187f5fff95fc3a4be995238509ef124e8e2d85ffac` | `07bfaef56473e52fefeb2003bcfbd5c92101770394cad97b3bce1bc8` |
+| `lending_pool_v5` hash | `5e40259d6bae4053e91bf2bbb21b5e5a1028ae60a712d39b59695a68` | `83f0f362525d2b5d7622947cc24e20cd152db024117d8e5583592a58` |
+| `lending_pool_v5` address | `addr_test1wp0yqfvadwhyq5lfr0ethvsmtedpq29wvzn395umt95456qcr5yer` | `addr_test1wzplpumz2fwjkhtky228esjwyrx32tdsysghmrj4sdvj5kqlmjck6` |
+| `collateral_v5` hash | `c9450bfc1cc5fe4b6bf5aa5a4c1bd347aa2ac38c455f8a2ebdb1e9dc` | `f1933896f08d1a3dc7d80e3a64ecc9ee088bd73e4ebd57b416b655ac` |
+| `collateral_v5` address | `addr_test1wry52zlurnzlujmt7k495nqm6dr652kr33z4lz3whkc7nhq9sc8wd` | `addr_test1wrcexwyk7zx350w8mq8r5e8ve8hq3z7h8e8t64a5z6m9ttqfzmnwk` |
+| Verification keys | `c4e8e1b7acf51d67bb2ebeb0561ee8b86a71778a4b1e9842ef51a1a9afd90b7d` #0 borrow · #1 settlement · #2 append · #3 repay · #4 lender withdraw | same |
 
-| Component | Value |
+TOK and USD are test tokens minted for this demonstration under one policy
+(`537a02f3…`). The applied script hashes are derived from `contracts/plutus.json`
+with Mesh `applyParamsToScript` along the parameter chain
+(`packages/protocol/src/scripts.mjs`); the golden tests check them against the
+deployment.
+
+| Build | Value |
 |---|---|
 | Compiler | Aiken v1.1.19, Plutus V3 |
 | Verifier lib | `modulo-p/ak-381` v0.1.1 |
@@ -288,7 +321,16 @@ asset-pool deployment.
 
 **Execution cost, measured live** (Preprod limits per tx: 17,500,000 mem / 10,000,000,000 cpu):
 
-PENDING: mem / cpu / fee per transaction type of the live cycle.
+| Tx | Proofs verified | mem | cpu | of the cpu limit | Fee |
+|---|---|---|---|---|---|
+| Add liquidity | append | 542,413 | 2,586,290,452 | 26 % | 0.73 ADA |
+| Deposit | append | 620,362 | 2,610,667,465 | 26 % | 0.74 ADA |
+| Borrow | borrow | 608,145 | 2,611,491,401 | 26 % | 0.74 ADA |
+| Repay | repay + append | 679,818 | 5,144,774,383 | 51 % | 0.93 ADA |
+| Unlock | settlement | 337,318 | 2,368,362,245 | 24 % | 0.48 ADA |
+| Withdraw a share | lender withdraw | 629,084 | 2,619,748,944 | 26 % | 0.74 ADA |
+
+Figures from pool 1; pool 2 is within 3 % of them.
 
 ---
 
@@ -311,8 +353,10 @@ key and no owner signature. Four on-chain properties make that trustworthy:
 - **Owner-bound payouts.** Loans, shares and collateral are paid only to the recipient
   the proof or the deposit fixed, so proofs cannot be front-run.
 
-**Adversarial test suite.** PENDING: `aiken check` count on the tagged stand. Validator
-tests run with real BLS12-381 proofs:
+**Adversarial test suite.** `aiken check` runs **107 tests**; the validator tests run
+with real BLS12-381 proofs. Together with the circuit, protocol-module and relayer
+tests, the full list, pass rates and edge cases are in
+[`MILESTONE3-TEST-RESULTS.md`](MILESTONE3-TEST-RESULTS.md).
 
 | Area | Tests |
 |---|---|
@@ -324,6 +368,7 @@ tests run with real BLS12-381 proofs:
 | Borrow | Membership succeeds; reused / used nullifier fails; second loan on a repaid deposit fails; payout to another key, a short payout, or a swapped recipient fails |
 | Repay | Exactly principal + interest in the loan asset; under- and over-payment fail; bogus append fails; used nullifiers cannot be cleared; a foreign `R` fails; a copied borrow proof used as a repay proof fails |
 | Unlock | Settled unlock succeeds; unlock without repayment fails; wrong commitment fails; forged pool reference fails; vkey at another reference fails; payout to another address, in another asset, short, or tagged for another deposit fails |
+| Assets | A token pool lends, takes repayments and pays shares in its token; a payout in ADA, taking the pool's ADA, pushing a foreign token into the pool, or rewriting the loan asset or the collateral list fails |
 
 ### Independent testing
 
@@ -340,11 +385,12 @@ the repay proof (§2) and adds both attacks as regression tests
 ### Trust assumptions
 
 - **Pool initialization.** Whoever initializes the pool chooses its configuration: the
-  verification keys (script parameters), interest rate, collateral ratio, loan asset,
-  accepted collateral assets with their denominations, and initial liquidity. All of it
-  is public in the init transaction and the script parameters, and it is immutable
-  afterwards. Each collateral denomination is chosen to cover one loan at the ratio at
-  the initializer's prices; the pool has no price feed.
+  verification keys (script parameters), interest rate, loan asset and loan
+  denomination, accepted collateral assets with their denominations, and initial
+  liquidity. All of it is public in the init transaction and the script parameters,
+  and it is immutable afterwards. Each collateral denomination is chosen to cover one
+  loan with a margin at the initializer's prices (the deployed pools: 20 ADA or 500 TOK
+  for a loan of 10); the pool has no price feed.
 - **Trusted setup.** The Preprod proving and verification keys come from a
   single-contributor developer ceremony (multi-party required before mainnet).
 - **Relayer.** The relayer pays fees and cannot redirect funds or learn secrets. It
@@ -443,8 +489,9 @@ of the size of Zcash Sapling. M1 committed to Cardano L1 and explicitly not to M
 Plutus execution budgets.
 
 **2. Multi-asset support.** A pool lends one asset, ADA or a native token, and accepts
-several collateral assets (§1, Assets). The live cycle uses two collateral assets
-(§1). PENDING: assets of the deployment.
+several collateral assets (§1, Assets). On Preprod, pool 1 lends ADA and pool 2 lends
+a native token (USD); both accept ADA and TOK as collateral, and pool 1's loan was
+backed by the TOK deposit without the transaction revealing it (§1, live cycle; §4).
 
 **3. Anonymous lending.** Delivered (§1, item 5): lender notes in `lender_root`, a
 zero-knowledge withdrawal with a one-time nullifier, payout to a key bound in the

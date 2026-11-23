@@ -1,6 +1,6 @@
 {
   "type": "module",
-  "description": "Off-chain scripts (Mesh) for the ZK private-lending protocol v5 \u2014 deposit/borrow/repay/unlock on Cardano Preprod",
+  "description": "Command line client (Mesh) for the ZK private-lending protocol on Cardano Preprod",
   "dependencies": {
     "@meshsdk/core": "^1.9.1",
     "ffjavascript": "^0.2.63",

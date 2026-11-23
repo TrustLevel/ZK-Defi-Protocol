@@ -22,7 +22,7 @@ include "./lib/poseidon255.circom";
  * different set that hashes to the same root is a Poseidon collision).
  *
  * Public signals (order is load-bearing — mirrored in contracts/lib/zk.ak and
- * offchain/cli/v5/common.mjs):
+ * packages/protocol/src/crypto.mjs):
  *   [ old_root, new_root, leaf, index ]
  * Private witness:
  *   siblings[depth]

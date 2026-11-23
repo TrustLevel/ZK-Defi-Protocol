@@ -4,8 +4,8 @@
 **Deliverable:** a simple web-based UI that lets users request loans, verify collateral
 and manage repayments using zk-SNARK proofs, tested with users, with documentation and
 tooltips.
-**Status:** Plan. Builds on the M3 protocol (`contracts/validators/v5/`, tag `m3-poa-v5.1`)
-on Cardano **Preprod**, on a separate M4 deployment of the same contracts (§9).
+**Status:** Plan. Builds on the M3 protocol (`contracts/validators/v5/`, tag `m3-poa-v6`)
+on Cardano **Preprod** (§9).
 
 ---
 
@@ -90,7 +90,7 @@ hashes.
 
 `offchain/cli/m4/run.mjs` is a command line client on this module. It reads the pool
 and both trees from the chain and keeps only the user's note locally, as the web app
-does. The M3 scripts in `offchain/cli/v5/` stay as they are, as the M3 evidence.
+does.
 
 ### 3.2 Web app
 

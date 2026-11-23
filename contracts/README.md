@@ -8,7 +8,7 @@ There is no admin and no signature on any path: the proof *is* the authorization
 
 ```sh
 aiken build     # compile -> plutus.json
-aiken check     # on-chain proof + adversarial tests (54/54, 0 warnings)
+aiken check     # on-chain proof + adversarial tests (107/107)
 ```
 
 ## Scripts
@@ -92,12 +92,15 @@ append) and [`../docs/MILESTONE3.md`](../docs/MILESTONE3.md) for the full design
 
 | Script | Hash |
 |-----------|-------------|
-| `pool_nft` | `4346c33b38b46f5b34b60b86bc9ba4ea55f392a3c4cc4cafd060c6ce` |
-| `lending_pool_v5` | `8b15840cc3feac88fb000d4ffe25a108aaba37d4786161719d4d25ea` |
-| `collateral_v5`   | `45b1b0147e0e9d3b0c87f53cfd482ad17170ed0654056207b9503c0c` |
+| `pool_nft` (pool 1, lends ADA) | `859075f221d672187f5fff95fc3a4be995238509ef124e8e2d85ffac` |
+| `lending_pool_v5` (pool 1) | `5e40259d6bae4053e91bf2bbb21b5e5a1028ae60a712d39b59695a68` |
+| `collateral_v5` (pool 1)   | `c9450bfc1cc5fe4b6bf5aa5a4c1bd347aa2ac38c455f8a2ebdb1e9dc` |
+
+Pool 2 (lends the USD test token) and all addresses: `packages/protocol/deployments/`
+and [`../docs/MILESTONE3.md`](../docs/MILESTONE3.md) §4.
 
 The applied hashes are derived with Mesh `applyParamsToScript`
-(`offchain/cli/v5/common.mjs`, `deriveScripts`). `aiken blueprint apply` re-optimises
+(`packages/protocol/src/scripts.mjs`, `deriveScripts`). `aiken blueprint apply` re-optimises
 the applied program and yields different (equivalent) hashes. A full deposit →
 borrow → repay → unlock cycle is confirmed live on Preprod; see
 [`../docs/MILESTONE3-EVIDENCE.md`](../docs/MILESTONE3-EVIDENCE.md).

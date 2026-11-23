@@ -71,14 +71,20 @@ Evidence and details:
   [`modulo-p/ak-381`](https://github.com/modulo-p/ak-381) (BLS12-381).
 - **Circuits:** [circom](https://docs.circom.io/) + Groth16 (snarkjs), Poseidon
   hash over the BLS12-381 scalar field.
-- **Off-chain:** [Mesh](https://meshjs.dev/) transaction building (Node.js).
+- **Off-chain:** [Mesh](https://meshjs.dev/) transaction building; the shared protocol
+  module `packages/protocol` (Node.js and browser), a command line client and a
+  reference relayer (`server/`).
 
 ## Repository layout
 
 ```
 circuits/            circom circuits + proving/verification keys + fixture/gate tests
 contracts/           Aiken validators (pool NFT, pool, collateral), on-chain ZK verification + tests
-offchain/cli/v5/     Mesh scripts driving the full Preprod lifecycle
+packages/protocol/   protocol module: commitments, Merkle trees, proof inputs, Plutus data,
+                     transaction builders; Preprod deployments; golden tests
+offchain/cli/m4/     command line client: every step, deploy, test tokens
+server/              reference relayer and chain reader (used by the web app)
+web/                 web app (Milestone 4)
 docs/                Milestone 3 documentation, evidence, tester reports
 ```
 
@@ -88,11 +94,14 @@ Prerequisites: [Aiken](https://aiken-lang.org/installation-instructions),
 Node.js 18+, and (to recompile circuits) circom + snarkjs.
 
 ```bash
-# On-chain: compile validators and run the ZK on-chain tests
-cd contracts && aiken build && aiken check      # 54/54 tests pass
+# On-chain: compile validators and run the on-chain proof and validator tests
+cd contracts && aiken build && aiken check      # 107/107 tests pass
 
-# Borrow circuit: proof + tampered-signal checks
-cd offchain/cli && node v5/test-semaphore-proof.mjs
+# Circuits: real proofs, tampered signals, wrong witnesses
+cd circuits && npm install && node --test tests/collateral-circuits.test.mjs tests/lender-withdraw.test.mjs
+
+# Protocol module, incl. golden tests against the Preprod cycles
+cd packages/protocol && npm install && npm test
 ```
 
 > The proving keys (`circuits/keys/*_final.zkey`) **are committed** for turnkey
@@ -103,21 +112,22 @@ cd offchain/cli && node v5/test-semaphore-proof.mjs
 ## Run the protocol (Preprod)
 
 ```bash
-cd offchain
-cp ../.env.example ../.env      # then fill in your Blockfrost key + wallet seed
-npm install
+cp .env.example .env            # then fill in your Blockfrost key + wallet seed
+cd packages/protocol && npm install && cd ../../offchain && npm install && cd cli/m4
 
-node cli/v5/1-park-vkey.mjs     # park the four verification keys
-node cli/v5/2-init-pool.mjs     # initialize the pool + mint the pool NFT
-node cli/v5/3-deposit.mjs       # deposit collateral through the pool
-node cli/v5/4-borrow.mjs        # borrow (ZK proof verified on-chain)
-node cli/v5/5-repay.mjs         # repay the loan
-node cli/v5/6-unlock.mjs        # unlock the collateral
-# between steps: node cli/v5/wait.mjs <txHash>
+export DEPLOYMENT=../../../packages/protocol/deployments/preprod-m3-ada.json   # the deployed ADA pool
+node run.mjs status
+node run.mjs lend     --note l1                     # buy one pool share
+node run.mjs deposit  --note c1 --asset 0           # lock 20 ADA (asset 1: 500 TOK)
+node run.mjs borrow   --note c1 --to <address B>    # 10 ADA to B (submit as relayer)
+node run.mjs repay    --note c1                     # 10.5 ADA, signed by B
+node run.mjs unlock   --note c1                     # collateral back to the deposit's unlock_to
+node run.mjs withdraw --note l1 --to <address B>    # one share to B
 ```
 
-Each step reads `PREPROD_BLOCKFROST_API_KEY` and `ADMIN_WALLET_SEED` (the wallet seed)
-from `.env` and writes a receipt (with the tx hash) under `offchain/cli/v5/receipts/`;
-`2-init-pool` writes `deployment.json`, from which every later step derives the
-scripts. Optional: `RECIPIENT_ADDRESS` (loan payout) and `UNLOCK_TO_ADDRESS`
-(collateral payout) — key addresses, default the wallet.
+The signer is the wallet named by `WALLET_SEED` (a variable in `.env`, default
+`ADMIN_WALLET_SEED`) at account `WALLET_ACCOUNT`; borrow, unlock and withdraw can be
+signed by any wallet, as a relayer. Notes (the secrets of deposits and shares) are
+kept in `offchain/cli/m4/notes/`. `node run.mjs deploy --loan <ada|unit> --collateral
+ada:20,<unit>:500` deploys a new pool; `mint-token` creates test tokens. See the
+header of `run.mjs`.
