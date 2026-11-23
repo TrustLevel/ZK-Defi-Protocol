@@ -8,13 +8,13 @@ on-chain pairing builtins), not BN254.
 
 | File | Committed | Purpose |
 |------|-----------|---------|
-| `collateral_semaphore_final.zkey` / `verification_key_semaphore.json` | yes | Borrow circuit (6 public signals) |
-| `repay_proof_final.zkey` / `verification_key_repay.json` | yes | Repay circuit (7 public signals) |
+| `collateral_semaphore_final.zkey` / `verification_key_semaphore.json` | yes | Borrow circuit (4 public signals) |
+| `repay_proof_final.zkey` / `verification_key_repay.json` | yes | Repay circuit (5 public signals) |
 | `settlement_proof_final.zkey` / `verification_key_settlement.json` | yes | Unlock circuit (3 public signals) |
 | `append_proof_final.zkey` / `verification_key_append.json` | yes | Append circuit (4 public signals) |
 | `lender_withdraw_final.zkey` / `verification_key_lender_withdraw.json` | yes | Lender withdraw circuit (4 public signals) |
 | `collateral_proof_final.zkey` / `verification_key.json` | yes | Legacy fixture circuit |
-| `pot14b_final.ptau` | no (gitignored) | BLS12-381 Powers of Tau (large enough for the borrow and repay circuits, ≤ 8,615 constraints) |
+| `pot14b_final.ptau` | no (gitignored) | BLS12-381 Powers of Tau (power 14; large enough for every circuit) |
 
 The `verification_key_*.json` files are what the deployed vkey reference UTxOs hold.
 The proving keys are committed so testers can reproduce proofs that verify against the
@@ -26,7 +26,7 @@ deployment without a fresh setup.
 
 ## Regenerate the keys
 
-Example for the borrow circuit (7,992 constraints, so power 14). The other circuits
+Example for the borrow circuit. The other circuits
 work the same way with their own `.r1cs`.
 
 ```bash

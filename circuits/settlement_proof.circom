@@ -4,41 +4,36 @@ include "circomlib/circuits/bitify.circom";
 include "./lib/poseidon255.circom";
 
 /**
- * SettlementProof Circuit  (BLS12-381)
+ * SettlementProof Circuit  (BLS12-381) — unlock
  *
- * Authorizes spending a SPECIFIC collateral UTxO on unlock by proving, in zero
- * knowledge, that the loan has been settled — WITHOUT revealing any value that
- * was public at borrow. This closes the "Leak 2" de-anonymization vector where
- * the old unlock redeemer revealed `loan_nullifier` (a value already public at
- * borrow), letting a chain analyst re-link borrow -> unlock -> deposit.
+ * Authorizes spending a SPECIFIC collateral UTxO by proving, in zero knowledge,
+ * that its loan has been settled, WITHOUT revealing any value that was public at
+ * borrow (so borrow and unlock cannot be linked).
  *
  * The proof attests:
- *   1. knowledge of the secret behind the spent commitment
- *      (commitment == Poseidon255(collateral_amount, secret)); commitment is
- *      public because it is on-chain in the spent datum anyway, and binding to
- *      it prevents unlocking someone else's collateral;
- *   2. a repayment nullifier R = Poseidon255(secret, repay_external_nullifier),
- *      derived from the SAME secret but scoped to a DISTINCT protocol scalar
- *      (repay_external_nullifier) so R cannot be correlated with the borrow-time
- *      loan_nullifier — R is a PRIVATE witness, never revealed;
- *   3. Merkle membership of R in the append-only repaid-set (repaid_root), so a
- *      valid proof exists only after the loan was repaid and R was inserted.
+ *   1. knowledge of the secret behind the spent deposit:
+ *      commitment == Poseidon255(COLLATERAL_LEAF_TAG, secret). The commitment is
+ *      public because it is in the spent datum anyway; binding to it prevents
+ *      unlocking someone else's collateral;
+ *   2. a repayment nullifier R = Poseidon255(secret, repay_external_nullifier)
+ *      from the SAME secret, scoped to a DISTINCT protocol scalar so R cannot be
+ *      correlated with the borrow-time loan nullifier. R is a PRIVATE witness;
+ *   3. Merkle membership of R in the append-only repaid set (repaid_root), so a
+ *      valid proof exists only after the loan was repaid and R was appended.
  *
- * BLS12-381 / Poseidon255 (poseidon-bls12381), so the in-circuit and on-chain
- * commitment hash are identical. Compile with:  circom --prime bls12381 -l .
+ * BLS12-381 / Poseidon255 (poseidon-bls12381). Compile with:
+ *   circom --prime bls12381 -l .
  *
  * Public signals (order is load-bearing — mirrored in contracts/lib/zk.ak and
- * offchain/cli/v5/common.mjs):
+ * packages/protocol/src/crypto.mjs):
  *   [ commitment, repaid_root, repay_external_nullifier ]
  * Private witness:
- *   secret, collateral_amount, pathIndices[depth], siblings[depth]
+ *   secret, pathIndices[depth], siblings[depth]
  */
 
 // Merkle inclusion proof for a binary tree hashed with Poseidon255(2).
-// (Copied verbatim from collateral_semaphore.circom to keep this circuit
-// self-contained and avoid recompiling the working borrow circuit.)
-// pathIndices[i] == 0  => current node is the LEFT child at level i
-// pathIndices[i] == 1  => current node is the RIGHT child at level i
+// (Same template as in collateral_semaphore.circom; kept here so the circuit is
+// self-contained.)
 template MerkleInclusion(depth) {
     signal input leaf;
     signal input pathIndices[depth];
@@ -70,6 +65,9 @@ template MerkleInclusion(depth) {
 }
 
 template SettlementProof(depth) {
+    // Must match COLLATERAL_LEAF_TAG in packages/protocol/src/crypto.mjs.
+    var COLLATERAL_LEAF_TAG = 5555;
+
     // ---- public ----
     signal input commitment;
     signal input repaid_root;
@@ -77,19 +75,18 @@ template SettlementProof(depth) {
 
     // ---- private witness ----
     signal input secret;
-    signal input collateral_amount;
     signal input pathIndices[depth];
     signal input siblings[depth];
 
-    // 1. commitment == Poseidon255(collateral_amount, secret)
+    // 1. commitment == Poseidon255(COLLATERAL_LEAF_TAG, secret)
     //    (binds the proof to the exact deposit UTxO being spent).
     component c = Poseidon255(2);
-    c.in[0] <== collateral_amount;
+    c.in[0] <== COLLATERAL_LEAF_TAG;
     c.in[1] <== secret;
     c.out === commitment;
 
     // 2. Repayment nullifier R = Poseidon255(secret, repay_external_nullifier).
-    //    PRIVATE — never leaves the circuit as a public signal.
+    //    PRIVATE: never leaves the circuit as a public signal.
     component rH = Poseidon255(2);
     rH.in[0] <== secret;
     rH.in[1] <== repay_external_nullifier;
@@ -103,11 +100,9 @@ template SettlementProof(depth) {
     }
     mt.root === repaid_root;
 
-    // 4. Range checks (anti field-overflow), mirroring the borrow circuit.
+    // 4. Range check (anti field-overflow).
     component rc_secret = Num2Bits(254);
     rc_secret.in <== secret;
-    component rc_amount = Num2Bits(64);
-    rc_amount.in <== collateral_amount;
 }
 
 component main {

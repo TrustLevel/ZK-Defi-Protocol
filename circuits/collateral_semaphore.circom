@@ -1,39 +1,40 @@
 pragma circom 2.0.0;
 
-include "circomlib/circuits/comparators.circom";
 include "circomlib/circuits/bitify.circom";
 include "./lib/poseidon255.circom";
 
 /**
- * CollateralSemaphore Circuit  (BLS12-381)
+ * CollateralSemaphore Circuit  (BLS12-381) — borrow
  *
- * The privacy-preserving authorization proof for the ZK-DeFi lending protocol.
  * A borrower proves, in zero knowledge:
- *   1. their collateral commitment is a member of the on-chain commitment set
- *      (Merkle root) — WITHOUT revealing which deposit it is (unlinkability);
- *   2. the collateral is sufficient for the requested loan — WITHOUT revealing
- *      the collateral amount (amount confidentiality; the amount is a private
- *      witness and the on-chain UTxO uses a fixed denomination);
- *   3. a loan nullifier derived from the same secret, scoped to a loan context
- *      (external_nullifier), preventing the same collateral from backing two
- *      loans and gating unlock on repayment;
- *   4. the proof is bound to a `recipient` (the payout key hash, as an integer):
+ *   1. their collateral leaf L = Poseidon255(COLLATERAL_LEAF_TAG, secret) is a
+ *      member of the on-chain collateral set (group_merkle_root), WITHOUT
+ *      revealing which deposit it is. The set holds the deposits of every
+ *      accepted collateral asset, so the proof reveals neither the deposit nor
+ *      its asset nor its amount;
+ *   2. a loan nullifier N = Poseidon255(secret, external_nullifier) from the same
+ *      secret; the pool records N, so a deposit backs one loan only;
+ *   3. the proof is bound to a `recipient` (the payout key hash, as an integer):
  *      the validator pays the loan only to that key, so a proof copied from the
  *      mempool cannot redirect the loan (front-running).
  *
+ * Sufficiency is not part of the proof. It is enforced on-chain: a leaf enters
+ * group_root only through DepositCollateral, which locks exactly the fixed
+ * denomination of an accepted asset, and each denomination covers one loan.
+ *
  * BLS12-381 / Poseidon255 (poseidon-bls12381), so the in-circuit and on-chain
- * commitment hash are identical. Compile with:  circom --prime bls12381 -l .
+ * hash are identical. Compile with:  circom --prime bls12381 -l .
  *
  * Public signals (order is load-bearing — mirrored in contracts/lib/zk.ak and
- * offchain/cli/v5/common.mjs):
- *   [ group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier, recipient ]
+ * packages/protocol/src/crypto.mjs):
+ *   [ group_merkle_root, loan_nullifier, external_nullifier, recipient ]
  * Private witness:
- *   secret, collateral_amount, pathIndices[depth], siblings[depth]
+ *   secret, pathIndices[depth], siblings[depth]
  */
 
 // Merkle inclusion proof for a binary tree hashed with Poseidon255(2).
-// pathIndices[i] == 0  => current node is the LEFT child at level i
-// pathIndices[i] == 1  => current node is the RIGHT child at level i
+// (Same template as in collateral_semaphore.circom; kept here so the circuit is
+// self-contained.)
 template MerkleInclusion(depth) {
     signal input leaf;
     signal input pathIndices[depth];
@@ -65,23 +66,23 @@ template MerkleInclusion(depth) {
 }
 
 template CollateralSemaphore(depth) {
+    // Must match COLLATERAL_LEAF_TAG in packages/protocol/src/crypto.mjs.
+    var COLLATERAL_LEAF_TAG = 5555;
+
     // ---- public ----
     signal input group_merkle_root;
     signal input loan_nullifier;
-    signal input loan_amount;
-    signal input collateral_ratio;
     signal input external_nullifier;
     signal input recipient;
 
     // ---- private witness ----
     signal input secret;
-    signal input collateral_amount;
     signal input pathIndices[depth];
     signal input siblings[depth];
 
-    // 1. Leaf = the collateral commitment = Poseidon255(collateral_amount, secret)
+    // 1. Leaf = Poseidon255(COLLATERAL_LEAF_TAG, secret).
     component leafH = Poseidon255(2);
-    leafH.in[0] <== collateral_amount;
+    leafH.in[0] <== COLLATERAL_LEAF_TAG;
     leafH.in[1] <== secret;
 
     // 2. Membership: the leaf is in the tree rooted at group_merkle_root.
@@ -93,40 +94,22 @@ template CollateralSemaphore(depth) {
     }
     mt.root === group_merkle_root;
 
-    // 3. Nullifier = Poseidon255(secret, external_nullifier).
+    // 3. Loan nullifier N = Poseidon255(secret, external_nullifier).
     component nH = Poseidon255(2);
     nH.in[0] <== secret;
     nH.in[1] <== external_nullifier;
     nH.out === loan_nullifier;
 
-    // 4. Sufficiency: collateral_amount * 100 >= loan_amount * collateral_ratio.
-    signal required;
-    required <== loan_amount * collateral_ratio;
-    signal scaled;
-    scaled <== collateral_amount * 100;
-
-    component ge = GreaterEqThan(64);
-    ge.in[0] <== scaled;
-    ge.in[1] <== required;
-    ge.out === 1;
-
-    // 5. Range checks (anti field-overflow).
-    component rc_collateral = Num2Bits(64);
-    rc_collateral.in <== collateral_amount;
-    component rc_loan = Num2Bits(64);
-    rc_loan.in <== loan_amount;
+    // 4. Range check (anti field-overflow).
     component rc_secret = Num2Bits(254);
     rc_secret.in <== secret;
-    component rc_ratio = Num2Bits(16);
-    rc_ratio.in <== collateral_ratio;
 
-    // 6. Recipient binding. A public input that no constraint uses could be
-    //    changed without invalidating the proof; squaring it puts it into the
-    //    constraint system (as Tornado Cash does for its recipient).
+    // 5. Recipient binding: squaring puts the otherwise unused public input into
+    //    the constraint system (as Tornado Cash does for its recipient).
     signal recipient_sq;
     recipient_sq <== recipient * recipient;
 }
 
 component main {
-    public [group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier, recipient]
+    public [group_merkle_root, loan_nullifier, external_nullifier, recipient]
 } = CollateralSemaphore(10);

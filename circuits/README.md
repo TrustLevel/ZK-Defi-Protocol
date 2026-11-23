@@ -9,14 +9,16 @@ Aiken validators (see [`../contracts/`](../contracts/)), so everything targets t
 
 | Circuit | Used by | Public signals | Proves |
 |---|---|---|---|
-| `collateral_semaphore.circom` | Borrow | `[group_merkle_root, loan_nullifier, loan_amount, collateral_ratio, external_nullifier, recipient]` | The commitment `Poseidon255(collateral_amount, secret)` is a member of the commitment set (depth 10); `loan_nullifier = Poseidon255(secret, external_nullifier)`; `collateral_amount·100 ≥ loan_amount·collateral_ratio`; range checks; the proof is bound to `recipient` (payout key hash as an integer, constrained via `recipient²`). |
-| `repay_proof.circom` | Repay | `[group_merkle_root, loan_nullifier, repay_nullifier, loan_amount, collateral_ratio, external_nullifier, repay_external_nullifier]` | Membership and sufficiency as in the borrow circuit, plus `loan_nullifier` **and** `repay_nullifier = Poseidon255(secret, repay_external_nullifier)` from the same secret, so the `R` a repay appends belongs to the loan it settles. Own verification key. |
-| `settlement_proof.circom` | Unlock | `[commitment, repaid_root, repay_external_nullifier]` | Knowledge of the secret behind `commitment`, and membership of the private `R = Poseidon255(secret, repay_external_nullifier)` in the repaid set (depth 10). |
-| `append_proof.circom` | Deposit, Repay | `[old_root, new_root, leaf, index]` | `leaf` was inserted at the empty position `index`, taking the root from `old_root` to `new_root` (depth 10). |
+| `collateral_semaphore.circom` | Borrow | `[group_merkle_root, loan_nullifier, external_nullifier, recipient]` | The leaf `Poseidon255(COLLATERAL_LEAF_TAG, secret)` is a member of the collateral set (depth 10), which holds the deposits of every accepted collateral asset; `loan_nullifier = Poseidon255(secret, external_nullifier)`; range check; the proof is bound to `recipient` (payout key hash as an integer, constrained via `recipient²`). No amount, ratio or asset: sufficiency is enforced on-chain by the fixed denominations. |
+| `repay_proof.circom` | Repay | `[group_merkle_root, loan_nullifier, repay_nullifier, external_nullifier, repay_external_nullifier]` | Membership as in the borrow circuit, plus `loan_nullifier` **and** `repay_nullifier = Poseidon255(secret, repay_external_nullifier)` from the same secret, so the `R` a repay appends belongs to the loan it settles. Own verification key. |
+| `settlement_proof.circom` | Unlock | `[commitment, repaid_root, repay_external_nullifier]` | Knowledge of the secret behind `commitment = Poseidon255(COLLATERAL_LEAF_TAG, secret)`, and membership of the private `R = Poseidon255(secret, repay_external_nullifier)` in the repaid set (depth 10). |
+| `lender_withdraw.circom` | Lender withdraw | `[lender_root, withdraw_nullifier, lender_external_nullifier, recipient]` | The note leaf `Poseidon255(LENDER_LEAF_TAG, secret)` is a member of the lender set (depth 10); `withdraw_nullifier = Poseidon255(secret, lender_external_nullifier)`; bound to `recipient`. |
+| `append_proof.circom` | Add liquidity, Deposit, Repay | `[old_root, new_root, leaf, index]` | `leaf` was inserted at the empty position `index`, taking the root from `old_root` to `new_root` (depth 10). |
 | `collateral_proof.circom` | none (legacy fixture) | `[commitment, loan_amount, collateral_ratio]` | Commitment opening + sufficiency; kept for the `zk_onchain_test` fixture. |
 
-Private inputs (`secret`, `collateral_amount`, Merkle paths) never touch the chain.
-The borrow circuit has 7,992 constraints, the repay circuit 8,615.
+The leaf tags (`COLLATERAL_LEAF_TAG = 5555`, `LENDER_LEAF_TAG = 6666`) must match
+`packages/protocol/src/crypto.mjs`. Private inputs (secrets, Merkle paths) never touch
+the chain.
 
 ## Prerequisites
 
@@ -30,6 +32,7 @@ circom collateral_semaphore.circom --r1cs --wasm --prime bls12381 -l . -l node_m
 circom repay_proof.circom          --r1cs --wasm --prime bls12381 -l . -l node_modules
 circom settlement_proof.circom     --r1cs --wasm --prime bls12381 -l . -l node_modules
 circom append_proof.circom         --r1cs --wasm --prime bls12381 -l . -l node_modules
+circom lender_withdraw.circom      --r1cs --wasm --prime bls12381 -l . -l node_modules
 ```
 
 The `*_js/*.wasm` witness generators are committed; the `.r1cs` files are not.
@@ -46,7 +49,7 @@ that do not match the deployed vkey UTxOs.
 ```bash
 node tests/gen-semaphore-fixture.cjs   # real proofs for all circuits -> ../contracts/lib/semaphore_onchain_test.ak
 cd ../contracts && aiken check         # verifies them on-chain (+ tampered signals)
-cd ../offchain/cli && node v5/test-semaphore-proof.mjs   # borrow proof + tampered loan / recipient
+node --test tests/collateral-circuits.test.mjs tests/lender-withdraw.test.mjs   # real proofs, tampered signals, wrong witnesses
 ```
 
 ## Layout
