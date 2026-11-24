@@ -412,8 +412,7 @@ tests, the full list, pass rates and edge cases are in
 Independent testers ran the protocol on Preprod with their own wallets and pools; their
 dated reports are in [`docs/Tester-Feedback/`](Tester-Feedback/) (index in
 [`MILESTONE3-EVIDENCE.md`](MILESTONE3-EVIDENCE.md), with the stand each report covers).
-The break-it run on this stand follows
-[runbook 4](Tester-Feedback/MILESTONE3-TESTER-RUNBOOK-4-breakit.md). In the break-it run on 2026-11-18, on an earlier stand,
+In the break-it run on 2026-11-18 on an earlier stand
 ([`MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md)),
 attacks 1–8 were rejected; attack 9 showed that the repayment nullifier was not bound
 to the repaid loan. Commit

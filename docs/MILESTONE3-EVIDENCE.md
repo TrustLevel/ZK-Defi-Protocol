@@ -62,7 +62,6 @@ Pass/fail rates, edge cases, performance and tester feedback:
 | Protocol + privacy model + zk mechanism + on-chain design + trust assumptions + non-goals + privacy boundary + note to reviewer | `docs/MILESTONE3.md` |
 | Test results | `docs/MILESTONE3-TEST-RESULTS.md` |
 | This evidence index | `docs/MILESTONE3-EVIDENCE.md` |
-| Break-it runbook for testers | `docs/Tester-Feedback/MILESTONE3-TESTER-RUNBOOK-4-breakit.md` |
 | Approved M1 / M2 POAs (re-published) | `docs/poa/M1-POA.pdf`, `docs/poa/M2-POA.pdf` |
 
 ### Independent tester reports
@@ -82,9 +81,7 @@ loan) is resolved in commit
 [`6b5cbb3`](https://github.com/TrustLevel/ZK-Defi-Protocol/commit/6b5cbb3), which this
 stand includes (see `docs/MILESTONE3.md` §5, Independent testing).
 
-The break-it run on this stand (`m3-v6-rc1`) follows
-[runbook 4](Tester-Feedback/MILESTONE3-TESTER-RUNBOOK-4-breakit.md); its report is added
-here before the stand is tagged `m3-poa-v6`. Earlier runbooks are kept in
+The runbooks the testers followed are kept in
 [`Tester-Feedback/archive/`](Tester-Feedback/archive/).
 
 ---
