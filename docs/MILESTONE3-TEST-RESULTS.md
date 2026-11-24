@@ -142,9 +142,10 @@ and withdraw and pays their fees, P receives the withdrawn share.
 | Unlock 20 ADA to U, relayed by R | [`ea7dc16ccec4…`](https://preprod.cardanoscan.io/transaction/ea7dc16ccec44d237932dc0f3dbb563e404eb084a69c33ecc893c8a254c15a47) | true | 0.4109 |
 | Withdraw one share (10.25 USD) to P, relayed by R | [`ed53a299f0d3…`](https://preprod.cardanoscan.io/transaction/ed53a299f0d3263efd6298331d225a34baa339c42ca79b98de4509c604fa26bf) | true | 0.5864 |
 
-Funding outside the protocol: D received its TOK from L, and B received 40 ADA and
-1 USD for the interest from L ([`8d771bc79bbf…`](https://preprod.cardanoscan.io/transaction/8d771bc79bbfdb08ff87d57f1864a5e595525a3590a280bd56c353bc871aa309)); R was funded by L.
-Nothing passed between D and B.
+Funding outside the protocol: the demo addresses were funded from one test wallet, L,
+which also minted the test tokens (D's TOK; B's 40 ADA and 1 USD for the interest in
+[`8d771bc79bbf…`](https://preprod.cardanoscan.io/transaction/8d771bc79bbfdb08ff87d57f1864a5e595525a3590a280bd56c353bc871aa309); R's fee budget). No protocol transaction carries a value
+that the deposit side (D, U) and the loan side (B) share.
 
 Economics: in both pools two shares of 10 bought, one loan of 10 repaid with 0.5
 interest, so a share is worth 10.25 and one was paid out at that price. The TOK

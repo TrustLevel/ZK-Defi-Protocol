@@ -66,9 +66,7 @@ tests/                         fixture generators + gate test
 
 ## Security
 
-Groth16 requires a trusted setup. The committed keys come from a dev-only
-single-contributor ceremony (see [`keys/README.md`](keys/README.md)) and are not
-suitable for mainnet. A professional circuit audit is recommended before mainnet.
+Groth16 requires a trusted setup (see [`keys/README.md`](keys/README.md)).
 
 ## References
 
