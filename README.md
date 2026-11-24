@@ -1,69 +1,57 @@
 # ZK Private-Lending Protocol
 
-A zero-knowledge lending/borrowing protocol on Cardano. Each deposit, loan, repayment
-and collateral unlock is authorized by a Groth16 zk-SNARK proof verified **on-chain**
-by Aiken validators. The borrower proves, in zero knowledge, that they know the secret
-behind a sufficiently-collateralized deposit, **without exposing that secret**, and
-there is no admin and no signature on any path.
+A zero-knowledge lending and borrowing protocol on Cardano. Lenders add liquidity and
+withdraw it with the interest it earned; borrowers deposit collateral, borrow against
+it, repay and reclaim the collateral. Every action is authorized by a Groth16
+zk-SNARK proof verified **on-chain** by Aiken validators. There is no admin and no
+signature on any path: the proof is the authorization.
 
-## Milestone 3 status
+## Milestone 3
 
-Milestone 3 is **complete and live on Cardano Preprod**:
+Milestone 3 (zk-SNARK Integration for Private Transactions) is **live on Cardano
+Preprod**:
 
-- On-chain Groth16 (BLS12-381) verification working inside the Aiken validators.
-- The full lifecycle runs end-to-end on Preprod:
-  **park verification keys → init pool (mint pool NFT) → deposit → borrow → repay → unlock**.
+- Five BLS12-381 Groth16 circuits (append, borrow, repay, settlement, lender
+  withdraw), each verified on-chain inside the validators.
+- Anonymous lending and private borrowing: deposit ↔ borrow, borrow ↔ unlock and
+  liquidity deposit ↔ withdrawal cannot be linked.
+- A pool lends ADA or a native token and accepts several collateral assets in one
+  commitment set. Every amount is a fixed denomination of the pool, and nothing in a
+  loan names the deposit or the asset behind it.
+- A relayer can submit borrow, unlock and withdrawal without being able to redirect
+  funds.
+- Two pools (one lending ADA, one lending a native token) ran the full cycle on Preprod.
 
-Evidence and details:
+Documentation and evidence:
 
-- [docs/MILESTONE3.md](docs/MILESTONE3.md)
-- [docs/MILESTONE3-EVIDENCE.md](docs/MILESTONE3-EVIDENCE.md)
-- [docs/MILESTONE3-TEST-RESULTS.md](docs/MILESTONE3-TEST-RESULTS.md)
-- [docs/Tester-Feedback/](docs/Tester-Feedback/)
-
-### Deployed scripts (Preprod)
-
-| Script | Hash |
-|-----------|-------------|
-| `pool_nft` (minting policy) | `4346c33b38b46f5b34b60b86bc9ba4ea55f392a3c4cc4cafd060c6ce` |
-| `lending_pool_v5` | `8b15840cc3feac88fb000d4ffe25a108aaba37d4786161719d4d25ea` |
-| `collateral_v5`   | `45b1b0147e0e9d3b0c87f53cfd482ad17170ed0654056207b9503c0c` |
-
-### On-chain transactions (Cardanoscan, Preprod) — all `valid_contract: true`
-
-| Step | Transaction |
-|------|-------------|
-| Park verification keys | [edbfae0e6704…](https://preprod.cardanoscan.io/transaction/edbfae0e6704086b0f9feddf30c83544c10406faf729792ba57bbdc4b2be1132) |
-| Init pool + mint pool NFT | [e2ecaa36399f…](https://preprod.cardanoscan.io/transaction/e2ecaa36399f9732f6c56b76489ae58d7b5beaa6aa69a0150ce6ef26b1b5390e) |
-| Deposit collateral (append proof into the commitment set) | [e63eeaab7526…](https://preprod.cardanoscan.io/transaction/e63eeaab75266f138bf283a705ce741da3c2e805104e2fe18889668be4b7fbc1) |
-| Borrow (ZK membership proof verified on-chain, recipient-bound) | [8be8d71a2950…](https://preprod.cardanoscan.io/transaction/8be8d71a29509f9446aff7d668181470a92e5741af9a8d966cdeee232a468bf1) |
-| Repay (repay proof binds R; appends R to repaid set) | [fad24d65ede8…](https://preprod.cardanoscan.io/transaction/fad24d65ede8b625ebe6a7f22684fcdb33803f50b5445c1d72ee857ca869cf60) |
-| Unlock collateral (settlement proof) | [64f9e36847b7…](https://preprod.cardanoscan.io/transaction/64f9e36847b7774a69714f944f448c0496795eaa2621c80c83e02324b48584b9) |
+- [docs/MILESTONE3.md](docs/MILESTONE3.md): protocol, privacy model, proof generation,
+  on-chain verification, deployment (§4), security model, note to reviewer (§7)
+- [docs/MILESTONE3-EVIDENCE.md](docs/MILESTONE3-EVIDENCE.md): evidence index
+- [docs/MILESTONE3-TEST-RESULTS.md](docs/MILESTONE3-TEST-RESULTS.md): pass/fail rates,
+  edge cases, every Preprod transaction, performance
+- [docs/Tester-Feedback/](docs/Tester-Feedback/): independent tester reports
 
 ## How it works
 
-0. **Init** — the pool is created together with a one-shot NFT; the validators
-   recognise the real pool by it.
-1. **Deposit** — the depositor locks exactly one collateral unit (20 ADA) through the
-   pool with a Poseidon commitment `commitment = Poseidon255(collateral_amount, secret)`
-   and a ZK append proof that inserts it into the on-chain anonymity set (a Merkle
-   root). Permissionless, no admin.
-2. **Borrow** — the borrower generates a Groth16 proof that their commitment is a
-   **member** of the set and is sufficiently collateralized
-   (`collateral_amount·100 ≥ loan_amount·collateral_ratio`) — without revealing which
-   deposit it is. The lending-pool validator verifies the proof on-chain and pays the
-   fixed loan to the recipient key the proof is bound to. Each deposit backs exactly
-   one loan. Public signals: `[group_root, loan_nullifier, loan_amount,
-   collateral_ratio, external_nullifier, recipient]`.
-3. **Repay** — the borrower repays exactly principal + interest with a repay proof that
-   derives the loan nullifier and a distinct repayment nullifier `R` from the same
-   secret, settles the loan, and appends that `R` into an append-only repaid set (a ZK
-   append proof — permissionless, no admin).
-4. **Unlock** — the borrower proves, in zero knowledge, membership of the private `R` in
-   the repaid set (settlement proof). Its public signals `[commitment, repaid_root,
-   repay_external_nullifier]` share nothing with the borrow, so borrow ↔ unlock cannot be
-   linked. The collateral is paid to the address fixed at deposit. The secret is never
-   revealed on any path.
+1. **Lend.** A lender buys one pool share at the current share price and appends a
+   note leaf `Poseidon255(LENDER_LEAF_TAG, secret)` to the lender set with a ZK append
+   proof.
+2. **Deposit.** A depositor locks exactly the fixed denomination of an accepted
+   collateral asset and appends the commitment `Poseidon255(COLLATERAL_LEAF_TAG,
+   secret)` to the collateral set (a Merkle root) with a ZK append proof.
+3. **Borrow.** The borrower proves that they own **some** member of the collateral set,
+   without revealing which one or its asset. The pool pays the fixed loan to the key
+   the proof is bound to; the loan nullifier allows one loan per deposit. Public
+   signals: `[group_root, loan_nullifier, external_nullifier, recipient]`.
+4. **Repay.** The borrower pays principal + interest with a repay proof that derives
+   the loan nullifier and a distinct repayment nullifier `R` from the same secret,
+   settles the loan and appends `R` to the repaid set.
+5. **Unlock.** A settlement proof shows, in zero knowledge, that the private `R` is in
+   the repaid set. It shares no public value with the borrow. The collateral goes to
+   the address fixed at deposit.
+6. **Withdraw.** A lender proves membership of their note in the lender set and reveals
+   a one-time withdraw nullifier; the pool pays the current share price, principal
+   plus earned interest, to the key the proof is bound to.
 
 ## Tech stack
 
