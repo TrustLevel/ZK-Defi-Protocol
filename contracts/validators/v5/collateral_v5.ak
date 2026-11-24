@@ -1,5 +1,5 @@
 //// ============================================
-//// COLLATERAL V6 — private ZK collateral (Milestone 3)
+//// COLLATERAL — private ZK collateral
 //// ============================================
 //// Holds user collateral (the fixed denomination of one accepted collateral
 //// asset) with a Poseidon255 commitment. There is no owner, and neither the
@@ -10,12 +10,10 @@
 //// append-only `repaid_root`. A valid proof therefore exists only after the loan
 //// was repaid and R was inserted into repaid_root.
 ////
-//// This is the privacy-preserving successor to the v5 owner-signature unlock. It
-//// preserves Reviewer-2's "no unlock after partial/no repayment" guarantee (an
-//// empty / R-absent repaid_root makes the membership proof unsatisfiable) while
-//// also closing Leak-2: the unlock redeemer no longer carries the borrow-time
-//// loan_nullifier, and the proof's public signals share nothing with the borrow,
-//// so borrow<->unlock is unlinkable.
+//// There is no unlock without repayment: an empty or R-absent repaid_root makes
+//// the membership proof unsatisfiable. The unlock redeemer carries no value of
+//// the borrow, and the proof's public signals share nothing with it, so
+//// borrow<->unlock is unlinkable.
 ////
 //// The unlock pays the full value of the deposit (its asset and its min ADA) to
 //// the deposit's `unlock_to` address in

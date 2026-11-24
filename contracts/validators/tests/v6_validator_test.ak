@@ -1,12 +1,12 @@
-//// Validator-level adversarial tests for the v6 private model, using REAL
+//// Validator-level adversarial tests for the private model, using REAL
 //// on-chain proofs from the fixture (semaphore_onchain_test). Covers the
 //// reshaped borrow (membership), repay (interest + nullifier removal) and unlock
 //// (settlement proof: commitment-bound + Merkle membership of the PRIVATE
 //// repayment nullifier in the pool's append-only repaid_root). The critical one
 //// is `unlock_without_repay_fails`: a valid settlement proof cannot verify
-//// against a repaid_root that does not (yet) contain R — preserving the
-//// Reviewer-2 "no unlock without repayment" guarantee. Unlock also no longer
-//// carries the borrow-time loan_nullifier (Leak-2 fix), enforced structurally.
+//// against a repaid_root that does not (yet) contain R: no unlock without
+//// repayment. The unlock redeemer carries no borrow-time loan_nullifier,
+//// enforced structurally.
 
 use cardano/address.{Address, from_script, from_verification_key}
 use cardano/assets.{Value, from_asset, from_lovelace, merge}
@@ -558,7 +558,7 @@ test unlock_when_settled_succeeds() {
 
 test unlock_without_repay_fails() {
   // repaid_root is still the empty root (loan not repaid -> R not appended) -> the
-  // settlement proof cannot verify. Fail-closed: preserves the Reviewer-2 guarantee.
+  // settlement proof cannot verify. Fail-closed: no unlock without repayment.
   let tx =
     Transaction {
       ..placeholder,
@@ -596,9 +596,9 @@ test unlock_wrong_commitment_fails() {
 }
 
 test unlock_redeemer_carries_no_loan_nullifier() {
-  // Structural guarantee (Leak-2): UnlockDeposit has EXACTLY {proof, pool_ref}.
-  // This destructuring compiles only because the redeemer no longer carries the
-  // borrow-time loan_nullifier — the value that used to re-link borrow<->unlock.
+  // Structural guarantee: UnlockDeposit has EXACTLY {proof, pool_ref}. This
+  // destructuring compiles only because the redeemer carries no borrow-time
+  // loan_nullifier, the value that would link borrow<->unlock.
   let r = UnlockDeposit { proof: settlement_proof(), pool_ref: pool_oref }
   let UnlockDeposit { proof: _, pool_ref } = r
   pool_ref == pool_oref

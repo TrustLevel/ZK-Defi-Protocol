@@ -1,5 +1,5 @@
 //// ============================================
-//// V6 TYPES — Private on-chain ZK lending (Milestone 3)
+//// TYPES — Private on-chain ZK lending
 //// ============================================
 //// The proof is the authorization: there is no admin and no signature on any
 //// path. Privacy model:
@@ -26,8 +26,7 @@
 //// R = Poseidon255(secret, repay_external_nullifier) in the append-only
 //// `repaid_root`. Unlock's public signals are [commitment, repaid_root,
 //// repay_external_nullifier] — none shared with borrow, so borrow<->unlock is
-//// unlinkable (closes the Leak-2 vector where the old redeemer revealed the
-//// borrow-time loan_nullifier).
+//// unlinkable.
 //// Repay inserts R into `repaid_root` ITSELF via a zero-knowledge append proof
 //// (permissionless — no admin), so the whole borrow/repay/unlock path needs no
 //// signature.

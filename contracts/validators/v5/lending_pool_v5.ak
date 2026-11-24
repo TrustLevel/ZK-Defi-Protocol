@@ -1,5 +1,5 @@
 //// ============================================
-//// LENDING POOL V6 — private on-chain ZK lending (Milestone 3)
+//// LENDING POOL — private on-chain ZK lending
 //// ============================================
 //// Borrow/repay are authorized by a Groth16 membership proof verified ON-CHAIN.
 //// The borrow does NOT reference a specific collateral UTxO — it proves the
