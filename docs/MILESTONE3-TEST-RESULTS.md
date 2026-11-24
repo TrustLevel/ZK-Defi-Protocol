@@ -143,7 +143,8 @@ and withdraw and pays their fees, P receives the withdrawn share.
 | Withdraw one share (10.25 USD) to P, relayed by R | [`ed53a299f0d3…`](https://preprod.cardanoscan.io/transaction/ed53a299f0d3263efd6298331d225a34baa339c42ca79b98de4509c604fa26bf) | true | 0.5864 |
 
 Funding outside the protocol: the demo addresses were funded from one test wallet, L,
-which also minted the test tokens (D's TOK; B's 40 ADA and 1 USD for the interest in
+which also minted the test tokens (D's TOK; B's 40 ADA in
+[`3209083e9880…`](https://preprod.cardanoscan.io/transaction/3209083e9880876c14af722559012c3bf38a30173d51b4c0f4ffc6ff28266114) and 1 USD for the interest in
 [`8d771bc79bbf…`](https://preprod.cardanoscan.io/transaction/8d771bc79bbfdb08ff87d57f1864a5e595525a3590a280bd56c353bc871aa309); R's fee budget). No protocol transaction carries a value
 that the deposit side (D, U) and the loan side (B) share.
 

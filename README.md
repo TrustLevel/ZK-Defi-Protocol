@@ -110,7 +110,7 @@ node run.mjs deposit  --note c1 --asset 0           # lock 20 ADA (asset 1: 500 
 node run.mjs borrow   --note c1 --to <address B>    # 10 ADA to B (submit as relayer)
 node run.mjs repay    --note c1                     # 10.5 ADA, signed by B
 node run.mjs unlock   --note c1                     # collateral back to the deposit's unlock_to
-node run.mjs withdraw --note l1 --to <address B>    # one share to B
+node run.mjs withdraw --note l1 --to <address P>    # one share to a fresh address P
 ```
 
 The signer is the wallet named by `WALLET_SEED` (a variable in `.env`, default

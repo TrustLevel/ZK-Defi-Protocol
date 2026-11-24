@@ -95,7 +95,7 @@ another links them. The live cycle below uses separate addresses for every role.
 
 ### The full private lending cycle (confirmed live on Preprod)
 
-Two pools run on the same scripts and verification keys. Every role uses its own
+Two pools run on the same validator code and verification keys. Every role uses its own
 address: the lender (L), the depositor (D), the address the collateral returns to (U),
 the borrower who receives the loan and repays (B), the relayer that submits borrow,
 unlock and withdrawal (R), and the address the withdrawn share goes to (P).
@@ -438,7 +438,9 @@ the repay proof (§2) and adds both attacks as regression tests
   setup. Production keys come from a multi-party ceremony (M1 Appendix A), which is
   secure as long as one participant is honest.
 - **Relayer.** The relayer pays fees and cannot redirect funds or learn secrets. It
-  sees the transactions it submits, which are public anyway. Anyone can run one, and a
+  sees the transactions it submits, which are public anyway, and the network metadata
+  of the requests it receives; a user who wants to keep that from one operator uses
+  different relayers or submits directly. Anyone can run one, and a
   user can always submit the transaction themselves. Every relayed transaction costs
   the relayer its fee, and a payout in a native token also its output's min ADA, so the
   reference relayer caps relayed transactions per payout key and per day. A relayer
@@ -452,7 +454,8 @@ complete money market. The following are not part of it:
 
 - **No price feed, no liquidation.** Collateral value is fixed by the pool's
   denominations. If an accepted asset falls in price, its loans become
-  undercollateralized, and nothing on-chain compels a borrower to repay. An oracle and
+  undercollateralized, and nothing on-chain compels a borrower to repay; the collateral
+  of a loan that is never repaid stays locked, and the lenders carry the loss. An oracle and
   a liquidation module are the upgrade path (M1 §6.5, "after MVP").
 - **One loan asset per pool.** Borrowing a different asset means using its pool.
 - **Capacity.** The lender, commitment and repaid sets are depth-10 Merkle trees
@@ -523,23 +526,35 @@ This section answers the points of the previous review. Page numbers refer to
 The review acknowledged that the unlock-without-repay issue is resolved, that interest
 is enforced on-chain, and that deposit ↔ borrow and borrow ↔ unlock are unlinkable.
 
-**M1 and M3.** M1 is the approved architecture. It sets what the protocol must
-guarantee and outlines how: its acceptance criteria ask that the document "outline"
-how zk-SNARKs protect financial data (p. 2), it describes "how the system could be
-integrated" (p. 15), lets the contracts be "divided into different modules or even
-separate contracts if it's reasonable for the protocol's performance" (p. 22), and
-expects that "as our DeFi protocol evolves, we'll need to update circuit logic"
-(p. 8). M3 builds this architecture on Cardano L1. Every guarantee M1 states is
-delivered:
+**Scope and the requested Change Request.** The review asked for an official Change
+Request because it saw the scope and architecture as changed from M1. A Change Request
+formalizes a change to what a project committed to. M3 does not change that
+commitment: it delivers the M1 scope. Every point the review listed is part of this
+submission and runs on Preprod: anonymous lending, multi-asset support,
+confidentiality of amount and asset, and a relayer that removes the user as fee payer
+(points 1–4 below). The proof system and the commitment hash are implementation
+choices within the M1 architecture, which evaluates the proof system as a choice
+(pp. 5, 10) and already builds on Poseidon (pp. 20–21); both deliver the M1 guarantees
+on Cardano L1 at lower cost (points 5–6). With the committed scope and guarantees
+delivered, there is no change of commitment to formalize, and M3 is assessed against
+the approved M1 scope.
+
+**M1 and M3.** M1 states what the protocol guarantees and describes "how the system
+could be integrated" (p. 15), with contracts that may be "divided into different
+modules or even separate contracts if it's reasonable for the protocol's performance"
+(p. 22). M3 builds this architecture on Cardano L1 and delivers each guarantee in the
+form a public ledger allows: what stays private is which actions belong to one user
+or one position; that a transaction takes place, and when, is public on any public
+ledger (§5, Privacy boundary).
 
 | M1 guarantee | Delivered in M3 | Evidence |
 |---|---|---|
-| **Asset confidentiality:** "The specific assets used as collateral remain private" (pp. 11, 15) | All accepted collateral assets share one commitment set; a loan does not reveal which asset backs it (§1 item 2) | Borrow [`b219752d…`](https://preprod.cardanoscan.io/transaction/b219752d2a646c5e67f0302ad949eacea0940913ec5f8a148a32088948fd5b42), backed by the TOK deposit; nothing in it names the deposit or its asset |
-| **Amount confidentiality:** "The exact values of collateral, loans, and repayments remain private" (p. 15) | Every amount is a fixed denomination of the pool; no amount carries information about a position, and the collateral amount is in no datum or public signal (§1 item 1) | Borrow and repay public signals (§2); deposits of 20 ADA and 500 TOK in one set |
+| **Asset confidentiality:** "The specific assets used as collateral remain private" (pp. 11, 15) | All accepted collateral assets share one commitment set; a loan names neither the deposit nor the asset behind it (§1 item 2). The deposit itself shows which accepted asset it locks (§5) | Borrow public signals `[group_root, loan_nullifier, external_nullifier, recipient]` (§2); ADA and TOK deposits enter the same set (§1 step 4) |
+| **Amount confidentiality:** "The exact values of collateral, loans, and repayments remain private" (p. 15) | Every amount is a fixed denomination of the pool, so no amount identifies a position; the collateral amount is in no datum or public signal. Pool totals are public, as M1 lists them (p. 14) | Borrow and repay public signals (§2); deposits of 20 ADA and 500 TOK in one set |
 | **Identity protection:** "Borrower identities cannot be linked to specific loans" (p. 15) | The borrow proves membership in the set without naming a deposit, pays a proof-bound key and is relayed (§1 items 3, 6) | Borrow relayed by R to B; D appears in no loan transaction |
 | **Relationship privacy:** "Connections between borrowers and lenders remain private" (p. 15) | Lenders hold anonymous notes in a pool; no loan and no note share a value (§1 item 5) | Pair table in §1 |
-| **Activity concealment:** "The timing and frequency of loan-related activities remain private" (p. 15) | A user's actions fall into groups the chain cannot join, so a user's history and frequency cannot be read off the chain (§1, What links and what does not) | Pair table in §1; separate address per role in the live cycle |
-| **Anonymous lending:** "Their identity remains disconnected from their lending activity"; "The amount they've lent isn't publicly visible" (p. 11) | A note is one share; a withdrawal proves note membership and reveals a one-time nullifier; a larger position is several notes (§1 item 5) | Withdraw [`b4c42d0c…`](https://preprod.cardanoscan.io/transaction/b4c42d0cb457679afa75166c13ccd943675840cdec8e9a6ccc82ef5b14ac5496), paid to P |
+| **Activity concealment:** "The timing and frequency of loan-related activities remain private" (p. 15) | Which actions belong to one user cannot be read off the chain when each group uses its own address, so a user's history and frequency stay private; the time of each single transaction is public (§5) | Pair table in §1; separate address per role in the live cycle |
+| **Anonymous lending:** "Their identity remains disconnected from their lending activity"; "The amount they've lent isn't publicly visible" (p. 11) | A note is one share; a withdrawal proves note membership and reveals a one-time nullifier; a larger position is several notes, which can come from different addresses (§1 item 5) | Withdraw [`b4c42d0c…`](https://preprod.cardanoscan.io/transaction/b4c42d0cb457679afa75166c13ccd943675840cdec8e9a6ccc82ef5b14ac5496), paid to P |
 | **Collateral verification** (M1 §2.2; M3 output 1) | At deposit, the validator admits only an accepted denomination under the commitment the append proof inserts; at borrow, the proof shows ownership of a member of that set, one loan per member (§2) | `deposit_*` and `borrow_*` tests; live deposits and borrow |
 
 The points of the review, in order:
@@ -562,7 +577,7 @@ a native token (USD); both accept ADA and TOK as collateral, and pool 1's loan w
 backed by the TOK deposit without the transaction revealing it (§1, live cycle; §4).
 
 **3. Anonymous lending.** Delivered (§1, item 5), following the lending flow of M1
-§1.4 C (pp. 12–13): a commitment for the position, a nullifier against double
+§1.4 C (pp. 13–14): a commitment for the position, a nullifier against double
 withdrawal, a zero-knowledge proof of position ownership, and no public link between
 the lender and the position. `AddLiquidity` carries only the note leaf and one share
 price.
@@ -590,9 +605,10 @@ among the Cardano projects (p. 5) and as the example trusted setup (p. 41). At
 implementation, Groth16 was the proof system with a working verifier on Plutus V3's
 BLS12-381 builtins (`modulo-p/ak-381`). The result is measured, not expected: every
 step is one transaction, and repay verifies two proofs at about half the CPU budget
-(§4). Like the PLONK setup in M1 (p. 7), it rests on a trusted setup whose powers of
-tau are universal and shared by all circuits; the production ceremony follows M1
-Appendix A (§5, Trust assumptions).
+(§4). Groth16 adds a circuit-specific phase 2 to the universal powers of tau shared by
+all five circuits (M1 p. 7 names this difference). The circuits are fixed for a
+deployment, so phase 2 runs once per circuit; for production it is a multi-party
+ceremony like the one M1 Appendix A describes (§5, Trust assumptions).
 
 **6. Poseidon for commitments and nullifiers.** Poseidon is part of the M1 design:
 "Poseidon Hash-Based Commitments — Why Poseidon?" (p. 20), the nullifier structure
