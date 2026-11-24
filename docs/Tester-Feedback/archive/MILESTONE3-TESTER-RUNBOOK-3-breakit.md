@@ -1,6 +1,6 @@
 # M3 Tester Runbook 3 — Break it (pumbiii)
 
-> **Archived runbook.** Break-it runbook for the stand tagged `m3-poa-v4`/`m3-poa-v5`. It is the runbook pumbiii followed for [`../MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md`](../MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md) (2026-11-18). The command line client it uses (`offchain/cli/v5/`) is part of those tags. The current tester runbook is [`../MILESTONE3-TESTER-RUNBOOK-4-breakit.md`](../MILESTONE3-TESTER-RUNBOOK-4-breakit.md).
+> **Archived runbook.** Break-it runbook for the stand tagged `m3-poa-v4`/`m3-poa-v5`. It is the runbook pumbiii followed for [`../MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md`](../MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md) (2026-11-18). The command line client it uses (`offchain/cli/v5/`) is part of those tags.
 
 **Your role:** try to **break** the protocol, on your **own** pool with your **own**
 wallet. Run each attack below and record whether the protocol **correctly rejected**

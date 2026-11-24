@@ -1,6 +1,6 @@
 # M3 Tester Runbook 1 — Reproduce & verify (pinusch)
 
-> **Archived runbook.** Reproduce runbook as issued on 2026-08-31 (last edited 2026-09-02) for the stand tagged `m3-poa-v3`. No tester report was produced from it. The current tester runbook is [`../MILESTONE3-TESTER-RUNBOOK-4-breakit.md`](../MILESTONE3-TESTER-RUNBOOK-4-breakit.md).
+> **Archived runbook.** Reproduce runbook as issued on 2026-08-31 (last edited 2026-09-02) for the stand tagged `m3-poa-v3`. No tester report was produced from it.
 
 
 **Your role:** confirm the published evidence is real, and independently run the whole
