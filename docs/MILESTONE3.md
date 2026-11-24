@@ -31,7 +31,9 @@ any path**: the proof is the authorization. Three Plutus V3 scripts implement it
   one collateral set.
 
 The five verification keys (borrow, repay, settlement, append, lender withdraw) are
-parked once as inline datums on an **unspendable (always-false) address**. The
+parked once as inline datums on an **unspendable (always-false) address**; its source
+is `contracts/validators/always_false.ak`, and `packages/protocol/test/park.test.mjs`
+derives the address from it. The
 validators read them as **reference inputs at fixed references given as script
 parameters**, never from a datum.
 
