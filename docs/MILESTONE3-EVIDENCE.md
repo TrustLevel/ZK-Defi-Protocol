@@ -83,8 +83,7 @@ loan) is resolved in commit
 [`6b5cbb3`](https://github.com/TrustLevel/ZK-Defi-Protocol/commit/6b5cbb3), which this
 stand includes (see `docs/MILESTONE3.md` §5, Independent testing).
 
-**The 2026-11-25 run on this stand** (the report notes that it was carried out with
-Claude): own ADA and USD pools, both baseline cycles, the validator suite (109/109), each
+**The 2026-11-25 run on this stand:** own ADA and USD pools, both baseline cycles, the validator suite (109/109), each
 of the 16 negative cases of runbook 4 confirmed against the test that covers it, and a
 live sample on Preprod. Unlock without repayment (case 1) and a second withdrawal of
 the same share (case 12a) were refused; case 9a (repay that appends another deposit's
