@@ -439,6 +439,17 @@ to the repaid loan. Commit
 the repay proof (§2) and adds both attacks as regression tests
 (`repay_with_foreign_repay_nullifier_fails`, `repay_with_copied_borrow_proof_fails`).
 
+The run on this stand on 2026-11-25
+([`MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-25.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-25.md),
+[runbook 4](Tester-Feedback/MILESTONE3-TESTER-RUNBOOK-4-negative-tests.md)) covered the
+lender side, the asset pools and the relayer: own pools, both baseline cycles, every
+negative case confirmed against its test, and a live sample. No invalid transaction was
+accepted. It found that the client's pool check did not cover a pool's nullifier
+scalars and parameters at init; commit
+[`ce46d49`](https://github.com/TrustLevel/ZK-Defi-Protocol/commit/ce46d49) adds them
+(`verify-pool.test.mjs`), and the tester confirmed the fix live
+([`MILESTONE3-EVIDENCE.md`](MILESTONE3-EVIDENCE.md), Independent tester reports).
+
 ### Trust assumptions
 
 - **Pool initialization.** Whoever initializes the pool chooses its configuration: the
