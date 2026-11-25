@@ -450,9 +450,11 @@ the repay proof (§2) and adds both attacks as regression tests
   for a loan of 10); the pool has no price feed.
   The client checks that a pool was initialized honestly before it acts
   (`verifyPool` in `packages/protocol/src/chain.mjs`): the init transaction put the NFT
-  into the pool address with the empty datum, the parked verification keys are the ones
-  in `circuits/keys`, and the pool's totals match its sets. A pool that fails the check
-  is refused.
+  into the pool address with the empty datum and the protocol's nullifier scalars, an
+  interest rate of at most 100 %, positive denominations and a reserve that was paid in
+  at init; the parked verification keys are the ones in `circuits/keys`; and the pool's
+  totals match its sets. A pool that fails the check is refused, and `status` shows the
+  loan size and interest rate.
 - **Trusted setup.** The Preprod proving and verification keys come from a development
   setup. Production keys come from a multi-party ceremony as in M1 Appendix A, with a
   phase-2 contribution per circuit; it is secure as long as one participant is honest.

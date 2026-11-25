@@ -15,7 +15,14 @@ Return your report as `MILESTONE3-TESTER-FEEDBACK-<yourname>-<YYYY-MM-DD>.md`.
 
 **Tester:** name/handle · background · date · time spent:
 
-**Stand tested:** tag `m3-v6-rc2`, commit (`git rev-parse HEAD`): ____
+**Stand tested:** tag `m3-v6-rc3`, commit (`git rev-parse HEAD`): ____
+
+**If you already ran Part 0 and Part A on `m3-v6-rc2`:** those results stay valid.
+Between rc2 and rc3 the validators, circuits and keys did not change (`aiken check`
+gives the same 109 tests); only the client's pool check `verifyPool` was extended
+(case 13c), with its tests, and `status` now shows the loan size and interest rate.
+Check out rc3, run `npm test` in `packages/protocol` once more (expect 63 pass, 1
+skipped) and continue with Part B. Your pools and notes from rc2 can be reused.
 
 **What is new since runbook 3.** Lenders hold private pool shares (`AddLiquidity`,
 `WithdrawLiquidity` with a zero-knowledge proof). A pool lends one asset, ADA or a
@@ -42,9 +49,9 @@ stopped earlier because no valid proof can be generated; that also counts as PAS
 
 ```bash
 git clone <repo> && cd ZK-Defi-Protocol
-git checkout m3-v6-rc2
+git checkout m3-v6-rc3
 cd contracts && aiken check          # aiken v1.1.19 — expect 109 tests, 0 failed
-cd ../packages/protocol && npm install && npm test     # expect 55 pass, 1 skipped (live test, needs a key)
+cd ../packages/protocol && npm install && npm test     # expect 63 pass, 1 skipped (live test, needs a key)
 cd ../../offchain && npm install
 cp ../.env.example ../.env           # Blockfrost Preprod key + YOUR wallet mnemonic
 cd cli/m4
@@ -145,159 +152,101 @@ Total reported by `aiken check`: ____ (expect 109, 0 failed).
 
 ---
 
-## Part B — Negative cases on your own Preprod pools (the important part)
+## Part B — Negative cases: mapping, live sample, observations
 
-### Case 1 — Unlock without repaying
-Deposit and borrow, skip repay, run `unlock`.
-- Expected: blocked (no settlement proof exists while `R` is not in `repaid_root`;
-  a proof forced against another root is rejected by the validator).
+Every negative case of this runbook is covered by a deterministic test in the
+repository. Part B has three steps: (1) confirm each mapping by reading the test,
+(2) run three cases live on your own Preprod pools, (3) record the observations.
+
+### B1 — Each case and the test that covers it
+
+For each row, open the test, confirm that it builds the invalid transaction the case
+describes and that it passes, and fill in the last column. The Aiken tests are in
+`contracts/validators/tests/` and `contracts/lib/` (run with `aiken check`); the
+JavaScript tests in `packages/protocol/test/` (run with `npm test`).
+
+| Case | Invalid transaction | Tests | Covers the case? (Y/N, note) |
+|---|---|---|---|
+| 1 | Unlock without repaying | `unlock_without_repay_fails` | |
+| 2 | Repay principal only, or more than due | `repay_below_interest_fails`, `repay_overpay_fails` | |
+| 3 | Second loan on the same deposit, during or after the first | `borrow_reused_nullifier_fails`, `borrow_after_repay_same_secret_fails` | |
+| 4 | Loan paid to a key the proof does not bind, or short | `borrow_payout_to_other_key_fails`, `borrow_redeemer_recipient_swapped_fails`, `borrow_underpays_recipient_fails` | |
+| 5 | Unlock paid to another address, or one payout for two deposits | `unlock_to_other_address_fails`, `unlock_payout_tagged_for_other_deposit_fails` | |
+| 6 | Unlock against a pool reference without the pool NFT | `unlock_via_forged_pool_ref_fails` | |
+| 7 | A UTxO without the pool NFT spent as the pool, or the NFT leaving the pool | `spend_pool_without_nft_fails`, `continuing_output_without_nft_fails` | |
+| 8 | Wrong collateral: short amount, wrong asset for the index, unlisted or negative index | `deposit_collateral_wrong_amount_fails`, `deposit_second_asset_wrong_amount_fails`, `deposit_ada_under_token_index_fails`, `deposit_token_under_ada_index_fails`, `deposit_unlisted_asset_index_fails`, `deposit_negative_asset_index_fails` | |
+| 9 | Repay that appends a different `R`, or uses a borrow proof as a repay proof | `repay_with_foreign_repay_nullifier_fails`, `repay_with_copied_borrow_proof_fails`, `repay_bogus_append_fails` | |
+| 10 | Token pool: loan or repay in ADA, the pool's ADA taken, a foreign token added | `token_borrow_paid_in_ada_fails`, `token_repay_in_ada_fails`, `token_borrow_takes_pool_ada_fails`, `token_borrow_adds_foreign_token_to_pool_fails` | |
+| 11 | Unlock of token collateral short of the token, of its ADA, or paid in ADA | `unlock_token_collateral_short_of_token_fails`, `unlock_token_collateral_without_its_min_ada_fails`, `unlock_token_collateral_paid_in_ada_fails` | |
+| 12 | Share withdrawn twice, beyond free liquidity, to another key; share bought below price | `withdraw_same_note_twice_fails`, `withdraw_beyond_free_liquidity_fails`, `withdraw_redirected_to_other_key_fails`, `withdraw_paid_to_other_key_fails`, `add_first_share_underpaid_fails` | |
+| 13 | Pool configuration or sets rewritten by a spend | `deposit_rewriting_collateral_assets_fails`, `borrow_rewriting_loan_asset_fails`, `borrow_rewriting_loans_set_fails`, `withdraw_rewriting_lender_root_fails` | |
+| 13b | Pool datum grows with use until a transaction no longer fits | `mpf.test.mjs` (200 loans and 200 withdrawals, same datum size); `m3-cycle.test.mjs` (datum size through both live cycles) | |
+| 13c | Pool initialized with other nullifier scalars, an interest rate above 100 %, a zero denomination, no collateral, or an unpaid reserve | `verify-pool.test.mjs` (the client refuses the pool) | |
+| 15 | Spending the parked verification keys or reference scripts | `park.test.mjs` (the park address has no spendable script) | |
+
+### B2 — Live sample on your own Preprod pools (required)
+
+Run these three cases live. They are the ones with the most history: case 1 was the
+original critical issue, case 9 the last finding (2026-11-18), case 12a covers the
+lender side. Each runs on your own pool from Part 0; revert your edits afterwards
+(`git checkout -- :/packages :/offchain`).
+
+**Case 1 — Unlock without repaying.** Deposit (account 1) and borrow (account 3, to B),
+skip the repay, then `WALLET_ACCOUNT=3 node run.mjs unlock --note <note>`.
+- Expected: no settlement proof can be generated while `R` is not in `repaid_root`
+  (the client stops before building), so nothing is submitted.
 - Result: ____ · what you saw:
 
-### Case 2 — Repay a different amount
-In `buildRepay`, change `poolValueMoved(pool, due)` to `poolValueMoved(pool, d.loan_denomination)`
-(principal only), and in a second run to `poolValueMoved(pool, due + 1_000_000n)`.
-- Expected: both **rejected**.
-- Result (under / over): ____ / ____
+**Case 9a — Repay that appends a different R.** Make two deposits from account 1 and
+borrow against both (to B). In the `repay` step of `offchain/cli/m4/run.mjs`, when
+repaying the first loan, append the second deposit's `R` instead of the first one's:
+use `computeRepayNullifier(<second secret>)` both as the leaf of `appendInput` and as
+`R` for `buildRepay`. Then repay normally as a control.
+- Expected: the edited repay is rejected at evaluation; the control repay succeeds.
+- Result (edited / control): ____ / ____
 
-### Case 3 — Second loan on the same deposit
-After a full cycle on a deposit, borrow against it again. The client refuses first
-(`sets.borrow` in `run.mjs` cannot prove the nullifier absent from the `loans` set).
-Bypass it: reuse the `loansProof` and `newLoansRoot` of the deposit's first borrow, or
-any proof you can build, and submit.
-- Expected: **rejected** (the nullifier is already in the `loans` set, so no
-  non-membership proof against the current root exists).
+**Case 12a — Withdraw a share twice.** Withdraw a share (`withdraw --note <l>`), then
+withdraw it again. The client refuses first (`sets.withdraw`); bypass that by reusing
+the `withdrawnProof` and `newWithdrawnRoot` of the first withdrawal.
+- Expected: rejected at evaluation (the withdraw nullifier is already in `withdrawn`).
 - Result: ____
 
-### Case 4 — Loan paid to a key the proof does not bind
-(a) In `buildBorrow`, pay `.txOut(recipient, …)` to another address of yours while the
-redeemer keeps the bound key. (b) Also put the other key into the redeemer
-(`R_Borrow(proof, nullifier, <other key hash>)`).
-- Expected: both **rejected**.
-- Result (a / b): ____ / ____
+### B3 — Observations
 
-### Case 5 — Unlock paid to another address
-In `buildUnlock`, pay `.txOut(unlockTo, …)` to another address.
-- Expected: **rejected**.
+**Case 13c live (optional).** In `run.mjs` `deploy`, set `repay_external_nullifier`
+to `8889n`, deploy to a new file, run `status` on it.
+- Expected: `pool verification: the pool's nullifier scalars are not the protocol's`.
 - Result: ____
 
-### Case 6 — Pool reference without the pool NFT
-With a loan of yours open and not repaid: in a scratch script, take the live pool datum
-(`fetchPool`), set `repaid_root` to `merkleRoot([computeRepayNullifier(secret)])` and
-`next_index` to 1, and pay a UTxO with that inline datum (`poolDatum(...)`) to the pool
-address (a plain payment, no script runs). Then prove settlement against that root
-(`settlementInput({ commitment, secret, repaid: [R], index: 0 })`) and call
-`buildUnlock` with your UTxO as `pool`.
-- Expected: **rejected** (the reference must carry the pool NFT).
-- Result: ____
-
-### Case 7 — Spend a UTxO without the pool NFT as the pool
-Spend the UTxO you created in case 6 as the pool in a borrow.
-- Expected: **rejected**.
-- Result: ____
-
-### Case 8 — Wrong collateral
-In `buildDeposit`:
-- (a) asset 0, but lock 19 ADA (`assetValue(collateral, collateral.denomination - 1_000_000n)`);
-- (b) asset 1, but lock 499 TOK;
-- (c) asset 1, but lock 20 ADA instead of the token;
-- (d) lock asset 0 as usual, but put index 2 into the redeemer
-  (`R_DepositCollateral(commitment, 2n, appendProof)`; the pool has no asset 2).
-- Expected: all **rejected**.
-- Result (a / b / c / d): ____ / ____ / ____ / ____
-
-### Case 9 — Repay that appends a different R
-- (a) Two own deposits, both borrowed. Repay one loan but append the other deposit's
-  `R`, then try to unlock the other deposit.
-- (b) Open a loan from your depositor account D, then from another account of yours
-  that holds no deposit, repay that loan with its public **borrow** proof and a
-  random `R`.
-- (c) Same, with a valid repay proof for that loan but a random `R`.
-- Expected: all **rejected**; the honest repay on the same state succeeds.
-- Result (a / b / c / control): ____ / ____ / ____ / ____
-
-### Case 10 — Token pool: the wrong asset moves
-On the USD pool, in `buildBorrow`:
-- (a) pay the loan in ADA instead of USD (`.txOut(recipient, [{ unit: "lovelace", quantity: "10000000" }])`);
-- (b) pay the loan correctly but also take 2 ADA from the pool
-  (`moveAsset(poolValueMoved(pool, -loan), ADA, -2_000_000n)`);
-- (c) in `buildRepay`, pay 10.5 ADA instead of 10.5 USD.
-- Expected: all **rejected** (a pool spend moves only its loan asset, by exactly the
-  action's amount).
-- Result (a / b / c): ____ / ____ / ____
-
-### Case 11 — Unlock of token collateral, short
-For a TOK deposit, in `buildUnlock` pay back (a) the TOK without its ADA, (b) the ADA
-with 499 TOK.
-- Expected: both **rejected** (the unlock returns the whole deposit).
-- Result (a / b): ____ / ____
-
-### Case 12 — Lender shares
-- (a) Withdraw the same share twice (bypass `sets.withdraw` in `run.mjs` as in case 3).
-- (b) Withdraw a share while a loan is out and the free liquidity is below the share
-  price (one share, one loan open).
-- (c) In `buildWithdrawLiquidity`, pay the share to another key than the proof binds.
-- (d) In `buildAddLiquidity`, pay less than the share price.
-- Expected: all **rejected**.
-- Result (a / b / c / d): ____ / ____ / ____ / ____
-
-### Case 13 — Changed pool configuration
-In any builder, change the continuing datum: add a cheap asset to
-`collateral_assets`, lower a denomination, or change `loan_asset`.
-- Expected: **rejected** on every spend.
-- Result: ____
-
-### Case 13b — Pool datum size under many actions
-Repeat `lend` and a relayed `withdraw` of the same share many times (20 rounds is
-enough to see the trend), and compare the pool datum's size before and after
-(`node run.mjs status`, or the pool output on Cardanoscan).
-- Expected: the datum keeps its size; repay and withdraw still fit.
-- Result: ____
-
-### Case 13c — A pool initialized with a non-empty state
-Deploy a pool whose initial datum is not empty: in `run.mjs` `deploy`, start with
-`total_shares: 5n` (or a non-empty `loans` root), then run `status` on it.
-- Expected: the client refuses the pool (`pool verification: ...`) before any step.
-- Result: ____
-
-### Case 14 — Privacy check (observe only)
-Open your borrow transaction on Cardanoscan. From the chain alone, can you tell which
-deposit backs the loan, or whether it is backed by ADA or by TOK? Can you link the
-unlock to the borrow, or a share withdrawal to the liquidity deposit it came from?
-Compare with the table "What links and what does not" in `docs/MILESTONE3.md` §1:
-deposit ↔ unlock and borrow ↔ repay are linked by design.
+**Case 14 — Privacy check (observe only).** Open a borrow of yours on Cardanoscan. From
+the chain alone, can you tell which deposit backs it, or whether ADA or TOK? Can you
+link an unlock to a borrow, or a share withdrawal to the share purchase it came from?
+Compare with "What links and what does not" in `docs/MILESTONE3.md` §1 (deposit ↔
+unlock and borrow ↔ repay are linked by design). Note which links come from your own
+funding transfers rather than from the protocol.
 - Result and notes:
 
-### Case 15 — Spend the parked keys
-Try to spend one of the verification-key UTxOs (or a reference-script UTxO) at the
-park address, for example with the compiled `always_false` script from
-`contracts/plutus.json` as the witness.
-- Expected: **rejected** (no script hashes to the park address's credential and
-  succeeds; see `park.test.mjs`).
-- Result: ____
-
-### Case 16 — Further cases of your choice
-Any other invalid transaction you think the validators might accept, always against
-your own pools: reuse a proof in another transaction, settle two deposits with one
-payout output, move the pool NFT, pay a deposit directly to the collateral address and
-borrow against it, …
+**Case 16 — Further cases of your choice (optional).** Any other invalid transaction
+you think the validators might accept, against your own pools. Report each with what
+you built and what happened.
 
 ---
 
 ## Part C — Checklist
 
-- [ ] Collateral cannot be unlocked before its own loan is fully repaid (1, 9a)
-- [ ] Nobody can repay someone else's loan in a way that locks their collateral (9b, 9c)
-- [ ] Interest is charged and the repayment is a fixed amount, in the loan asset (2, 10c)
+- [ ] Collateral cannot be unlocked before its own loan is fully repaid (1, 9)
+- [ ] Nobody can repay someone else's loan in a way that locks their collateral (9)
+- [ ] Interest is charged and the repayment is a fixed amount, in the loan asset (2, 10)
 - [ ] A deposit backs exactly one loan (3)
-- [ ] Copied proofs cannot redirect a loan, a share or collateral (4, 5, 12c)
+- [ ] Copied proofs cannot redirect a loan, a share or collateral (4, 5, 12)
 - [ ] The pool is recognised by its NFT; a UTxO without it is rejected as the pool (6, 7)
 - [ ] A deposit locks exactly the denomination of the asset it names (8)
 - [ ] A pool spend moves only the loan asset, by exactly its amount (10)
 - [ ] An unlock returns the whole deposit (11)
 - [ ] A share pays out once, at the current price, from free liquidity only (12)
 - [ ] The asset configuration cannot be changed (13)
-- [ ] The pool datum keeps its size; the pool cannot be frozen by growing it (13b)
-- [ ] A pool that was not initialized honestly is refused by the client (13c)
+- [ ] The pool datum keeps its size; the pool cannot be frozen by growing it (13b, by test)
+- [ ] A pool that was not initialized honestly is refused by the client (13c, by test)
 - [ ] A borrow reveals neither the deposit nor the collateral asset; unlock and share withdrawal are not linkable to borrow and liquidity deposit (14)
 - [ ] The parked verification keys and reference scripts cannot be spent (15)
 - [ ] Adversarial validator tests exist and pass (Part A)

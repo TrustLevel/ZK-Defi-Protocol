@@ -10,7 +10,7 @@ lending the USD test token (see [`MILESTONE3.md`](MILESTONE3.md) §1 and §4).
 |---|---|---|
 | On-chain proof and adversarial validator tests (Aiken) | `cd contracts && aiken check` | **109 / 109 pass (100 %)**, 0 warnings |
 | Circuit tests (real Groth16 proofs, all five circuits) | `cd circuits && npm test` | **21 / 21 pass** |
-| Protocol module, incl. golden tests against both Preprod cycles | `cd packages/protocol && npm test` | **55 / 55 pass**; 1 live test skipped without a Blockfrost key, passes with one (`npm run test:live`) |
+| Protocol module, incl. golden tests against both Preprod cycles | `cd packages/protocol && npm test` | **63 / 63 pass**; 1 live test skipped without a Blockfrost key, passes with one (`npm run test:live`) |
 | Reference relayer and chain reader | `cd server && npm test` | **30 / 30 pass**; 1 live test skipped without a key, passes with one |
 | Live Preprod cycles | `offchain/cli/m4/run.mjs` | **34 / 34 transactions confirmed (100 %)**, all `valid_contract: true` (§3) |
 | Independent break-it run on an earlier stand (pumbiii, 2026-11-18, before the asset pools and nullifier sets) | [`MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md) | attacks 1–8 **rejected**; attack 9 found the unbound repayment nullifier, resolved in commit [`6b5cbb3`](https://github.com/TrustLevel/ZK-Defi-Protocol/commit/6b5cbb3) and covered by `repay_with_foreign_repay_nullifier_fails` and `repay_with_copied_borrow_proof_fails`. |
@@ -104,6 +104,7 @@ Each scenario is a test from §1; it passes when the script behaves as stated.
 | Share price paid to another key than the proof binds | rejected | `withdraw_redirected_to_other_key_fails` |
 | First and second share bought at start price and at the grown price | accepted at the right price | `add_first_share_at_start_price_succeeds`, `add_second_share_at_grown_price_succeeds` |
 | Public signal changed by one (each circuit) | rejected | `tampered_*_signal_fails_onchain`, circuit tests |
+| A pool initialized with other nullifier scalars, an interest rate above 100 %, a zero denomination or share price, no accepted collateral, or a reserve that was not paid in | refused by the client before any step | `verify-pool.test.mjs` |
 | The park address of the verification keys and reference scripts is spendable | no: it derives from the always-false program, and its only preimage is not a well-formed script | `park.test.mjs` |
 | Mint two pool NFTs, an extra token, another name, or burn the NFT | rejected | `mint_two_fails`, `mint_extra_token_fails`, `mint_other_name_fails`, `burn_fails` |
 
