@@ -115,4 +115,4 @@ This is exactly the gap I reported after the previous run (runbook-4-breakit): `
 - **Weakest spot found:** none new. The one weakness from the previous run — `verifyPool` not checking the init parameters — is now fixed and tested (confirmed live, case 13c).
 - **Honesty check (`docs/MILESTONE3.md` §5):** consistent with what I observed. The borrow hides the deposit and the collateral asset on-chain (case 14); the documented design links (deposit↔unlock, borrow↔repay) are exactly the ones visible; the account-level links in my run come from my funding shortcut, which §5 names as out of scope for the protocol.
 
-**Signature / handle + date:** pumbiii (run by Claude, see the note at the top), 2026-11-25
+**Signature / handle + date:** pumbiii, 2026-11-25
