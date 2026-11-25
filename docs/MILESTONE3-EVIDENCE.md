@@ -73,7 +73,7 @@ protocol stand that was current on that date.
 | Tester | Date | Report | Stand | Guided by |
 |---|---|---|---|---|
 | pinusch100 | 2026-08-26 | [`MILESTONE3-TESTER-FEEDBACK-pinusch100.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pinusch100.md) | before the private model (v5) | feedback template |
-| pumbiii | 2026-08-26 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii.md) | before the private model (v5) | feedback template |
+| pumbiii | 2026-08-26 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-08-26.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-08-26.md) | before the private model (v5) | feedback template |
 | pumbiii (break-it) | 2026-09-01 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-09-01.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-09-01.md) | `m3-poa-v2` (the report calls it the v6 private model, branch `m3-remediation-v6`) | [archived runbook 2](Tester-Feedback/archive/MILESTONE3-TESTER-RUNBOOK-2-breakit.md) |
 | pumbiii (break-it) | 2026-11-18 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md) | `m3-poa-v4` (before lender side, asset pools and nullifier sets) | [runbook 3 as of `m3-poa-v4`](https://github.com/TrustLevel/ZK-Defi-Protocol/blob/m3-poa-v4/docs/Tester-Feedback/MILESTONE3-TESTER-RUNBOOK-3-breakit.md) |
 
