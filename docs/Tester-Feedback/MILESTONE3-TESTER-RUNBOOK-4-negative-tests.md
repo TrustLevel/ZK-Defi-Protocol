@@ -1,8 +1,16 @@
-# M3 Tester Runbook 4 — Break it (pumbiii)
+# M3 Tester Runbook 4 — Negative testing on your own Preprod pools
 
-**Your role:** try to **break** the protocol, on your **own** pools with your **own**
-wallet. Run each attack below and record whether the protocol **correctly rejected**
-it. For this runbook, **"attack rejected" = PASS** (the protocol held).
+**Context and authorization.** This runbook is issued by the maintainers of the
+ZK-DeFi-Protocol (TrustLevel) for the independent testing of their own open-source
+contracts, as part of Project Catalyst milestone 3. Everything runs on the Cardano
+**Preprod test network** with test ADA and test tokens that have no value. You deploy
+**your own pools** from this repository with **your own wallet**; no case touches a
+pool, wallet or funds of anyone else.
+
+**Your role:** check that the validators **reject invalid transactions**. For each
+negative case below you build a deliberately invalid transaction against your own
+pool and record whether the validator **correctly rejected** it. For this runbook,
+**"rejected" = PASS** (the protocol behaved as specified).
 Return your report as `MILESTONE3-TESTER-FEEDBACK-<yourname>-<YYYY-MM-DD>.md`.
 
 **Tester:** name/handle · background · date · time spent:
@@ -24,7 +32,7 @@ transaction can spend (`contracts/validators/always_false.ak`,
 **How rejections show up.** The command line client (Mesh) evaluates every
 transaction against the validators on Preprod (via Blockfrost) **before** it submits.
 A transaction the validator rejects fails at build time with an evaluation error and
-is **never submitted**. That counts as **rejected by the validator**. Some attacks are
+is **never submitted**. That counts as **rejected by the validator**. Some cases are
 stopped earlier because no valid proof can be generated; that also counts as PASS
 (note which one you saw).
 
@@ -54,7 +62,7 @@ cd cli/m4
 | 5 | share payout (P): receives the withdrawn share | nothing |
 
 Fund D, B and R from the faucet directly, not from account 0, so the privacy check
-(attack 14) sees only the links the protocol makes. D needs 500 TOK from account 0
+(case 14) sees only the links the protocol makes. D needs 500 TOK from account 0
 (`node run.mjs send --to <D> --unit <TOK unit> --amount 600`), like any holder who
 received the token.
 
@@ -102,11 +110,11 @@ WALLET_ACCOUNT=3 node run.mjs withdraw --note l1 --to <P>   # one share (princip
 Run the same cycle once on the USD pool (B needs 0.5 USD for the interest:
 `WALLET_ACCOUNT=0 node run.mjs send --to <B> --unit <USD unit> --amount 1000000`).
 
-**Where to edit for the attacks.** Transactions are built in
+**Where to edit for the negative cases.** Transactions are built in
 `packages/protocol/src/tx.mjs` (`buildDeposit`, `buildBorrow`, `buildRepay`,
 `buildUnlock`, `buildAddLiquidity`, `buildWithdrawLiquidity`); the client's own
 guards are in `offchain/cli/m4/run.mjs`, and the nullifier-set proofs come from
-`packages/protocol/src/mpf.mjs`. Edit, run, then **revert** before the next attack:
+`packages/protocol/src/mpf.mjs`. Edit, run, then **revert** before the next case:
 `git checkout -- :/packages :/offchain` (works from any folder of the repo). Notes with
 your secrets are in `offchain/cli/m4/notes/`.
 
@@ -137,21 +145,21 @@ Total reported by `aiken check`: ____ (expect 109, 0 failed).
 
 ---
 
-## Part B — Live attacks on Preprod (the important part)
+## Part B — Negative cases on your own Preprod pools (the important part)
 
-### Attack 1 — Unlock without repaying
+### Case 1 — Unlock without repaying
 Deposit and borrow, skip repay, run `unlock`.
 - Expected: blocked (no settlement proof exists while `R` is not in `repaid_root`;
   a proof forced against another root is rejected by the validator).
 - Result: ____ · what you saw:
 
-### Attack 2 — Repay a different amount
+### Case 2 — Repay a different amount
 In `buildRepay`, change `poolValueMoved(pool, due)` to `poolValueMoved(pool, d.loan_denomination)`
 (principal only), and in a second run to `poolValueMoved(pool, due + 1_000_000n)`.
 - Expected: both **rejected**.
 - Result (under / over): ____ / ____
 
-### Attack 3 — Second loan on the same deposit
+### Case 3 — Second loan on the same deposit
 After a full cycle on a deposit, borrow against it again. The client refuses first
 (`sets.borrow` in `run.mjs` cannot prove the nullifier absent from the `loans` set).
 Bypass it: reuse the `loansProof` and `newLoansRoot` of the deposit's first borrow, or
@@ -160,20 +168,20 @@ any proof you can build, and submit.
   non-membership proof against the current root exists).
 - Result: ____
 
-### Attack 4 — Redirect a loan
+### Case 4 — Loan paid to a key the proof does not bind
 (a) In `buildBorrow`, pay `.txOut(recipient, …)` to another address of yours while the
 redeemer keeps the bound key. (b) Also put the other key into the redeemer
 (`R_Borrow(proof, nullifier, <other key hash>)`).
 - Expected: both **rejected**.
 - Result (a / b): ____ / ____
 
-### Attack 5 — Redirect an unlock
+### Case 5 — Unlock paid to another address
 In `buildUnlock`, pay `.txOut(unlockTo, …)` to another address.
 - Expected: **rejected**.
 - Result: ____
 
-### Attack 6 — Forged pool reference
-With a loan open and not repaid: in a scratch script, take the live pool datum
+### Case 6 — Pool reference without the pool NFT
+With a loan of yours open and not repaid: in a scratch script, take the live pool datum
 (`fetchPool`), set `repaid_root` to `merkleRoot([computeRepayNullifier(secret)])` and
 `next_index` to 1, and pay a UTxO with that inline datum (`poolDatum(...)`) to the pool
 address (a plain payment, no script runs). Then prove settlement against that root
@@ -182,12 +190,12 @@ address (a plain payment, no script runs). Then prove settlement against that ro
 - Expected: **rejected** (the reference must carry the pool NFT).
 - Result: ____
 
-### Attack 7 — Spend a fake pool
-Spend the forged UTxO from attack 6 as the pool in a borrow.
+### Case 7 — Spend a UTxO without the pool NFT as the pool
+Spend the UTxO you created in case 6 as the pool in a borrow.
 - Expected: **rejected**.
 - Result: ____
 
-### Attack 8 — Wrong collateral
+### Case 8 — Wrong collateral
 In `buildDeposit`:
 - (a) asset 0, but lock 19 ADA (`assetValue(collateral, collateral.denomination - 1_000_000n)`);
 - (b) asset 1, but lock 499 TOK;
@@ -197,16 +205,17 @@ In `buildDeposit`:
 - Expected: all **rejected**.
 - Result (a / b / c / d): ____ / ____ / ____ / ____
 
-### Attack 9 — Repay with a foreign R
+### Case 9 — Repay that appends a different R
 - (a) Two own deposits, both borrowed. Repay one loan but append the other deposit's
   `R`, then try to unlock the other deposit.
-- (b) From a wallet with no deposit: repay a victim's open loan with the victim's
-  public **borrow** proof and a random `R`.
-- (c) Same, with a valid repay proof for the victim's loan but a random `R`.
+- (b) Open a loan from your depositor account D, then from another account of yours
+  that holds no deposit, repay that loan with its public **borrow** proof and a
+  random `R`.
+- (c) Same, with a valid repay proof for that loan but a random `R`.
 - Expected: all **rejected**; the honest repay on the same state succeeds.
 - Result (a / b / c / control): ____ / ____ / ____ / ____
 
-### Attack 10 — Token pool: take the wrong asset
+### Case 10 — Token pool: the wrong asset moves
 On the USD pool, in `buildBorrow`:
 - (a) pay the loan in ADA instead of USD (`.txOut(recipient, [{ unit: "lovelace", quantity: "10000000" }])`);
 - (b) pay the loan correctly but also take 2 ADA from the pool
@@ -216,14 +225,14 @@ On the USD pool, in `buildBorrow`:
   action's amount).
 - Result (a / b / c): ____ / ____ / ____
 
-### Attack 11 — Unlock token collateral short
+### Case 11 — Unlock of token collateral, short
 For a TOK deposit, in `buildUnlock` pay back (a) the TOK without its ADA, (b) the ADA
 with 499 TOK.
 - Expected: both **rejected** (the unlock returns the whole deposit).
 - Result (a / b): ____ / ____
 
-### Attack 12 — Lender shares
-- (a) Withdraw the same share twice (bypass `sets.withdraw` in `run.mjs` as in attack 3).
+### Case 12 — Lender shares
+- (a) Withdraw the same share twice (bypass `sets.withdraw` in `run.mjs` as in case 3).
 - (b) Withdraw a share while a loan is out and the free liquidity is below the share
   price (one share, one loan open).
 - (c) In `buildWithdrawLiquidity`, pay the share to another key than the proof binds.
@@ -231,26 +240,26 @@ with 499 TOK.
 - Expected: all **rejected**.
 - Result (a / b / c / d): ____ / ____ / ____ / ____
 
-### Attack 13 — Rewrite the pool configuration
+### Case 13 — Changed pool configuration
 In any builder, change the continuing datum: add a cheap asset to
 `collateral_assets`, lower a denomination, or change `loan_asset`.
 - Expected: **rejected** on every spend.
 - Result: ____
 
-### Attack 13b — Grow the pool until it stops working
+### Case 13b — Pool datum size under many actions
 Repeat `lend` and a relayed `withdraw` of the same share many times (20 rounds is
 enough to see the trend), and compare the pool datum's size before and after
 (`node run.mjs status`, or the pool output on Cardanoscan).
 - Expected: the datum keeps its size; repay and withdraw still fit.
 - Result: ____
 
-### Attack 13c — A dishonest pool
+### Case 13c — A pool initialized with a non-empty state
 Deploy a pool whose initial datum is not empty: in `run.mjs` `deploy`, start with
 `total_shares: 5n` (or a non-empty `loans` root), then run `status` on it.
 - Expected: the client refuses the pool (`pool verification: ...`) before any step.
 - Result: ____
 
-### Attack 14 — Privacy check (observe, do not attack)
+### Case 14 — Privacy check (observe only)
 Open your borrow transaction on Cardanoscan. From the chain alone, can you tell which
 deposit backs the loan, or whether it is backed by ADA or by TOK? Can you link the
 unlock to the borrow, or a share withdrawal to the liquidity deposit it came from?
@@ -258,7 +267,7 @@ Compare with the table "What links and what does not" in `docs/MILESTONE3.md` §
 deposit ↔ unlock and borrow ↔ repay are linked by design.
 - Result and notes:
 
-### Attack 15 — Spend the parked keys
+### Case 15 — Spend the parked keys
 Try to spend one of the verification-key UTxOs (or a reference-script UTxO) at the
 park address, for example with the compiled `always_false` script from
 `contracts/plutus.json` as the witness.
@@ -266,9 +275,11 @@ park address, for example with the compiled `always_false` script from
   succeeds; see `park.test.mjs`).
 - Result: ____
 
-### Attack 16 — Free-form
-Replay a proof in another transaction, spend two deposits with one payout, move the
-NFT, deposit directly to the collateral address and borrow against it, …
+### Case 16 — Further cases of your choice
+Any other invalid transaction you think the validators might accept, always against
+your own pools: reuse a proof in another transaction, settle two deposits with one
+payout output, move the pool NFT, pay a deposit directly to the collateral address and
+borrow against it, …
 
 ---
 
@@ -279,7 +290,7 @@ NFT, deposit directly to the collateral address and borrow against it, …
 - [ ] Interest is charged and the repayment is a fixed amount, in the loan asset (2, 10c)
 - [ ] A deposit backs exactly one loan (3)
 - [ ] Copied proofs cannot redirect a loan, a share or collateral (4, 5, 12c)
-- [ ] The pool is recognised by its NFT; a forged or fake pool is rejected (6, 7)
+- [ ] The pool is recognised by its NFT; a UTxO without it is rejected as the pool (6, 7)
 - [ ] A deposit locks exactly the denomination of the asset it names (8)
 - [ ] A pool spend moves only the loan asset, by exactly its amount (10)
 - [ ] An unlock returns the whole deposit (11)
@@ -295,7 +306,7 @@ NFT, deposit directly to the collateral address and borrow against it, …
 
 ## Part D — Verdict
 
-- Did any attack **succeed**? If yes, describe exactly; this is the most valuable thing you can report.
-- Overall: how hard was it to break? (1 = trivial … 5 = couldn't)
-- Weakest spot you found (even if you couldn't fully exploit it):
+- Did any invalid transaction get **accepted**? If yes, describe it exactly; this is the most valuable thing you can report.
+- Overall: how robust did the validators prove? (1 = an invalid transaction was accepted easily … 5 = every case was rejected)
+- Weakest spot you found (even if no case got through):
 - Honesty check: do the documented limits in `docs/MILESTONE3.md` §5 (trust assumptions, non-goals, privacy boundary) match what you observe on-chain? (Y/N + notes)
