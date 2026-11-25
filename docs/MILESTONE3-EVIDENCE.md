@@ -89,8 +89,9 @@ The runbooks the testers followed are kept in
 
 ## Live on-chain proof (Preprod)
 
-Two pools on the same scripts and keys, one lending ADA and one lending a native
-token, each run through the full private cycle with a separate address per role.
+Two pools on the same validator code and keys, one lending ADA and one lending a
+native token, each run through the full private cycle with a separate address for every
+share, deposit, loan and payout.
 
 - The cycle step by step, with what each transaction verifies: [`MILESTONE3.md`](MILESTONE3.md) §1
 - Deployed addresses, script hashes and execution cost: [`MILESTONE3.md`](MILESTONE3.md) §4

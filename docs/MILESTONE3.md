@@ -94,41 +94,56 @@ and unlock on one side, borrow and repay on the other; a lender's share purchase
 withdrawal cannot be joined either. This holds when each group uses its own address:
 the deposit is paid from one wallet and `unlock_to` is a fresh address, the loan goes
 to another, and the share payout to a third; funding one of these addresses from
-another links them. The live cycle below uses separate addresses for every role.
+another links them. The live cycle below uses a separate address for every unit.
 
 ### The full private lending cycle (confirmed live on Preprod)
 
-Two pools run on the same validator code and verification keys. Every role uses its own
-address: the lender (L), the depositor (D), the address the collateral returns to (U),
-the borrower who receives the loan and repays (B), the relayer that submits borrow,
-unlock and withdrawal (R), and the address the withdrawn share goes to (P).
+Two pools run on the same validator code and verification keys. **Every unit has its
+own address**: each lender buys one share from its own wallet, each depositor locks one
+deposit from its own wallet and names its own return address, each loan goes to its
+own borrower, the share payouts go to their own addresses, and one relayer (R) submits
+every borrow, unlock and withdrawal. The steps of different users are interleaved, as
+they would be in a pool in use.
 
-**Pool 1 lends ADA** and accepts 20 ADA or 500 TOK as collateral:
+**Pool 1 lends ADA** and accepts 20 ADA or 500 TOK as collateral. Three lenders
+(L1–L3), four depositors (D1–D4, returning to U1–U4), three borrowers (B1–B3) and two
+share payouts (P1, P2):
 
 | # | Step | What is verified on-chain | Preprod tx |
 |---|------|---------------------------|-----------|
-| 1 | **Park keys.** The five verification keys go to an always-false address. | none | [`c4e8e1b7acf5…`](https://preprod.cardanoscan.io/transaction/c4e8e1b7acf51d67bb2ebeb0561ee8b86a71778a4b1e9842ef51a1a9afd90b7d) |
-| 2 | **Init pool + mint the pool NFT**, with the loan asset (ADA), the accepted collateral assets and empty nullifier sets in the datum. | one-shot minting policy | [`3acf4248a5cb…`](https://preprod.cardanoscan.io/transaction/3acf4248a5cbffb2c3571ae7aa1c52154602d8a7fa52daf1c29d4c8bd6d5e059) |
-| 3 | **Publish the scripts** as reference scripts on the always-false address. | none | [`5d90207c5c14…`](https://preprod.cardanoscan.io/transaction/5d90207c5c14d9185d0f97ae76c585cd45dca7b118048cc07cddaeb3a3d50791) |
-| 4 | **Deposit 20 ADA** (asset 0) and **deposit 500 TOK** (asset 1), both by D, collateral returning to U. Both commitments enter the same `group_root`. | append proof; exact denomination of the named asset | [`9f7f17cad29f…`](https://preprod.cardanoscan.io/transaction/9f7f17cad29f2e3e584728cb74e595279f23e61d8bf0e9a38bae47e918f974a3), [`fa297a3a89bf…`](https://preprod.cardanoscan.io/transaction/fa297a3a89bfdcf36ee9767e65373480408536ab1ced5347529bcb91099ca926) |
-| 5 | **Add liquidity**, two shares of 10 ADA by L. Each note leaf enters `lender_root`. | append proof | [`c75f5bd192e3…`](https://preprod.cardanoscan.io/transaction/c75f5bd192e344809ef52cdf4c2eb57b478541238b0a0755b085e3758d715df9), [`29344705f1fa…`](https://preprod.cardanoscan.io/transaction/29344705f1fadf774f0fc8b6847aab13b4db5879ca7759c2955e8ebaca52125b) |
-| 6 | **Borrow 10 ADA**, backed by the TOK deposit, paid to B, submitted by R. Nothing in the transaction names the deposit, its asset or D. The loan nullifier enters the `loans` set as open. | borrow proof (membership, nullifier, recipient); MPF insert | [`b219752d2a64…`](https://preprod.cardanoscan.io/transaction/b219752d2a646c5e67f0302ad949eacea0940913ec5f8a148a32088948fd5b42) |
-| 7 | **Repay 10.5 ADA** from B. The loan is marked settled and `R` enters `repaid_root`. | repay proof + append proof; MPF update | [`f854d3c38034…`](https://preprod.cardanoscan.io/transaction/f854d3c380343d1bc5e4857aa4b1a4f77e4fa2c13e1eeb1b5637181f52135aa9) |
-| 8 | **Unlock**: the 500 TOK and their ADA go to U, submitted by R. | settlement proof | [`101b958540d6…`](https://preprod.cardanoscan.io/transaction/101b958540d60b074b13c8bada78e6ab4f872d6917255e9bb2517f03f2f55048) |
-| 9 | **Withdraw one share**: 10.25 ADA (principal plus its part of the interest) to P, submitted by R. | lender withdraw proof; MPF insert | [`b4c42d0cb457…`](https://preprod.cardanoscan.io/transaction/b4c42d0cb457679afa75166c13ccd943675840cdec8e9a6ccc82ef5b14ac5496) |
+| 1 | **Park keys.** The five verification keys go to the park address (§1, above). | none | [`c4e8e1b7acf5…`](https://preprod.cardanoscan.io/transaction/c4e8e1b7acf51d67bb2ebeb0561ee8b86a71778a4b1e9842ef51a1a9afd90b7d) |
+| 2 | **Init pool + mint the pool NFT**, with the loan asset (ADA), the accepted collateral assets and empty sets in the datum. | one-shot minting policy | [`ebbbd9ce3fcd…`](https://preprod.cardanoscan.io/transaction/ebbbd9ce3fcdec1b27bcc1d0eaee533a7a9332f680f00a8f017ace58656bb6e4) |
+| 3 | **Publish the scripts** as reference scripts on the park address. | none | [`55348bcf783a…`](https://preprod.cardanoscan.io/transaction/55348bcf783aa4e38b0996de8bbaaabb97b33b61a8054c80495e2445baad1ee7) |
+| 4 | **Add liquidity**: L1, L2 and L3 each buy one share of 10 ADA. Each note leaf enters `lender_root`. | append proof | [`47c90f873587…`](https://preprod.cardanoscan.io/transaction/47c90f873587128ed0e99d6ea89efa562fbaa08a60d92d48246ceba45bf4c513), [`59057ef21172…`](https://preprod.cardanoscan.io/transaction/59057ef21172017b4b2e5eadb86660bf377ce68714d5e17412bc708324e6cd55), [`1bdf9c875069…`](https://preprod.cardanoscan.io/transaction/1bdf9c87506908e8cd876ff75573c537630aad8bec143b024aff6a897b9b22bc) |
+| 5 | **Deposit**: D1 20 ADA, D2 500 TOK, D3 20 ADA, D4 500 TOK. All four commitments enter the same `group_root`. | append proof; exact denomination of the named asset | [`fbdb8c49dfd1…`](https://preprod.cardanoscan.io/transaction/fbdb8c49dfd1f128822122e4325c4afc98a05628c89b88899010b8c3f641805f), [`5e20e61c3f25…`](https://preprod.cardanoscan.io/transaction/5e20e61c3f25d562a6372ac09643420ff4ab72fb2adf9e9d5b0f11a2de1930f4), [`f48900afae66…`](https://preprod.cardanoscan.io/transaction/f48900afae6630f26ffb4aa67a3a7f77460b88a1d469b53e6729dab1483750f0), [`e0182464aba3…`](https://preprod.cardanoscan.io/transaction/e0182464aba357fc4ec4090112956702bd44dc74167aadd2e5152934126563bb) |
+| 6 | **Borrow 10 ADA** three times, to B1, B2 and B3, each submitted by R. No borrow names a deposit, its asset or its depositor. Each loan nullifier enters the `loans` set as open. | borrow proof (membership, nullifier, recipient); MPF insert | [`97403cf130ae…`](https://preprod.cardanoscan.io/transaction/97403cf130aed8a7d807afedb8bb9739256983357990fc7f7443d7b8eac5cd1e), [`6b320c87066e…`](https://preprod.cardanoscan.io/transaction/6b320c87066e64583ba498523d3ae43460afc859e3afaddd78d280c3706c83f0), [`1eca7856df68…`](https://preprod.cardanoscan.io/transaction/1eca7856df6831e716c46ac226bca41406ccb8e05290a4d176c4c6d1f2b67aa3) |
+| 7 | **Repay 10.5 ADA**, by B1, B2 and B3. Each loan is marked settled and its `R` enters `repaid_root`. | repay proof + append proof; MPF update | [`00d0b5a03216…`](https://preprod.cardanoscan.io/transaction/00d0b5a0321628d102729b3bd60b2704a9314007099c9c1eb88440f55bfd2677), [`909f84544d39…`](https://preprod.cardanoscan.io/transaction/909f84544d39e1964c6453a5642f824d2529900d16029e8c3ab793a242869a0e), [`c468a977e435…`](https://preprod.cardanoscan.io/transaction/c468a977e43516be726e03fdc876d4643c8b44552f5fbd9d6411bb8cf16eb496) |
+| 8 | **Unlock** three deposits, each to its own return address, submitted by R. D3's deposit was never borrowed against and stays locked. | settlement proof | [`9b5816c03c7c…`](https://preprod.cardanoscan.io/transaction/9b5816c03c7ca56dcb7dc79a8d5431c2881dd8c7cc9d1d9b32d6d932e5f125c7), [`0dbd654e9f74…`](https://preprod.cardanoscan.io/transaction/0dbd654e9f741eaeeeb9133a1f2479865e0590c62c934f483b037f659a7276fc), [`397ad1b586c5…`](https://preprod.cardanoscan.io/transaction/397ad1b586c5ac924e6d0f162165846783161684874cf87761d2d352d23dea97) |
+| 9 | **Withdraw** two shares, to P1 and P2, submitted by R: 10.333333 and 10.583333 ADA, principal plus the share's part of the interest earned up to that point. | lender withdraw proof; MPF insert | [`d04ea018d867…`](https://preprod.cardanoscan.io/transaction/d04ea018d867672dced4023e6c99d9b76b8cb85ddee3911e9f7d11e994f337d3), [`244ef168e832…`](https://preprod.cardanoscan.io/transaction/244ef168e832f0dcd5ef5112ae033099dd6cf5e0b111da6a702cdfe268362f48) |
 
-**Pool 2 lends the USD test token** (same keys, same collateral list) and ran the
-same cycle in USD with the same roles: init [`baaafc06a45d…`](https://preprod.cardanoscan.io/transaction/baaafc06a45dc37979c2a82e2e95a6adb8ddf25811b5069ee9c98e8197d9ae15), two shares of 10 USD,
-a deposit of 20 ADA by D, a relayed loan of 10 USD to B [`a7f3f565da9d…`](https://preprod.cardanoscan.io/transaction/a7f3f565da9d33b42ed1a35d2f0393d775228178c8a61823b85a4a37d83f2624), repayment
-of 10.5 USD by B [`c1ce59019185…`](https://preprod.cardanoscan.io/transaction/c1ce59019185b7c3cdddd578fad1bb1d9ed45d74be8a0b6d61d71300e4e67517), a relayed unlock to U and a relayed share
-withdrawal of 10.25 USD to P [`ed53a299f0d3…`](https://preprod.cardanoscan.io/transaction/ed53a299f0d3263efd6298331d225a34baa339c42ca79b98de4509c604fa26bf). The pool's own 5 ADA did not move.
+The order on-chain was: share L1, deposits D1 and D2, share L2, deposit D3, borrow to
+B1, deposit D4, share L3, borrow to B2, repay B1, borrow to B3, repay B2, unlock to U2,
+withdraw to P1, repay B3, unlock to U4, withdraw to P2, unlock to U1. Behind it, B1
+borrowed against D2's TOK, B2 against D1's ADA and B3 against D4's TOK; none of the
+borrow transactions shows this. Timing shows part of it, as §5 (Privacy boundary)
+describes: the unlock to U4 directly follows B3's repayment, so those two are easy to
+pair, while B1's and B2's loans stay ambiguous between D1 and D2, and D3 is a member
+of the set that never borrowed.
 
-Every transaction of both cycles is listed in
+**Pool 2 lends the USD test token** (same keys, same collateral list): two lenders (L4,
+L5) with one share of 10 USD each, deposits of 20 ADA by D5 and 500 TOK by D6, relayed
+loans of 10 USD to B4 and B5 [`b763549ee7c0…`](https://preprod.cardanoscan.io/transaction/b763549ee7c0684f7da665ac582d636567a01436fc159a2ba1903cf522ed3e3e), [`728e970e9dee…`](https://preprod.cardanoscan.io/transaction/728e970e9dee1dbbe6334aa518c318dfa9f22268a61bdc0cf1f131c94993c3ec), repayments of 10.5 USD
+[`60d08a9beba2…`](https://preprod.cardanoscan.io/transaction/60d08a9beba295384b2de27e311c300ec262e02157aeca09ddb5375904ceffae), [`feddc592bc1a…`](https://preprod.cardanoscan.io/transaction/feddc592bc1a300bece2d6d3c9b091d45730699af21c2fd858237efdcb1d48b4), two relayed unlocks and a relayed share withdrawal of
+10.5 USD to P3 [`8143d17564ba…`](https://preprod.cardanoscan.io/transaction/8143d17564babb8098f0eda0e719c5a81b2dbf6fb74beaf9f163adf7193cc79f). Init [`c79b7d5b0a62…`](https://preprod.cardanoscan.io/transaction/c79b7d5b0a620fc84841f3a4abc9c41046d641025a629caedb38db3921a32a1b). The pool's own ADA did not
+move. With two deposits and two loans its anonymity set is two; it demonstrates a
+pool that lends a native token.
+
+Every transaction of both pools is listed with its fee in
 [`MILESTONE3-TEST-RESULTS.md`](MILESTONE3-TEST-RESULTS.md) §3; all are
 `valid_contract: true`. No protocol transaction carries a value that the deposit side
 (D, U) and the loan side (B) share, so the protocol creates no link between them. The
-demo addresses were funded from one test wallet (L, which also minted the test
-tokens); that funding lies outside the protocol.
+demo addresses were each funded once from one test wallet, which also minted the test
+tokens; that funding lies outside the protocol.
 
 Off-chain drivers: the shared protocol module `packages/protocol` (Mesh, Node ESM)
 and the command line client on it, `offchain/cli/m4/run.mjs`. Every step finds the pool by its NFT, and the tx
@@ -339,12 +354,12 @@ multi-party ceremony as in M1 Appendix A, with a phase-2 contribution per circui
 | Deployment file | `packages/protocol/deployments/preprod-m3-ada.json` | `packages/protocol/deployments/preprod-m3-usd.json` |
 | Loan asset | ADA | USD `537a02f3e1f878c9e814bf6dc8ebbd584c04b5d49c310331879020b5` · `555344` |
 | Accepted collateral | [0] 20 ADA · [1] 500 TOK (`537a02f3…` · `544f4b`) | same |
-| Pool NFT policy | `1c00069bd09cb3e6a5d32f5a8e7b852144a8004ede70963e14c20b1a` | `dcc6a744032782058554e242b23dc9d66ac287bf351d122aa8d8bd1f` |
-| `lending_pool_v5` hash | `9a81be8900f34a86e80c1a7f6345abe5bd86f60b4700a047e513a3b0` | `102cda4952391ac02b95234a26fb9852655f07b8a9846447c438abbf` |
-| `lending_pool_v5` address | `addr_test1wzdgr05fqre54phgpsd87c6940jmmphkpdrspgz8u5f68vquqlfkw` | `addr_test1wqgzekjf2gu34sptj5355fhmnpfx2hc8hz5cgez8csu2h0c5ekrc3` |
-| `collateral_v5` hash | `388d33810aee0ba246179fd2d970f76a790f72f771159e0c5301698a` | `163bb361d8fc9b0e78347cc955df2750de39e0a577d6c3fd4ad0ea26` |
-| `collateral_v5` address | `addr_test1wqug6vuppthqhgjxz70a9kts7a48jrmj7ac3t8sv2vqknzs9dx5e8` | `addr_test1wqtrhvmpmr7fkrncx37vj4wlyagduw0q54madslaftgw5fsjkjwej` |
-| Reference scripts (pool #0, collateral #1) | `5d90207c5c14d9185d0f97ae76c585cd45dca7b118048cc07cddaeb3a3d50791` | `c7914adc284dfbadf136669b998a0561f3a6860c6f33d544df903acbf22a791d` |
+| Pool NFT policy | `07951f6a9f9c9bb551eb9329b0a52021871a525c6f863646bb040e6c` | `1dd29a9c5c5a8834a6b1d58204648b1a1166e948384cce678fde3101` |
+| `lending_pool_v5` hash | `fb082ecc2ef911821e5395c591aee3183c21793402a8fcbc6464d42a` | `30db976a20e799a345d0e233c9498127b2dcb748e51f4709a9b632ed` |
+| `lending_pool_v5` address | `addr_test1wrasstkv9mu3rqs72w2utydwuvvrcgtexsp23l9uv3jdg2szg7zth` | `addr_test1wqcdh9m2yrneng696r3r8j2fsynm9h9hfrj373cf4xmr9mgzapvg2` |
+| `collateral_v5` hash | `0e8b2aa5ae1b02eed109fa776c50203546f4262c257a8c9b6f041328` | `7a48a8f086eb5715b44c051ec7d87458a72f141c062e157967901e8d` |
+| `collateral_v5` address | `addr_test1wq8gk2494cds9mk3p8a8wmzsyq65dapx9sjh4rymduzpx2q5spdv7` | `addr_test1wpay328ssm44w9d5fsz3a37cw3v2wtc5rsrzu9tev7gparg6f269u` |
+| Reference scripts (pool #0, collateral #1) | `55348bcf783aa4e38b0996de8bbaaabb97b33b61a8054c80495e2445baad1ee7` | `54d1bf05dd53a436cb147cb36d48866743d45f7799034e24d91c5886a3aebc4c` |
 | Verification keys | `c4e8e1b7acf51d67bb2ebeb0561ee8b86a71778a4b1e9842ef51a1a9afd90b7d` #0 borrow · #1 settlement · #2 append · #3 repay · #4 lender withdraw | same |
 
 TOK and USD are test tokens minted for this demonstration under one policy
@@ -364,14 +379,14 @@ deployment.
 
 | Tx | Proofs verified | mem | cpu | of the cpu limit | Fee |
 |---|---|---|---|---|---|
-| Add liquidity | append | 529,267 | 2,580,378,519 | 26 % | 0.57 ADA |
-| Deposit | append | 612,406 | 2,607,769,998 | 26 % | 0.58 ADA |
-| Borrow | borrow + MPF insert | 598,335 | 2,605,451,995 | 26 % | 0.58 ADA |
-| Repay | repay + append + MPF update | 690,582 | 5,151,030,842 | 52 % | 0.78 ADA |
-| Unlock | settlement | 336,380 | 2,373,206,815 | 24 % | 0.42 ADA |
-| Withdraw a share | lender withdraw + MPF insert | 625,870 | 2,618,035,308 | 26 % | 0.58 ADA |
+| Add liquidity | append | 529,267–543,848 | 2.58–2.59 B | 26 % | 0.57 ADA |
+| Deposit | append | 604,018–619,236 | 2.60–2.61 B | 26 % | 0.58 ADA |
+| Borrow | borrow + MPF insert | 602,529–823,348 | 2.61–2.68 B | 27 % | 0.58–0.60 ADA |
+| Repay | repay + append + MPF update | 791,652–966,652 | 5.18–5.24 B | 52 % | 0.78–0.80 ADA |
+| Unlock | settlement | 294,286–336,380 | 2.36–2.37 B | 24 % | 0.41–0.42 ADA |
+| Withdraw a share | lender withdraw + MPF insert | 621,676–714,942 | 2.62–2.65 B | 26 % | 0.58–0.59 ADA |
 
-Figures from pool 1; in pool 2 the CPU steps differ by less than 1 % and the memory by less than 15 %. Pool and collateral scripts are spent by reference, which keeps the fees about 0.15 ADA below inline scripts.
+Ranges over every transaction of pool 1; pool 2 lies within the same ranges. The MPF proofs grow with the logarithm of the set size, which is the spread in memory for borrow, repay and withdraw. Pool and collateral scripts are spent by reference, which keeps the fees about 0.15 ADA below inline scripts.
 
 ---
 
@@ -493,7 +508,9 @@ limits:
 2. **Single transactions stay visible.** Each deposit, loan payout, repayment, share
    purchase and withdrawal is a public transaction with a time. What is hidden is which
    of them belong together (§1); an observer still sees *that* something happened at a
-   given time.
+   given time. An unlock shows that this deposit's loan was repaid, so with few loans
+   open at once, an unlock right after a repayment pairs them by timing (one pair in
+   the live cycle, §1). A client that waits before unlocking avoids this.
 3. **Assets at deposit.** A deposit shows which accepted asset was locked, as it shows
    that one denomination was locked. Which asset backs a given loan stays hidden.
 4. **Addresses.** Payouts go to addresses the user chooses. The user keeps them apart
@@ -563,10 +580,10 @@ ledger (§5, Privacy boundary).
 |---|---|---|
 | **Asset confidentiality:** "The specific assets used as collateral remain private" (pp. 11, 15) | All accepted collateral assets share one commitment set; a loan names neither the deposit nor the asset behind it (§1 item 2). The deposit itself shows which accepted asset it locks (§5) | Borrow public signals `[group_root, loan_nullifier, external_nullifier, recipient]` (§2); ADA and TOK deposits enter the same set (§1 step 4) |
 | **Amount confidentiality:** "The exact values of collateral, loans, and repayments remain private" (p. 15) | Every amount is a fixed denomination of the pool, so no amount identifies a position; the collateral amount is in no datum or public signal. Pool totals are public, as M1 lists them (p. 14) | Borrow and repay public signals (§2); deposits of 20 ADA and 500 TOK in one set |
-| **Identity protection:** "Borrower identities cannot be linked to specific loans" (p. 15) | The borrow proves membership in the set without naming a deposit, pays a proof-bound key and is relayed (§1 items 3, 6) | Borrow relayed by R to B; D appears in no loan transaction |
+| **Identity protection:** "Borrower identities cannot be linked to specific loans" (p. 15) | The borrow proves membership in the set without naming a deposit, pays a proof-bound key and is relayed (§1 items 3, 6) | Three borrows relayed by R to B1–B3 (§1, live cycle); no depositor appears in a loan transaction |
 | **Relationship privacy:** "Connections between borrowers and lenders remain private" (p. 15) | Lenders hold anonymous notes in a pool; no loan and no note share a value (§1 item 5) | Pair table in §1 |
 | **Activity concealment:** "The timing and frequency of loan-related activities remain private" (p. 15) | Which actions belong to one user cannot be read off the chain when each group uses its own address, so a user's history and frequency stay private. The time of each single transaction is public on any public ledger; M1 names no mechanism to hide it (§5) | Pair table in §1; separate address per role in the live cycle |
-| **Anonymous lending:** "Their identity remains disconnected from their lending activity"; "The amount they've lent isn't publicly visible" (p. 11) | A note is one share; a withdrawal proves note membership and reveals a one-time nullifier; a larger position is several notes, which can come from different addresses (§1 item 5) | Withdraw [`b4c42d0c…`](https://preprod.cardanoscan.io/transaction/b4c42d0cb457679afa75166c13ccd943675840cdec8e9a6ccc82ef5b14ac5496), paid to P |
+| **Anonymous lending:** "Their identity remains disconnected from their lending activity"; "The amount they've lent isn't publicly visible" (p. 11) | A note is one share; a withdrawal proves note membership and reveals a one-time nullifier; a larger position is several notes, which can come from different addresses (§1 item 5) | Three shares from three addresses; withdrawals [`d04ea018d867…`](https://preprod.cardanoscan.io/transaction/d04ea018d867672dced4023e6c99d9b76b8cb85ddee3911e9f7d11e994f337d3) to P1 and [`244ef168e832…`](https://preprod.cardanoscan.io/transaction/244ef168e832f0dcd5ef5112ae033099dd6cf5e0b111da6a702cdfe268362f48) to P2 (§1) |
 | **Collateralization ratio:** "The collateralization ratio is privately verified but not publicly revealed" (p. 11) | Sufficiency is enforced on-chain at deposit: only the exact denomination of an accepted asset enters the set, and each denomination covers one loan. The ratio of each asset is public pool configuration; which ratio, that is which asset, backs a given loan stays hidden by the borrow proof. Like M1, which needs no oracle "since collateral is validated privately" (p. 23), the pool has no price feed (§5) | `deposit_*` tests; borrow public signals (§2) |
 | **Collateral verification** (M1 §2.2; M3 output 1) | At deposit, the validator admits only an accepted denomination under the commitment the append proof inserts; at borrow, the proof shows ownership of a member of that set, one loan per member (§2) | `deposit_*` and `borrow_*` tests; live deposits and borrow |
 
@@ -589,8 +606,9 @@ execution budgets.
 
 **2. Multi-asset support.** A pool lends one asset, ADA or a native token, and accepts
 several collateral assets (§1, Assets). On Preprod, pool 1 lends ADA and pool 2 lends
-a native token (USD); both accept ADA and TOK as collateral, and pool 1's loan was
-backed by the TOK deposit without the transaction revealing it (§1, live cycle; §4).
+a native token (USD); both accept ADA and TOK as collateral. Pool 1's three loans were
+backed by ADA and TOK deposits from the same set, and no borrow transaction shows which
+(§1, live cycle; §4).
 
 **3. Anonymous lending.** Delivered (§1, item 5), following the lending flow of M1
 §1.4 C (pp. 13–14): a commitment for the position, a nullifier against double
@@ -604,7 +622,7 @@ price.
   of the user pays for or signs them.
 - *Recipient addresses:* payouts go to addresses the user chooses for each role, and
   the proofs bind them, so the relayer cannot change them. The live cycle uses a
-  separate address for every role (§1).
+  separate address for every unit (§1).
 - *Timing and activity:* a borrower's actions fall into two groups the chain cannot
   join (deposit and unlock; borrow and repay), and a lender's purchase and withdrawal
   cannot be joined either. With each group on its own address, a user's history and

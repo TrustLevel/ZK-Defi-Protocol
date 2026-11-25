@@ -85,19 +85,13 @@ Tests in `validators/tests/` (`v6_validator_test.ak`, `pool_nft_test.ak`).
   [`modulo-p/ak-381`](https://github.com/modulo-p/ak-381). No `extra_signatories`
   check anywhere.
 
-See [`../circuits/`](../circuits/) for the four circuits (borrow, repay, settlement,
-append) and [`../docs/MILESTONE3.md`](../docs/MILESTONE3.md) for the full design.
+See [`../circuits/`](../circuits/) for the five circuits (borrow, repay, settlement,
+append, lender withdraw) and [`../docs/MILESTONE3.md`](../docs/MILESTONE3.md) for the full design.
 
 ## Deployed (Preprod)
 
-| Script | Hash |
-|-----------|-------------|
-| `pool_nft` (pool 1, lends ADA) | `1c00069bd09cb3e6a5d32f5a8e7b852144a8004ede70963e14c20b1a` |
-| `lending_pool_v5` (pool 1) | `9a81be8900f34a86e80c1a7f6345abe5bd86f60b4700a047e513a3b0` |
-| `collateral_v5` (pool 1)   | `388d33810aee0ba246179fd2d970f76a790f72f771159e0c5301698a` |
-
-Pool 2 (lends the USD test token) and all addresses: `packages/protocol/deployments/`
-and [`../docs/MILESTONE3.md`](../docs/MILESTONE3.md) §4.
+Both pools (one lending ADA, one lending the USD test token), their script hashes and
+addresses: `packages/protocol/deployments/` and [`../docs/MILESTONE3.md`](../docs/MILESTONE3.md) §4.
 
 The applied hashes are derived with Mesh `applyParamsToScript`
 (`packages/protocol/src/scripts.mjs`, `deriveScripts`). `aiken blueprint apply` re-optimises

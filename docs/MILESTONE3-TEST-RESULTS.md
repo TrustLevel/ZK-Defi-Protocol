@@ -12,7 +12,7 @@ lending the USD test token (see [`MILESTONE3.md`](MILESTONE3.md) §1 and §4).
 | Circuit tests (real Groth16 proofs, all five circuits) | `cd circuits && npm test` | **21 / 21 pass** |
 | Protocol module, incl. golden tests against both Preprod cycles | `cd packages/protocol && npm test` | **55 / 55 pass**; 1 live test skipped without a Blockfrost key, passes with one (`npm run test:live`) |
 | Reference relayer and chain reader | `cd server && npm test` | **30 / 30 pass**; 1 live test skipped without a key, passes with one |
-| Live Preprod cycles | `offchain/cli/m4/run.mjs` | **20 / 20 transactions confirmed (100 %)**, all `valid_contract: true` (§3) |
+| Live Preprod cycles | `offchain/cli/m4/run.mjs` | **34 / 34 transactions confirmed (100 %)**, all `valid_contract: true` (§3) |
 | Independent break-it run on an earlier stand (pumbiii, 2026-11-18, before the asset pools and nullifier sets) | [`MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md) | attacks 1–8 **rejected**; attack 9 found the unbound repayment nullifier, resolved in commit [`6b5cbb3`](https://github.com/TrustLevel/ZK-Defi-Protocol/commit/6b5cbb3) and covered by `repay_with_foreign_repay_nullifier_fails` and `repay_with_copied_borrow_proof_fails`. |
 
 The golden tests (`packages/protocol/test/m3-cycle.test.mjs`) take every transaction
@@ -109,49 +109,64 @@ Each scenario is a test from §1; it passes when the script behaves as stated.
 
 ## 3. Live Preprod cycles (confirmed)
 
-Roles on separate addresses: L lends (and minted the test tokens), D deposits, U
-receives the collateral back, B receives the loan and repays, R relays borrow, unlock
-and withdraw and pays their fees, P receives the withdrawn share.
+Every unit on its own address: lenders L1–L5 (one share each), depositors D1–D6 (one
+deposit each, returning to U1–U6), borrowers B1–B5 (one loan each, repaid by the same
+address), share payouts P1–P3, and one relayer R that submits every borrow, unlock and
+withdrawal and pays their fees. The steps are listed in the order they ran.
 
 **ADA pool** (`packages/protocol/deployments/preprod-m3-ada.json`; collateral 20 ADA or 500 TOK):
 
 | Step | Tx hash | valid_contract | Fee (ADA) |
 |---|---|---|---|
-| Park the five verification keys | [`c4e8e1b7acf5…`](https://preprod.cardanoscan.io/transaction/c4e8e1b7acf51d67bb2ebeb0561ee8b86a71778a4b1e9842ef51a1a9afd90b7d) | true | 0.3174 |
-| Init pool + mint pool NFT | [`3acf4248a5cb…`](https://preprod.cardanoscan.io/transaction/3acf4248a5cbffb2c3571ae7aa1c52154602d8a7fa52daf1c29d4c8bd6d5e059) | true | 0.2117 |
-| Publish the reference scripts | [`5d90207c5c14…`](https://preprod.cardanoscan.io/transaction/5d90207c5c14d9185d0f97ae76c585cd45dca7b118048cc07cddaeb3a3d50791) | true | 0.6905 |
-| Deposit 20 ADA (D, returns to U) | [`9f7f17cad29f…`](https://preprod.cardanoscan.io/transaction/9f7f17cad29f2e3e584728cb74e595279f23e61d8bf0e9a38bae47e918f974a3) | true | 0.5816 |
-| Deposit 500 TOK (D, returns to U) | [`fa297a3a89bf…`](https://preprod.cardanoscan.io/transaction/fa297a3a89bfdcf36ee9767e65373480408536ab1ced5347529bcb91099ca926) | true | 0.5851 |
-| Add liquidity: share 1 (L, 10 ADA) | [`c75f5bd192e3…`](https://preprod.cardanoscan.io/transaction/c75f5bd192e344809ef52cdf4c2eb57b478541238b0a0755b085e3758d715df9) | true | 0.5675 |
-| Add liquidity: share 2 (L, 10 ADA) | [`29344705f1fa…`](https://preprod.cardanoscan.io/transaction/29344705f1fadf774f0fc8b6847aab13b4db5879ca7759c2955e8ebaca52125b) | true | 0.5722 |
-| Borrow 10 ADA to B (backed by the TOK deposit), relayed by R | [`b219752d2a64…`](https://preprod.cardanoscan.io/transaction/b219752d2a646c5e67f0302ad949eacea0940913ec5f8a148a32088948fd5b42) | true | 0.5778 |
-| Repay 10.5 ADA (B) | [`f854d3c38034…`](https://preprod.cardanoscan.io/transaction/f854d3c380343d1bc5e4857aa4b1a4f77e4fa2c13e1eeb1b5637181f52135aa9) | true | 0.7777 |
-| Unlock 500 TOK to U, relayed by R | [`101b958540d6…`](https://preprod.cardanoscan.io/transaction/101b958540d60b074b13c8bada78e6ab4f872d6917255e9bb2517f03f2f55048) | true | 0.4162 |
-| Withdraw one share (10.25 ADA) to P, relayed by R | [`b4c42d0cb457…`](https://preprod.cardanoscan.io/transaction/b4c42d0cb457679afa75166c13ccd943675840cdec8e9a6ccc82ef5b14ac5496) | true | 0.5801 |
+| Park the five verification keys (shared by both pools) | [`c4e8e1b7acf5…`](https://preprod.cardanoscan.io/transaction/c4e8e1b7acf51d67bb2ebeb0561ee8b86a71778a4b1e9842ef51a1a9afd90b7d) | true | 0.3174 |
+| Init pool + mint pool NFT | [`ebbbd9ce3fcd…`](https://preprod.cardanoscan.io/transaction/ebbbd9ce3fcdec1b27bcc1d0eaee533a7a9332f680f00a8f017ace58656bb6e4) | true | 0.2103 |
+| Publish the reference scripts | [`55348bcf783a…`](https://preprod.cardanoscan.io/transaction/55348bcf783aa4e38b0996de8bbaaabb97b33b61a8054c80495e2445baad1ee7) | true | 0.6905 |
+| Share 1 (L1, 10 ADA) | [`47c90f873587…`](https://preprod.cardanoscan.io/transaction/47c90f873587128ed0e99d6ea89efa562fbaa08a60d92d48246ceba45bf4c513) | true | 0.5657 |
+| Deposit 20 ADA (D1, returns to U1) | [`fbdb8c49dfd1…`](https://preprod.cardanoscan.io/transaction/fbdb8c49dfd1f128822122e4325c4afc98a05628c89b88899010b8c3f641805f) | true | 0.5793 |
+| Deposit 500 TOK (D2, returns to U2) | [`5e20e61c3f25…`](https://preprod.cardanoscan.io/transaction/5e20e61c3f25d562a6372ac09643420ff4ab72fb2adf9e9d5b0f11a2de1930f4) | true | 0.5840 |
+| Share 2 (L2, 10 ADA) | [`59057ef21172…`](https://preprod.cardanoscan.io/transaction/59057ef21172017b4b2e5eadb86660bf377ce68714d5e17412bc708324e6cd55) | true | 0.5665 |
+| Deposit 20 ADA (D3, returns to U3) | [`f48900afae66…`](https://preprod.cardanoscan.io/transaction/f48900afae6630f26ffb4aa67a3a7f77460b88a1d469b53e6729dab1483750f0) | true | 0.5793 |
+| Borrow 10 ADA to B1, relayed by R | [`97403cf130ae…`](https://preprod.cardanoscan.io/transaction/97403cf130aed8a7d807afedb8bb9739256983357990fc7f7443d7b8eac5cd1e) | true | 0.5782 |
+| Deposit 500 TOK (D4, returns to U4) | [`e0182464aba3…`](https://preprod.cardanoscan.io/transaction/e0182464aba357fc4ec4090112956702bd44dc74167aadd2e5152934126563bb) | true | 0.5838 |
+| Share 3 (L3, 10 ADA) | [`1bdf9c875069…`](https://preprod.cardanoscan.io/transaction/1bdf9c87506908e8cd876ff75573c537630aad8bec143b024aff6a897b9b22bc) | true | 0.5671 |
+| Borrow 10 ADA to B2, relayed by R | [`6b320c87066e…`](https://preprod.cardanoscan.io/transaction/6b320c87066e64583ba498523d3ae43460afc859e3afaddd78d280c3706c83f0) | true | 0.5880 |
+| Repay 10.5 ADA (B1) | [`00d0b5a03216…`](https://preprod.cardanoscan.io/transaction/00d0b5a0321628d102729b3bd60b2704a9314007099c9c1eb88440f55bfd2677) | true | 0.7882 |
+| Borrow 10 ADA to B3, relayed by R | [`1eca7856df68…`](https://preprod.cardanoscan.io/transaction/1eca7856df6831e716c46ac226bca41406ccb8e05290a4d176c4c6d1f2b67aa3) | true | 0.6023 |
+| Repay 10.5 ADA (B2) | [`909f84544d39…`](https://preprod.cardanoscan.io/transaction/909f84544d39e1964c6453a5642f824d2529900d16029e8c3ab793a242869a0e) | true | 0.7845 |
+| Unlock 500 TOK to U2, relayed by R | [`9b5816c03c7c…`](https://preprod.cardanoscan.io/transaction/9b5816c03c7ca56dcb7dc79a8d5431c2881dd8c7cc9d1d9b32d6d932e5f125c7) | true | 0.4162 |
+| Withdraw one share (10.333333 ADA) to P1, relayed by R | [`d04ea018d867…`](https://preprod.cardanoscan.io/transaction/d04ea018d867672dced4023e6c99d9b76b8cb85ddee3911e9f7d11e994f337d3) | true | 0.5799 |
+| Repay 10.5 ADA (B3) | [`c468a977e435…`](https://preprod.cardanoscan.io/transaction/c468a977e43516be726e03fdc876d4643c8b44552f5fbd9d6411bb8cf16eb496) | true | 0.8029 |
+| Unlock 500 TOK to U4, relayed by R | [`0dbd654e9f74…`](https://preprod.cardanoscan.io/transaction/0dbd654e9f741eaeeeb9133a1f2479865e0590c62c934f483b037f659a7276fc) | true | 0.4162 |
+| Withdraw one share (10.583333 ADA) to P2, relayed by R | [`244ef168e832…`](https://preprod.cardanoscan.io/transaction/244ef168e832f0dcd5ef5112ae033099dd6cf5e0b111da6a702cdfe268362f48) | true | 0.5905 |
+| Unlock 20 ADA to U1, relayed by R | [`397ad1b586c5…`](https://preprod.cardanoscan.io/transaction/397ad1b586c5ac924e6d0f162165846783161684874cf87761d2d352d23dea97) | true | 0.4110 |
 
 **USD pool** (`packages/protocol/deployments/preprod-m3-usd.json`; loan asset USD, same keys and collateral list):
 
 | Step | Tx hash | valid_contract | Fee (ADA) |
 |---|---|---|---|
-| Init pool + mint pool NFT | [`baaafc06a45d…`](https://preprod.cardanoscan.io/transaction/baaafc06a45dc37979c2a82e2e95a6adb8ddf25811b5069ee9c98e8197d9ae15) | true | 0.2077 |
-| Publish the reference scripts | [`c7914adc284d…`](https://preprod.cardanoscan.io/transaction/c7914adc284dfbadf136669b998a0561f3a6860c6f33d544df903acbf22a791d) | true | 0.6937 |
-| Deposit 20 ADA (D, returns to U) | [`183cee42f264…`](https://preprod.cardanoscan.io/transaction/183cee42f2640b347296ef4ae110d28b368d09ecf4dcaf58b8b4fa844d2601c7) | true | 0.5815 |
-| Add liquidity: share 1 (L, 10 USD) | [`47ae6dcf07a1…`](https://preprod.cardanoscan.io/transaction/47ae6dcf07a1961d1c24fa4afa7fc0c146eb404153212a6b5f85cc54183adc28) | true | 0.5703 |
-| Add liquidity: share 2 (L, 10 USD) | [`8d9f883bc622…`](https://preprod.cardanoscan.io/transaction/8d9f883bc622d7b9cfc63ed8654b6af172b5b838a6d1d535cd6a2eb82102f9c8) | true | 0.5729 |
-| Borrow 10 USD to B, relayed by R | [`a7f3f565da9d…`](https://preprod.cardanoscan.io/transaction/a7f3f565da9d33b42ed1a35d2f0393d775228178c8a61823b85a4a37d83f2624) | true | 0.5841 |
-| Repay 10.5 USD (B) | [`c1ce59019185…`](https://preprod.cardanoscan.io/transaction/c1ce59019185b7c3cdddd578fad1bb1d9ed45d74be8a0b6d61d71300e4e67517) | true | 0.7790 |
-| Unlock 20 ADA to U, relayed by R | [`ea7dc16ccec4…`](https://preprod.cardanoscan.io/transaction/ea7dc16ccec44d237932dc0f3dbb563e404eb084a69c33ecc893c8a254c15a47) | true | 0.4109 |
-| Withdraw one share (10.25 USD) to P, relayed by R | [`ed53a299f0d3…`](https://preprod.cardanoscan.io/transaction/ed53a299f0d3263efd6298331d225a34baa339c42ca79b98de4509c604fa26bf) | true | 0.5864 |
+| Init pool + mint pool NFT | [`c79b7d5b0a62…`](https://preprod.cardanoscan.io/transaction/c79b7d5b0a620fc84841f3a4abc9c41046d641025a629caedb38db3921a32a1b) | true | 0.2077 |
+| Publish the reference scripts | [`54d1bf05dd53…`](https://preprod.cardanoscan.io/transaction/54d1bf05dd53a436cb147cb36d48866743d45f7799034e24d91c5886a3aebc4c) | true | 0.6921 |
+| Share 1 (L4, 10 USD) | [`aefd1397a6d2…`](https://preprod.cardanoscan.io/transaction/aefd1397a6d24c890987982b6deff494509ff9affa77ddd1ab192205994a105e) | true | 0.5677 |
+| Deposit 20 ADA (D5, returns to U5) | [`8db735408435…`](https://preprod.cardanoscan.io/transaction/8db7354084350ca0f62988ac171da4259a42f04edd948c8da221e73dc069e6bc) | true | 0.5834 |
+| Share 2 (L5, 10 USD) | [`45ff6a694cae…`](https://preprod.cardanoscan.io/transaction/45ff6a694caecd281c5d94f3f1cb71773f47dff3c34d89fea8911943529aea52) | true | 0.5714 |
+| Deposit 500 TOK (D6, returns to U6) | [`83d8aa4be89f…`](https://preprod.cardanoscan.io/transaction/83d8aa4be89f2dfc9f26df88a8cf54fec7abdbf9e617f5c160977cdc1f95e190) | true | 0.5868 |
+| Borrow 10 USD to B4, relayed by R | [`b763549ee7c0…`](https://preprod.cardanoscan.io/transaction/b763549ee7c0684f7da665ac582d636567a01436fc159a2ba1903cf522ed3e3e) | true | 0.5852 |
+| Borrow 10 USD to B5, relayed by R | [`728e970e9dee…`](https://preprod.cardanoscan.io/transaction/728e970e9dee1dbbe6334aa518c318dfa9f22268a61bdc0cf1f131c94993c3ec) | true | 0.5927 |
+| Repay 10.5 USD (B5) | [`60d08a9beba2…`](https://preprod.cardanoscan.io/transaction/60d08a9beba295384b2de27e311c300ec262e02157aeca09ddb5375904ceffae) | true | 0.7904 |
+| Repay 10.5 USD (B4) | [`feddc592bc1a…`](https://preprod.cardanoscan.io/transaction/feddc592bc1a300bece2d6d3c9b091d45730699af21c2fd858237efdcb1d48b4) | true | 0.7925 |
+| Unlock 500 TOK to U6, relayed by R | [`305e928da5cc…`](https://preprod.cardanoscan.io/transaction/305e928da5cc0fa1604c93d967266ced228873a5f152f6252a18a9cc79fedeef) | true | 0.4162 |
+| Withdraw one share (10.5 USD) to P3, relayed by R | [`8143d17564ba…`](https://preprod.cardanoscan.io/transaction/8143d17564babb8098f0eda0e719c5a81b2dbf6fb74beaf9f163adf7193cc79f) | true | 0.5871 |
+| Unlock 20 ADA to U5, relayed by R | [`39a2afbb0398…`](https://preprod.cardanoscan.io/transaction/39a2afbb0398e387877c8d36bc971e70c116f350c485c4d11792d0801cf8e506) | true | 0.4114 |
 
-Funding outside the protocol: the demo addresses were funded from one test wallet, L,
-which also minted the test tokens (D's TOK; B's 40 ADA in
-[`3209083e9880…`](https://preprod.cardanoscan.io/transaction/3209083e9880876c14af722559012c3bf38a30173d51b4c0f4ffc6ff28266114) and 1 USD for the interest in
-[`8d771bc79bbf…`](https://preprod.cardanoscan.io/transaction/8d771bc79bbfdb08ff87d57f1864a5e595525a3590a280bd56c353bc871aa309); R's fee budget). No protocol transaction carries a value
-that the deposit side (D, U) and the loan side (B) share.
+Funding outside the protocol: each demo address was funded once from one test wallet,
+which also minted the test tokens. No protocol transaction carries a value that the
+deposit side (D, U) and the loan side (B) share.
 
-Economics: in both pools two shares of 10 bought, one loan of 10 repaid with 0.5
-interest, so a share is worth 10.25 and one was paid out at that price. The TOK
-collateral came back whole (500 TOK and its ADA).
+Economics: in the ADA pool three shares of 10 were bought and three loans of 10 repaid
+with 0.5 interest each; the first share withdrawn after two repayments paid 10.333333
+and the second, after the third, 10.583333, so the price grew with each repayment. In
+the USD pool two shares of 10, two loans repaid, one share paid out at 10.5. Every
+unlock returned its deposit whole (its asset and its ADA).
 
 **Operational notes (for reproducing testers).**
 - **Evaluation.** The Mesh builder evaluates every transaction via Blockfrost before
@@ -170,19 +185,23 @@ collateral came back whole (500 TOK and its ADA).
 
 | Tx | Proofs verified | Memory | CPU steps | of the CPU limit | Fee (ADA) |
 |---|---|---|---|---|---|
-| Add liquidity | append | 529,267 | 2,580,378,519 | 26 % | 0.57 |
-| Deposit (ADA / TOK) | append | 612,406 / 615,042 | 2,607,769,998 / 2,607,210,181 | 26 % | 0.58 |
-| Borrow | borrow + MPF insert | 598,335 | 2,605,451,995 | 26 % | 0.58 |
-| Repay | repay + append + MPF update | 690,582 | 5,151,030,842 | 52 % | 0.78 |
-| Unlock | settlement | 336,380 | 2,373,206,815 | 24 % | 0.42 |
-| Withdraw a share | lender withdraw + MPF insert | 625,870 | 2,618,035,308 | 26 % | 0.58 |
+| Add liquidity | append | 517,882–562,290 | 2,577,055,989–2,591,245,036 | 26 % | 0.57 |
+| Deposit (ADA / TOK) | append | 604,018–619,236 | 2,602,519,044–2,609,835,658 | 26 % | 0.58–0.59 |
+| Borrow | borrow + MPF insert | 602,529–823,348 | 2,608,077,472–2,675,758,226 | 27 % | 0.58–0.60 |
+| Repay | repay + append + MPF update | 791,652–966,652 | 5,179,994,440–5,237,073,082 | 52 % | 0.78–0.80 |
+| Unlock | settlement | 294,286–336,380 | 2,358,894,934–2,373,206,815 | 24 % | 0.41–0.42 |
+| Withdraw a share | lender withdraw + MPF insert | 621,676–714,942 | 2,615,409,831–2,646,002,233 | 26 % | 0.58–0.59 |
 
-Figures from the ADA pool; in the USD pool the CPU steps differ by less than 1 %. A
-single on-chain `groth_verify` costs about 2.3–2.6 B CPU steps; an MPF insert or update
-adds little. Every step fits in one transaction with room to spare (repay, the only
-step with two proofs, uses about half of the CPU budget and 4 % of the memory). The
-scripts are spent by reference, and the pool datum keeps its size, so these costs do
-not grow with the number of loans.
+Ranges over every transaction of both pools (§3). A single on-chain `groth_verify`
+costs about 2.3–2.6 B CPU steps; an MPF insert or update adds little. Every step fits in
+one transaction with room to spare (repay, the only step with two proofs, uses about
+half of the CPU budget and 6 % of the memory). The scripts are spent by reference and
+the pool datum keeps its size; the only growth is the MPF proof in the redeemer, which
+grows with the logarithm of the number of loans or withdrawals (the memory spread for
+borrow, repay and withdraw).
 
-**Proof generation (off-chain, Node CLI on a laptop).** Append 1.4–1.6 s, borrow
-1.0 s, repay 1.3 s, settlement 1.0 s, lender withdraw 1.0 s.
+**Proof generation (off-chain).** Measured by the command line client during the
+cycles in §3 (`offchain/cli/m4/run.mjs`, which prints each proof's time), on an Apple
+M2 with 16 GB and Node.js 23.6: append 1.4–1.6 s, borrow 1.0 s, repay 1.2 s,
+settlement 1.0 s, lender withdraw 1.0–1.1 s. Every proof is verified locally before
+the transaction is built.

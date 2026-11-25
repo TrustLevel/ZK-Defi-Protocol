@@ -1,8 +1,8 @@
 {
   "network": "preprod",
-  "description": "Pool lending ada, collateral ada:20,537a02f3e1f878c9e814bf6dc8ebbd584c04b5d49c310331879020b5544f4b:500. Created by offchain/cli/m4/run.mjs deploy on 2026-11-23.",
+  "description": "Pool lending ada, collateral ada:20,537a02f3e1f878c9e814bf6dc8ebbd584c04b5d49c310331879020b5544f4b:500. Created by offchain/cli/m4/run.mjs deploy on 2026-11-25.",
   "seed": {
-    "txHash": "beecbdeef8a939bd476bd5f3c4a5d666552476d9b121efe7a390d914689adcd3",
+    "txHash": "bc9b9aacd9db10ba2afccb2e76036a033b8d57e793d24612a39a9aac4336e768",
     "outputIndex": 0
   },
   "vkeys": {
@@ -17,14 +17,14 @@
     }
   },
   "vkeyParkAddress": "addr_test1wzl94ddu5xplr7p8f55ldtxjvw6cqqsh57jkj4vndwthtkgdw2fq8",
-  "initTx": "3acf4248a5cbffb2c3571ae7aa1c52154602d8a7fa52daf1c29d4c8bd6d5e059",
+  "initTx": "ebbbd9ce3fcdec1b27bcc1d0eaee533a7a9332f680f00a8f017ace58656bb6e4",
   "refScripts": {
     "pool": {
-      "txHash": "5d90207c5c14d9185d0f97ae76c585cd45dca7b118048cc07cddaeb3a3d50791",
+      "txHash": "55348bcf783aa4e38b0996de8bbaaabb97b33b61a8054c80495e2445baad1ee7",
       "index": 0
     },
     "collateral": {
-      "txHash": "5d90207c5c14d9185d0f97ae76c585cd45dca7b118048cc07cddaeb3a3d50791",
+      "txHash": "55348bcf783aa4e38b0996de8bbaaabb97b33b61a8054c80495e2445baad1ee7",
       "index": 1
     }
   },
@@ -44,9 +44,9 @@
       "denomination": "500"
     }
   ],
-  "policyId": "1c00069bd09cb3e6a5d32f5a8e7b852144a8004ede70963e14c20b1a",
-  "poolHash": "9a81be8900f34a86e80c1a7f6345abe5bd86f60b4700a047e513a3b0",
-  "poolAddress": "addr_test1wzdgr05fqre54phgpsd87c6940jmmphkpdrspgz8u5f68vquqlfkw",
-  "collateralHash": "388d33810aee0ba246179fd2d970f76a790f72f771159e0c5301698a",
-  "collateralAddress": "addr_test1wqug6vuppthqhgjxz70a9kts7a48jrmj7ac3t8sv2vqknzs9dx5e8"
+  "policyId": "07951f6a9f9c9bb551eb9329b0a52021871a525c6f863646bb040e6c",
+  "poolHash": "fb082ecc2ef911821e5395c591aee3183c21793402a8fcbc6464d42a",
+  "poolAddress": "addr_test1wrasstkv9mu3rqs72w2utydwuvvrcgtexsp23l9uv3jdg2szg7zth",
+  "collateralHash": "0e8b2aa5ae1b02eed109fa776c50203546f4262c257a8c9b6f041328",
+  "collateralAddress": "addr_test1wq8gk2494cds9mk3p8a8wmzsyq65dapx9sjh4rymduzpx2q5spdv7"
 }

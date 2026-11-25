@@ -13,7 +13,7 @@ on-chain pairing builtins), not BN254.
 | `settlement_proof_final.zkey` / `verification_key_settlement.json` | yes | Unlock circuit (3 public signals) |
 | `append_proof_final.zkey` / `verification_key_append.json` | yes | Append circuit (4 public signals) |
 | `lender_withdraw_final.zkey` / `verification_key_lender_withdraw.json` | yes | Lender withdraw circuit (4 public signals) |
-| `pot14b_final.ptau` | no (gitignored) | BLS12-381 Powers of Tau (power 14; large enough for every circuit) |
+| `pot14b_final.ptau` | no (release asset) | BLS12-381 Powers of Tau (power 14; large enough for every circuit). Published as an asset of the GitHub release `m3-poa-v6`; SHA-256 `ab5f500c289d09261dea09590bdd40e8694d1308aa68384c78acc5e045121a1d` |
 
 The `verification_key_*.json` files are what the deployed vkey reference UTxOs hold.
 The proving keys are committed so testers can reproduce proofs that verify against the
@@ -48,6 +48,17 @@ $SNARKJS zkey export verificationkey collateral_semaphore_final.zkey verificatio
 
 Check the ptau curve: `groth16 setup` refuses a ptau of another curve
 (`r1cs curve does not match powers of tau ceremony curve`).
+
+## Verify the committed keys
+
+With `pot14b_final.ptau` from the release (check its SHA-256 above), each proving key
+can be checked against its circuit and the powers of tau, from `circuits/`:
+
+```bash
+for c in collateral_semaphore repay_proof settlement_proof append_proof lender_withdraw; do
+  npx snarkjs zkey verify $c.r1cs keys/pot14b_final.ptau keys/${c}_final.zkey
+done   # each prints "ZKey Ok!"
+```
 
 ## Trusted-setup note
 

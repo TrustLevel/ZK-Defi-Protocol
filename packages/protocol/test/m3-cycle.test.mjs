@@ -45,6 +45,7 @@ for (const { name, fixture, deployment } of CYCLES) {
   const poolIn = (tx) => tx.inputs.find((i) => !i.reference && i.address === S.POOL_ADDRESS);
   const poolOut = (tx) => tx.outputs.find((o) => o.address === S.POOL_ADDRESS);
   const poolSpends = txs.filter(poolIn);
+  const unlocks = txs.filter((tx) => tx.label.startsWith("unlock"));
 
   test(`${name}: every transaction of the cycle was accepted`, () => {
     for (const tx of txs) assert.equal(tx.validContract, true, tx.label);
@@ -114,8 +115,9 @@ for (const { name, fixture, deployment } of CYCLES) {
   });
 
   test(`${name}: pool and collateral scripts are spent by reference`, () => {
-    for (const tx of [...poolSpends, cycle.unlock]) {
-      assert.ok(tx.inputs.some((i) => i.reference && i.txHash === D.refScripts.pool.txHash), tx.label ?? "unlock");
+    assert.ok(unlocks.length > 0, "the cycle has unlocks");
+    for (const tx of [...poolSpends, ...unlocks]) {
+      assert.ok(tx.inputs.some((i) => i.reference && i.txHash === D.refScripts.pool.txHash), tx.label);
     }
   });
 
@@ -132,14 +134,15 @@ for (const { name, fixture, deployment } of CYCLES) {
     }
   });
 
-  test(`${name}: the unlock returns the full deposit, and its redeemer and tag re-encode`, () => {
-    const un = cycle.unlock;
-    const r = un.redeemers[0];
-    const U = decodeUnlockRedeemer(r.cbor);
-    assert.equal(hashOf(R_Unlock(U.proof, U.poolRef.txHash, U.poolRef.index)), r.hash);
-    const spent = un.inputs.find((i) => !i.reference && i.address === S.COLLATERAL_ADDRESS);
-    const payout = un.outputs.find((o) => o.datumHash === hashOf(outputReference(spent.txHash, spent.outputIndex)));
-    for (const a of spent.amount) assert.ok(BigInt(payout.amount.find((b) => b.unit === a.unit)?.quantity ?? 0) >= BigInt(a.quantity), a.unit);
+  test(`${name}: every unlock returns the full deposit, and its redeemer and tag re-encode`, () => {
+    for (const un of unlocks) {
+      const r = un.redeemers[0];
+      const U = decodeUnlockRedeemer(r.cbor);
+      assert.equal(hashOf(R_Unlock(U.proof, U.poolRef.txHash, U.poolRef.index)), r.hash);
+      const spent = un.inputs.find((i) => !i.reference && i.address === S.COLLATERAL_ADDRESS);
+      const payout = un.outputs.find((o) => o.datumHash === hashOf(outputReference(spent.txHash, spent.outputIndex)));
+      for (const a of spent.amount) assert.ok(BigInt(payout.amount.find((b) => b.unit === a.unit)?.quantity ?? 0) >= BigInt(a.quantity), `${un.label} ${a.unit}`);
+    }
   });
 
   test(`${name}: loan and share payouts carry the loan asset and their nullifier tag`, () => {
