@@ -82,8 +82,9 @@ loan) is resolved in commit
 [`6b5cbb3`](https://github.com/TrustLevel/ZK-Defi-Protocol/commit/6b5cbb3), which this
 stand includes (see `docs/MILESTONE3.md` §5, Independent testing).
 
-The runbooks the testers followed are kept in
-[`Tester-Feedback/archive/`](Tester-Feedback/archive/).
+The break-it run on this stand follows
+[runbook 4](Tester-Feedback/MILESTONE3-TESTER-RUNBOOK-4-breakit.md). The runbooks of
+earlier runs are kept in [`Tester-Feedback/archive/`](Tester-Feedback/archive/).
 
 ---
 
