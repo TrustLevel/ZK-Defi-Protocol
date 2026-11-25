@@ -52,8 +52,8 @@ Check the ptau curve: `groth16 setup` refuses a ptau of another curve
 ## Trusted-setup note
 
 The committed key pairs come from a **development setup** for Preprod and testing.
-Production keys come from a multi-party Powers-of-Tau and phase-2 ceremony, as
-described in M1 Appendix A; it is secure as long as one participant is honest and
+Production keys come from a multi-party Powers-of-Tau ceremony as in M1 Appendix A,
+with a multi-party phase-2 contribution per circuit; it is secure as long as one participant is honest and
 destroys their toxic waste.
 
 ## References

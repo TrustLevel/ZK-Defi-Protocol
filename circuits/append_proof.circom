@@ -8,9 +8,10 @@ include "./lib/poseidon255.circom";
  *
  * Proves — in zero knowledge, WITHOUT any admin — that a leaf R was correctly
  * appended to an append-only Merkle tree at the next free position, taking the
- * tree from `old_root` to `new_root`. Used by RepayAnonymous so a borrower can
- * insert their repayment nullifier R into the pool's `repaid_root` themselves
- * (permissionless), which is what later lets them prove settlement at unlock.
+ * tree from `old_root` to `new_root`. One circuit serves all three append-only
+ * sets: AddLiquidity appends a lender note to `lender_root`, DepositCollateral a
+ * commitment to `group_root`, and RepayAnonymous the repayment nullifier R to
+ * `repaid_root` (permissionless), which later lets the depositor prove settlement.
  *
  * Correctness of the insertion is enforced by proving BOTH:
  *   1. position `index` was EMPTY (leaf 0) in the old tree — same path/siblings —

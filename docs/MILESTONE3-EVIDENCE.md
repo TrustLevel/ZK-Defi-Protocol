@@ -19,7 +19,7 @@ links are Cardano **Preprod**.
 | On-chain verifier wrappers | `contracts/lib/zk.ak` |
 | Redeemer / datum types | `contracts/lib/types_v5.ak` |
 | Pool NFT minting policy (one-shot) | `contracts/validators/v5/pool_nft.ak` |
-| Park address of the verification keys and reference scripts (always false) | `contracts/validators/always_false.ak`, derived in `packages/protocol/test/park.test.mjs` |
+| Park address of the verification keys and reference scripts (no transaction can spend it) | hash over the flat program of `contracts/validators/always_false.ak`, derived in `packages/protocol/test/park.test.mjs` |
 | Pool validator | `contracts/validators/v5/lending_pool_v5.ak` (AddLiquidity / WithdrawLiquidity / DepositCollateral / BorrowAnonymous / RepayAnonymous) |
 | Collateral validator | `contracts/validators/v5/collateral_v5.ak` (UnlockDeposit) |
 | Compiled blueprint | `contracts/plutus.json` |
@@ -74,7 +74,7 @@ protocol stand that was current on that date.
 |---|---|---|---|---|
 | pinusch100 | 2026-08-26 | [`MILESTONE3-TESTER-FEEDBACK-pinusch100.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pinusch100.md) | before the private model (v5) | feedback template |
 | pumbiii | 2026-08-26 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii.md) | before the private model (v5) | feedback template |
-| pumbiii (break-it) | 2026-09-01 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-09-01.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-09-01.md) | `m3-poa-v2` | [archived runbook 2](Tester-Feedback/archive/MILESTONE3-TESTER-RUNBOOK-2-breakit.md) |
+| pumbiii (break-it) | 2026-09-01 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-09-01.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-09-01.md) | `m3-poa-v2` (the report calls it the v6 private model, branch `m3-remediation-v6`) | [archived runbook 2](Tester-Feedback/archive/MILESTONE3-TESTER-RUNBOOK-2-breakit.md) |
 | pumbiii (break-it) | 2026-11-18 | [`MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md`](Tester-Feedback/MILESTONE3-TESTER-FEEDBACK-pumbiii-2026-11-18.md) | `m3-poa-v4` (before lender side, asset pools and nullifier sets) | [runbook 3 as of `m3-poa-v4`](https://github.com/TrustLevel/ZK-Defi-Protocol/blob/m3-poa-v4/docs/Tester-Feedback/MILESTONE3-TESTER-RUNBOOK-3-breakit.md) |
 
 The 2026-11-18 report's finding (attack 9: repayment nullifier not bound to the repaid

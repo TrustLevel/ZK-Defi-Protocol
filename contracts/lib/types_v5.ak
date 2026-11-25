@@ -69,7 +69,7 @@ pub type CollateralAsset {
   denomination: Int,
 }
 
-/// Collateral deposit datum (v6). No amount and no asset — the commitment
+/// Collateral deposit datum. No amount and no asset — the commitment
 /// (Merkle leaf = Poseidon255(COLLATERAL_LEAF_TAG, secret)), a timestamp, and `unlock_to`: the
 /// address the collateral is paid to on unlock. Fixing the recipient at deposit
 /// means a copied unlock proof cannot redirect the collateral (front-running);
@@ -80,7 +80,7 @@ pub type DepositDatumV5 {
   unlock_to: Address,
 }
 
-/// Lending pool datum (v6). The pool UTxO carries the one-shot pool NFT; the
+/// Lending pool datum. The pool UTxO carries the one-shot pool NFT; the
 /// verification keys are validator parameters, not datum fields.
 /// `group_root`          -> append-only Merkle root of the collateral commitment
 ///                          set; grown PERMISSIONLESSLY by DepositCollateral via
@@ -151,7 +151,7 @@ pub type PoolDatumV5 {
   liquidity_reserve: Int,
 }
 
-/// Lending pool redeemer (v6).
+/// Lending pool redeemer.
 /// `AddLiquidity`: a lender buys one share: pays exactly the current share price
 /// (rounded up) and `append_proof` attests the note leaf `commitment` is appended
 /// at `lender_next_index`, taking lender_root -> out.lender_root.
@@ -193,7 +193,7 @@ pub type PoolRedeemerV5 {
   }
 }
 
-/// Collateral redeemer (v6). Unlock spends the deposit with a settlement proof
+/// Collateral redeemer. Unlock spends the deposit with a settlement proof
 /// (commitment-bound + Merkle membership of the private R in the pool's
 /// `repaid_root`, read via pool_ref). Carries NO borrow-shared value.
 pub type CollateralRedeemerV5 {

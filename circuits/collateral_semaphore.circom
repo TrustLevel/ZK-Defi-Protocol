@@ -33,8 +33,7 @@ include "./lib/poseidon255.circom";
  */
 
 // Merkle inclusion proof for a binary tree hashed with Poseidon255(2).
-// (Same template as in collateral_semaphore.circom; kept here so the circuit is
-// self-contained.)
+// (The other circuits carry the same template, so each circuit is self-contained.)
 template MerkleInclusion(depth) {
     signal input leaf;
     signal input pathIndices[depth];
