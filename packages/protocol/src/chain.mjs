@@ -7,7 +7,7 @@
  * from CBOR: Blockfrost's json_value renders 255-bit integers as floats.
  */
 import { decodePoolDatum, decodePoolRedeemer } from "./plutus.mjs";
-import { merkleRoot } from "./crypto.mjs";
+import { merkleRoot, EXTERNAL_NULLIFIER, REPAY_EXTERNAL_NULLIFIER, LENDER_EXTERNAL_NULLIFIER } from "./crypto.mjs";
 
 // The live pool: the one UTxO at the pool address that carries the pool NFT.
 export async function fetchPool(provider, S) {
@@ -97,6 +97,23 @@ export async function verifyPool(bf, S, deployment, { pool, leaves, sets, expect
     && d0.lender_root === empty && d0.lender_next_index === 0n && d0.total_shares === 0n
     && d0.loans === emptyRoot && d0.withdrawn === emptyRoot;
   if (!canonical) fail("the initial pool datum is not the empty state");
+  // Parameters the honest client depends on. The proofs use the protocol's fixed
+  // nullifier scalars; a pool with other ones accepts deposits and borrows, but no
+  // honest repay, unlock or withdraw proof would ever verify there.
+  if (d0.external_nullifier !== EXTERNAL_NULLIFIER || d0.repay_external_nullifier !== REPAY_EXTERNAL_NULLIFIER
+    || d0.lender_external_nullifier !== LENDER_EXTERNAL_NULLIFIER) {
+    fail("the pool's nullifier scalars are not the protocol's");
+  }
+  if (d0.interest_rate < 0n || d0.interest_rate > 10_000n) fail("the interest rate is outside 0-100 %");
+  if (d0.loan_denomination <= 0n || d0.share_start_price <= 0n) fail("the loan denomination or share price is not positive");
+  if (d0.collateral_assets.length === 0 || d0.collateral_assets.some((c) => c.denomination <= 0n)) {
+    fail("the pool accepts no collateral, or one with a denomination that is not positive");
+  }
+  // The reserve must have been paid in at init; otherwise the first lenders' funds
+  // would fill it and could never be withdrawn.
+  const loanUnit = (d0.loan_asset.policy_id + d0.loan_asset.asset_name) || "lovelace";
+  const paidIn = BigInt(out.amount.find((a) => a.unit === loanUnit)?.quantity ?? 0);
+  if (paidIn !== d0.liquidity_reserve) fail("the liquidity reserve was not paid in at init");
   const refs = {
     borrow: [deployment.vkeys.txHash, deployment.vkeys.borrowIdx],
     settlement: [deployment.vkeys.txHash, deployment.vkeys.settlementIdx],

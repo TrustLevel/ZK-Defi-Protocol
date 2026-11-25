@@ -306,7 +306,8 @@ const step = {
       + ` | collateral ${leaves.commitments.length} | open loans ${sets.openLoans.length} | repaid ${leaves.repaid.length}`
       + ` | shares ${d.total_shares}, buy ${fmt(sharePriceUp(d, bal), L)}, payout ${fmt(sharePriceDown(d, bal), L)},`
       + ` withdrawable now ${withdrawableShares(d, bal)}`);
-    console.log(`accepted collateral: ${d.collateral_assets.map((c, i) => `[${i}] ${fmt(c.denomination, c)}`).join(", ")}`);
+    console.log(`accepted collateral: ${d.collateral_assets.map((c, i) => `[${i}] ${fmt(c.denomination, c)}`).join(", ")}`
+      + ` | loan ${fmt(d.loan_denomination, L)}, interest ${Number(d.interest_rate) / 100} %`);
     if (!note) return;
     const n = loadNote(note);
     if (n.kind === "lender") {
