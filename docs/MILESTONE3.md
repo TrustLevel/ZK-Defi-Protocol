@@ -644,8 +644,8 @@ price.
   Privacy boundary).
 
 **5. Groth16 as the proof system.** The M3 milestone asks for zk-SNARK proofs and names
-no proof system. M1 compared Groth16, PLONK and Halo2 (pp. 5–10), selected PLONK
-(p. 15) with Halo2 as contingency (p. 10), and gave its PLONK figures as expectations
+no proof system. M1 compared Groth16, PLONK and Halo2 (pp. 5–10), proposes PLONK
+(p. 15) and gave its PLONK figures as expectations
 ("expected to be 600–800 bytes", p. 18). M1 rates Groth16 best on the two properties
 that set transaction cost on Cardano, proof size (~200 bytes) and verification time
 (p. 7), and its references include the Groth16 Cardano-Semaphore implementation, both
